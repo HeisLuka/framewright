@@ -1,0 +1,68 @@
+# --- dependencies ---
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# --- render output: never commit frames, video or audio renders ---
+frames/
+frames-*/
+shots/
+*.mp4
+*.mov
+*.webm
+*.mkv
+*.wav
+*.mp3
+*.m4a
+
+# --- generated data ---
+portrait.js
+*.log
+tmp/
+
+# --- source material and personal files: photos and footage stay local ---
+*.jpg
+*.jpeg
+*.png
+*.heic
+*.heif
+*.webp
+*.gif
+*.avif
+*.tif
+*.tiff
+*.psd
+*.svg
+photo_*
+IMG_*
+# curated previews inside the repo are allowed explicitly
+!examples/**/preview.webp
+!examples/**/contact-sheet.jpg
+!docs/**/*.png
+
+# --- OS and editors ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# --- local agent state (settings that belong to one machine) ---
+.claude/settings.local.json
+.claude/**/*.local.*
+.codex/
+.cursor/mcp.json
+.gemini/settings.local.json
+.gemini/oauth_creds.json
+.mcp.local.json
+
+# --- secrets ---
+.env
+.env.*
+*.pem
+*.key
+*.p12
+credentials*.json

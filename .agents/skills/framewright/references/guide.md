@@ -1,0 +1,184 @@
+# Engine, helpers and the way of working
+
+Read once before the first scene. Everything here is implemented in `assets/skeleton.html`
+and used at full scale in `examples/ris-tv/index.html`.
+
+## 1. The file
+
+One HTML file, one canvas, one script. Sections in this order: parameters, generators,
+math, canvas pool, palette, helpers, generated data between markers, engine, plates, boot.
+Helpers stay above the plates block: a helper placed between two plates leaves with the
+plate you cut. Generated data (polygons from a photo) lives between
+`/*PORTRAIT_START*/` and `/*PORTRAIT_END*/` and is replaced by `scripts/inject.mjs`, never
+by hand.
+
+Size guide: the HTML stays under 200 KB; polygon data 30–70 KB as integers.
+
+## 2. Knobs and the script object
+
+```
+?f=140      draw one frame and set window.__ready
+?s=12       seed of the impression
+?w=1920     output width; height follows the aspect and is forced even
+?grid=24    contact sheet of evenly spaced frames with labels
+?cw=480     cell width of the sheet
+?ar=16:9    aspect ratio
+no knobs    live preview in the browser, capped at 960 px
+```
+
+```js
+window.RISO = {
+  fps: FPS,
+  get total(){ return TOTAL() },
+  get plates(){ return PLATES.map(p => ({name: p.name, len: p.len})) },
+  frame(n, width, seed){ renderFrame(n, width, seed, MAIN); return MAIN.toDataURL('image/png') },
+  contact(n, cellW){ contactSheet(n, cellW, SEED, MAIN); return MAIN.toDataURL('image/png') }
+}
+```
+
+Scripts call `RISO.frame` and save the data URL. They never screenshot the page: a
+screenshot depends on CSS and device scale; `toDataURL` returns exactly the drawn pixels.
+
+## 3. Coordinates and time
+
+- Logical coordinates with a fixed short side of 1080. `LW`, `LH` follow the aspect; `CX`,
+  `CY` are the centre. Scenes never touch output pixels; the engine scales the context.
+- Safe area: important content inside the central 92 % of each axis. On-screen labels start
+  at 7–8 % of the height from the edge. Styles that distort edges (CRT barrel, vignettes)
+  need this; other styles benefit anyway.
+- 30 fps. `BEAT` and `BAR` derive from `BPM`. At 120 BPM a beat is 15 frames and a bar 60.
+  Plate lengths are multiples of `BEAT`; eighths (7.5 frames) are not cut points.
+- Inside a plate use beats and progress, never global frame numbers:
+  `const beat = Math.floor(S.i / BEAT), inBeat = (S.i % BEAT) / BEAT;`
+  `span(S.i, a, b)` gives 0..1 between two local frames; wrap it in `ease.out`, `ease.io`,
+  `ease.back`.
+
+## 4. Generators
+
+Three per frame, all seeded through `hash(seed, ...)` with the plate name, so inserting a
+plate never changes its neighbours:
+
+| generator | reseeded | use |
+|---|---|---|
+| `R` | once per plate | composition: positions, choices that must not move |
+| `S.b` | every 3 frames | the live line: jitter of outlines, flicker decisions |
+| `S.nz` | every frame | noise fields, snow, grain decisions |
+
+Compute a jittered path once and reuse it; two calls of `S.b` produce two different paths.
+Per-pixel effects use a linear congruential generator seeded with `hash(seed, 'grain', f)`.
+
+## 5. The engine
+
+`renderFrame(n, width, seed, target)`: even height, content canvas at output size,
+context scaled by `width / LW`, background fill, `P.fn(S, R)`, edge transition (`cutIn`,
+`cutOut`), reset transform, `post()` into the target. It returns `S` so the sheet can label
+cells. `locate(n)` maps a global frame to a plate and a local frame. `TOTAL()` sums plate
+lengths; `look.mjs info` prints them.
+
+`post(src, dst, S, o)` is the style's finisher. The skeleton ships grain and vignette;
+replace or extend it per `styles.md`. A per-pixel pass over 1920×1080 costs 50 ms for
+simple maths and up to 0.5 s with bilinear resampling in three channels. Cache anything that
+depends only on resolution (distortion maps) in a dictionary keyed by `W×H`.
+
+`cut(g, S, amt)` is the transition drawn at plate edges. The skeleton fades to black; a
+retro TV switches channels with band tearing and snow; a poster style cuts hard
+(`cutIn: false, cutOut: false` on every plate). The first plate has `cutIn: false`; the
+last has `cutOut: false`.
+
+When a plate needs the last frame of the previous one (a TV switching off over the
+portrait), move that plate's drawing into a function and call it with a fixed local frame.
+
+## 6. Contact sheet
+
+`contactSheet(n, cellW, seed, target)`: cells rendered at twice the cell width and scaled
+down, so per-pixel post-processing looks the way it will in the video. Labels: frame,
+plate, local `t`, seconds. Six columns for landscape, eight for portrait. Twenty-four cells
+cover a 40-second video every 1.7 seconds; for a 15-second video use 18.
+
+## 7. Text
+
+Bitmap text (`pixText`): a system bold monospace at 14 px is drawn into a small canvas, the
+alpha is thresholded at 0.5, the mask is scaled up without smoothing by `cell` logical units
+per glyph pixel, aligned by its tight bounding box (never by font metrics), snapped to the
+glyph grid so letters do not shimmer between frames. `fit` shrinks `cell` to the largest
+integer that fits a width. This gives teletext, OSD menus, terminal type, pixel-game text.
+Vector text (`vecText`) for display sizes in poster, flat and blueprint styles. Measure
+before you place; multi-line layouts compute line height in units of `cell`, including any
+sub-line, so lines never touch.
+
+Cyrillic and Latin are both in Menlo and Helvetica Neue on macOS; on Linux install
+`fonts-dejavu` and use `DejaVu Sans Mono`. Rendering happens on one machine, so
+cross-machine font drift is not a concern unless the HTML is rendered elsewhere.
+
+## 8. Motion vocabulary
+
+- Reveal: `reveal` as a fraction of width for row-by-row text; `frac` for paths by
+  cumulative length (constant beam speed); scale pop `1.10 → 1` over 45 % of a beat on
+  every count; slide-in from the edge with `ease.out` over 10–12 frames.
+- Hold: a still that breathes. A ±1.5 unit drift from `S.b`, a blink at 1 Hz, a slow
+  brightness sine of ±2 %. Two adjacent sheet cells must still differ.
+- Cut: the engine does it. Inside a plate, a "flash frame" (one white frame) and a "shake"
+  (±8 units for 4 frames) are enough punctuation.
+- Camera: translate and scale the whole context inside the plate; ease between two
+  keyframes; never move more than 20 % of the frame per second on a hold.
+- Transitions between two states of one object: interpolate polylines with the same point
+  count; morph by cross-fading fills only when shapes share topology.
+
+## 9. Parametric objects
+
+Everything is a function of a scale parameter, centred on `CX, CY`: seven-segment digits,
+a test card, a graticule, a paperclip from arcs and lines with cumulative length, a clock, a
+progress bar, a lower third, a stamp, a speech bubble. Build the object once as points, then
+draw it with the current style; the same points serve stroke reveal, fill and jitter.
+
+## 10. Review protocol
+
+```bash
+node scripts/look.mjs shot 0,45,115 1200 7          # first, middle, five before the end
+node scripts/look.mjs sheet 24 480 7 shots/sheet.png
+node scripts/look.mjs info                          # plates, lengths, seconds
+ffmpeg -y -i shots/f0770.png -vf "crop=900:300:160:560" shots/crop.png   # small text at full size
+```
+
+Look at every PNG with the image tool. The script prints page errors and console warnings;
+a black frame without an error message means a plate threw before drawing, so read the
+output. The checklist is in `SKILL.md`, step 4.
+
+## 11. Render and encode
+
+```bash
+node scripts/render.mjs frames 7 1920 5     # ~2 min per 1200 frames with per-pixel post on an M-series Mac
+START=600 END=780 node scripts/render.mjs frames 7 1920 5
+RESUME=1 node scripts/render.mjs frames 7 1920 5
+bash scripts/build.sh out.mp4               # CRF=22, maxrate 14M, yuv420p, faststart, AAC 192k
+AR=9:16 node scripts/render.mjs frames-v 7 1080 5 && bash scripts/build.sh out-vertical.mp4 frames-v
+```
+
+PNG frames weigh 1.5–2.5 MB each; a minute of video is 3–4 GB, ignored by git. CRF 22 with a
+14 Mbit/s cap gives about 0.7 MB per second on noisy styles and half that on flat styles;
+CRF 17 is five times larger with no visible gain on a contact sheet. Keep deliverables under
+50 MB for messengers. Verify the MP4: `ffprobe` frame count equals `RISO.total`, duration
+equals frames / 30, a tile made from the file matches the sheet.
+
+For a vertical cut, composition needs its own sheet: `fit` saves the text, not the layout.
+Platform UI covers the top 15 % and bottom 20 % of vertical video.
+
+## 12. Changing a finished video
+
+- Insert a plate: add it, shorten a neighbour to keep the total, update the sound table,
+  reshoot the sheet, re-render.
+- Change a line of text: reshoot the frames that show it and one sheet.
+- Swap a photo: rerun `portrait.sh`, reshoot the portrait plate.
+- Change the seed: nothing else changes; render and compare two sheets side by side.
+
+## 13. Project layout after `init.sh`
+
+```
+index.html        the video
+audio.mjs         the soundtrack
+storyboard.md     the plan
+scripts/          look, render, build, make, inject, portrait, trace, doctor
+shots/            frames and sheets for eyes, ignored by git
+frames/           PNG frames, ignored by git
+package.json      npm scripts and the puppeteer dependency
+```
