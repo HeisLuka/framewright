@@ -31,7 +31,7 @@ function overlap(a,b){
   s+=a.opening_grammar===b.opening_grammar?2.2:0;
   s+=a.duration_s===b.duration_s?1.0:0;
   s+=a.typography_profile===b.typography_profile?1.2:0;
-  s+=a.cover_side===b.cover_side?.6:0;
+  s+=a.cover_side===b.cover_side?0.6:0;
   return s;
 }
 function recentPenalty(c,selected){
