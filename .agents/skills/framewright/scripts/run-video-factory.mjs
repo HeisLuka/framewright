@@ -86,7 +86,9 @@ async function verifyPhysicalBinding(requestRow, compiledCreative, binding) {
   if (String(payload.hook) !== String(compiledCreative.hook?.text)) {
     throw new Error(`${requestRow.selection_id}: physical payload hook does not match CreativeSpec hook`);
   }
-  return { html, payloadPath, payloadSha, templateSha };
+  const audioPath = binding.audio ? path.resolve(INVOCATION_CWD, binding.audio) : null;
+  if (audioPath && !fs.existsSync(audioPath)) throw new Error(`${requestRow.selection_id}: missing canonical audio ${audioPath}`);
+  return { html, payloadPath, payloadSha, templateSha, audioPath };
 }
 
 const options = parseArgs(process.argv.slice(2));
@@ -114,6 +116,9 @@ async function processRender(row) {
   if (!requestRow || !creative) throw new Error(`${row.selection_id}: package/request selection mismatch`);
   const binding = requireExecutionBinding(requestRow, creative);
   const physical = await verifyPhysicalBinding(requestRow, creative, binding);
+  if (row.render.audio && !physical.audioPath && !process.env.CANONICAL_AUDIO_PATH) {
+    throw new Error(`${row.selection_id}: RenderSpec declares audio but execution.audio / CANONICAL_AUDIO_PATH is missing`);
+  }
 
   const bundle = {
     schema: 'newboo-video-factory-bundle-v1',
@@ -128,12 +133,15 @@ async function processRender(row) {
   await fsp.mkdir(path.dirname(output), { recursive: true });
   await fsp.mkdir(path.dirname(receiptPath), { recursive: true });
 
-  await run(process.execPath, [FAST,
+  const fastArgs = [
+    FAST,
     '--bundle', bundlePath,
     '--out', output,
     '--artifact-dir', artifactDir,
     '--receipt-out', receiptPath,
-  ], { HTML: physical.html, PAYLOAD: physical.payloadPath, CI: process.env.CI || '' });
+  ];
+  if (row.render.audio && physical.audioPath) fastArgs.push('--audio', physical.audioPath);
+  await run(process.execPath, fastArgs, { HTML: physical.html, PAYLOAD: physical.payloadPath, CI: process.env.CI || '' });
 
   const receipt = JSON.parse(await fsp.readFile(receiptPath, 'utf8'));
   if (receipt.render_spec_id !== row.render.render_spec_id) throw new Error(`${row.render.render_spec_id}: receipt identity mismatch`);
