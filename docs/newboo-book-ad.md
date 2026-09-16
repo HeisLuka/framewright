@@ -19,8 +19,15 @@ createBookAdV0Job()
         v
 book-ad-v0 browser template
         |
-        v
-Framewright look/render/build
+        +--------------------------+
+        |                          |
+        v                          v
+PNG reference renderer        raw RGBA renderer
+        |                          |
+        v                          v
+PNG files -> ffmpeg           ordered stream -> ffmpeg
+        |                          |
+        +-------------> MP4 <------+
 ```
 
 No model generates copy or creative decisions. The default text rules only reuse fields already present on the book:
@@ -44,19 +51,29 @@ npm run book-ad -- sheet \
   --out shots/book-sheet.png
 ```
 
-Render an MP4:
+Render through the production-oriented raw path:
 
 ```bash
 NEWBOO_API_BASE=http://127.0.0.1:8000/api/v1 \
 NEWBOO_COOKIE='session cookie value' \
-npm run book-ad -- video \
+npm run book-ad -- video-raw \
   --book-id '<book-id>' \
   --width 1080 \
   --tabs 5 \
   --out out/book-ad.mp4
 ```
 
-The same path can be exercised without a running Newboo service:
+The PNG/dataURL path remains available as a visual and performance reference:
+
+```bash
+npm run book-ad -- video \
+  --book-id '<book-id>' \
+  --width 1080 \
+  --tabs 5 \
+  --out out/book-ad-reference.mp4
+```
+
+The same paths can be exercised without a running Newboo service:
 
 ```bash
 npm run book-ad -- sheet \
@@ -103,7 +120,7 @@ Order used by the CLI:
 
 Use `--strict-assets` when a missing cover should fail the job rather than use the fallback.
 
-The browser template never receives S3 credentials. It only receives the immutable render job plus a local/resolved `coverUrl`.
+The browser template never receives S3 credentials. It only receives the immutable render job plus a resolved cover transport. The raw renderer serves a staged local cover back to Chromium from its localhost render origin.
 
 ## Render job
 
@@ -126,11 +143,12 @@ Use `--job-out <path>` to persist the JSON used for a render.
 ## Useful commands
 
 ```bash
-npm run book-ad -- info  --book-json ./book.json
-npm run book-ad -- sheet --book-json ./book.json --cells 16 --cell-width 270
-npm run book-ad -- shot  --book-json ./book.json --frames 0,90,240,360,449
-npm run book-ad -- render --book-json ./book.json --width 1080 --tabs 5
-npm run book-ad -- video  --book-json ./book.json --width 1080 --out out.mp4
+npm run book-ad -- info      --book-json ./book.json
+npm run book-ad -- sheet     --book-json ./book.json --cells 16 --cell-width 270
+npm run book-ad -- shot      --book-json ./book.json --frames 0,90,240,360,449
+npm run book-ad -- render    --book-json ./book.json --width 1080 --tabs 5
+npm run book-ad -- video     --book-json ./book.json --width 1080 --out reference.mp4
+npm run book-ad -- video-raw --book-json ./book.json --width 1080 --out raw.mp4
 ```
 
 Human-authored copy overrides are ordinary deterministic inputs:
@@ -144,6 +162,14 @@ npm run book-ad -- sheet \
   --cta '...'
 ```
 
-## What this does not solve yet
+## Rendering status
 
-This vertical slice still uses Framewright's existing PNG frame transport and `build.sh`. It deliberately does not mix the Newboo integration with the renderer-performance work. The next rendering milestone remains replacing the PNG/base64/disk production path with a measured raw-frame/encoder path while preserving this same `BookRenderPayload -> RenderPlan` contract.
+The Newboo integration no longer depends on the PNG transport. `video-raw` sends RGBA frames through an ordered, backpressured localhost receiver directly into ffmpeg and writes no temporary frame PNGs.
+
+The old renderer is intentionally retained for reference/QA and for the benchmark harness. Run the same visual program through both paths with:
+
+```bash
+npm run bench:render -- examples/book-ad-v0/index.html 300 720 5
+```
+
+Transport is not the final performance problem. Expensive full-frame JavaScript post effects, such as the RIS TV CRT, still execute before raw streaming. Post metadata/backend separation is the next major renderer optimization layer.
