@@ -1,0 +1,76 @@
+name: R38 Pipeline Overlap Scout
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r38-pipeline-overlap.mjs'
+      - '.github/workflows/r38-pipeline-overlap.yml'
+      - 'docs/r38-pipeline-overlap.md'
+  workflow_dispatch:
+
+jobs:
+  pipeline-overlap:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r38-pipeline-overlap.mjs
+      - name: Prepare exact C18 catalog fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r38.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r38.html examples/book-ad-systems/index-e17-for-r38.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r38.html examples/book-ad-systems/index-e17-e14-for-r38.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r38.html examples/book-ad-systems/index-e18-for-r38.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r38
+      - name: Build canonical AAC fixture once
+        run: |
+          mkdir -p artifacts/r38
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i 'sine=frequency=110:sample_rate=48000:duration=12' \
+            -filter:a 'volume=0.06' -t 12 -c:a aac -b:a 192k \
+            -movflags +faststart artifacts/r38/track.m4a
+      - name: Run serial vs bounded-overlap ABBA scout
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r38.html
+          MANIFEST: examples/book-ad-systems/generated-r38/manifest.json
+          OUT_DIR: artifacts/r38
+          AUDIO: artifacts/r38/track.m4a
+          REPORT: artifacts/r38/report.json
+          BITRATE: '3000000'
+        run: node .agents/skills/framewright/scripts/r38-pipeline-overlap.mjs
+      - name: Validate report completeness
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r38/report.json','utf8'));
+          if(r.schema!=='framewright-r38-pipeline-overlap-v1') throw new Error('wrong schema');
+          if(r.cycles?.length!==4) throw new Error('expected four ABBA cycles');
+          if(r.cycles.some(x=>x.jobs!==36)) throw new Error('each cycle must cover all 36 fixtures');
+          if(r.cycles.map(x=>x.mode).join(',')!=='serial,overlap,overlap,serial') throw new Error('wrong ABBA order');
+          if(r.aggregate?.overlap?.maxInflight>2) throw new Error('tail backpressure exceeded c2 bound');
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - name: Show result
+        if: always()
+        run: |
+          test -f artifacts/r38/summary.md && cat artifacts/r38/summary.md || true
+          test -f artifacts/r38/report.json && node -e "const r=require('./artifacts/r38/report.json'); console.log(JSON.stringify({aggregate:r.aggregate,decision:r.decision},null,2));" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r38-pipeline-overlap
+          path: |
+            artifacts/r38/report.json
+            artifacts/r38/summary.md
+            artifacts/r38/track.m4a
+          retention-days: 14
