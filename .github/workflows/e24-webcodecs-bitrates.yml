@@ -1,0 +1,62 @@
+name: E24 WebCodecs bitrate matrix
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/scripts/bench-webcodecs-bitrates.mjs"
+      - ".github/workflows/e24-webcodecs-bitrates.yml"
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: node --check .agents/skills/framewright/scripts/bench-webcodecs-bitrates.mjs
+      - name: Bitrate matrix 720
+        env:
+          E24_DIR: .bench/e24-720
+          BITRATES: "500000,1000000,2000000,4000000"
+        run: |
+          mkdir -p artifacts
+          node .agents/skills/framewright/scripts/bench-webcodecs-bitrates.mjs artifacts/e24-720.json 720 450
+      - name: Bitrate matrix 1080
+        env:
+          E24_DIR: .bench/e24-1080
+          BITRATES: "1000000,2000000,4000000,8000000"
+        run: node .agents/skills/framewright/scripts/bench-webcodecs-bitrates.mjs artifacts/e24-1080.json 1080 450
+      - name: Summary
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const profiles = ['720','1080'].map((size) => JSON.parse(fs.readFileSync(`artifacts/e24-${size}.json`, 'utf8')));
+          const summary = {
+            experiment: 'E24-webcodecs-bitrate-summary',
+            profiles: profiles.map((p) => ({
+              width: p.width,
+              frames: p.frames,
+              baselineBitrate: p.baselineBitrate,
+              results: p.results,
+              hypothesis: p.hypothesis,
+              caveat: p.caveat,
+            })),
+          };
+          fs.writeFileSync('artifacts/e24-summary.json', JSON.stringify(summary, null, 2) + '\n');
+          console.log(JSON.stringify(summary, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e24-webcodecs-bitrates
+          path: |
+            artifacts/e24-720.json
+            artifacts/e24-1080.json
+            artifacts/e24-summary.json
