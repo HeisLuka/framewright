@@ -20,6 +20,7 @@ P.narrative_angle={...C27_PLAN.angle};
 P.narrative_reveal_timing=C27_PLAN.reveal_timing;
 P.narrative_cta_treatment=C27_PLAN.cta_treatment;
 P.duration_profile=C27_PLAN.duration_seconds;
+P.pacing={mode:'c27-narrative-v1',profileSeconds:C27_PLAN.duration_seconds,totalFrames:C27_PLAN.total_frames,roles:C27_PLAN.roles.map(r=>({role:r.role,frames:r.frames,start_frame:r.start_frame,end_frame:r.end_frame}))};
 
 // The old template hard-codes "/ 03" pagination. NarrativePlan can have 1..5 semantic roles,
 // so suppress that legacy decoration rather than display impossible counters such as 04 / 03.
