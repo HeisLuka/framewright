@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const input=path.resolve(process.argv[2]||'examples/book-ad-systems/index-e18.html');
+const input=path.resolve(process.argv[2]||'examples/book-ad-systems/index-c20.html');
 const output=path.resolve(process.argv[3]||'examples/book-ad-systems/index-c21.html');
 let html=fs.readFileSync(input,'utf8');
 
