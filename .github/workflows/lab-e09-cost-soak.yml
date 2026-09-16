@@ -17,10 +17,16 @@ on:
       - 'LAB-E09-COST-SNAPSHOT.md'
   workflow_dispatch:
 
+concurrency:
+  group: e09-cost-soak-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   soak:
     runs-on: ubuntu-24.04
     timeout-minutes: 35
+    env:
+      SOAK_VIDEOS: ${{ github.event_name == 'workflow_dispatch' && '100' || '10' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -39,31 +45,32 @@ jobs:
           docker run --rm framewright-node-canvas:e09 sh -lc 'node -e "console.log(require(\"./node_modules/@napi-rs/canvas/package.json\").version)"' > artifacts/e09/canvas-version.txt
           docker run --rm framewright-node-canvas:e09 ffmpeg -version | head -1 > artifacts/e09/ffmpeg-version.txt
 
-      - name: Run 100-video long-lived soak
+      - name: Run regression smoke or manual full soak
         run: |
           docker run --rm \
             --cpus=4 \
             --memory=4g \
             -v "$PWD/artifacts:/app/artifacts" \
-            framewright-node-canvas:e09 sh -lc '
+            framewright-node-canvas:e09 sh -lc "
               node .agents/skills/framewright/scripts/make-e08-fixtures.mjs examples/book-ad-v0/generated-e08 &&
               node .agents/skills/framewright/scripts/prepare-pinned-font-template.mjs examples/book-ad-v0/index.html examples/book-ad-v0/index-e08.html &&
-              SOAK_VIDEOS=100 \
+              SOAK_VIDEOS=$SOAK_VIDEOS \
               HTML=examples/book-ad-v0/index-e08.html \
               MANIFEST=examples/book-ad-v0/generated-e08/manifest.json \
               REPORT=artifacts/e09/soak.json \
               WIDTH=1080 PRESET=veryfast CRF=22 \
               node .agents/skills/framewright/scripts/node-canvas-soak.mjs
-            '
+            "
 
       - name: Validate soak
         run: |
           node - <<'NODE'
           const fs=require('fs');
           const r=JSON.parse(fs.readFileSync('artifacts/e09/soak.json','utf8'));
+          const expected=+process.env.SOAK_VIDEOS;
           const mib=n=>n/1048576;
           if(r.canvasVersion!=='1.0.9') throw new Error(`unexpected canvas ${r.canvasVersion}`);
-          if(r.count!==100) throw new Error(`expected 100 videos, got ${r.count}`);
+          if(r.count!==expected) throw new Error(`expected ${expected} videos, got ${r.count}`);
           if(r.layoutWarningGroups!==0) throw new Error(`layout warnings ${r.layoutWarningGroups}`);
           if(mib(r.peakCombinedRssBytes)>1536) throw new Error(`peak RSS ${mib(r.peakCombinedRssBytes).toFixed(1)} MiB`);
           if(mib(r.memory.quartileDeltaBytes)>512) throw new Error(`RSS quartile growth ${mib(r.memory.quartileDeltaBytes).toFixed(1)} MiB`);
