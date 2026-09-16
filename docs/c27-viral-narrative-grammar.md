@@ -13,7 +13,27 @@ The product order is:
 
 The unit of creative is therefore not a visual template. It is:
 
-`verified sellable angle -> NarrativePlan -> renderer -> artifact`
+`BookPayload + BookEvidence -> sellable angle -> HookCandidate / arc variant -> NarrativePlan -> renderer -> artifact`
+
+The book is the payoff/source of the content, not necessarily the first-frame advertising object. Visual system, motion and delivery remain downstream realization choices.
+
+## BookEvidence + creative portfolio layer
+
+The first C27 implementation proved the `verified sellable angle -> NarrativePlan` boundary, but its angle object still bundled the abstract angle together with one concrete hook/tension/payoff ordering. That is too narrow for an organic-content factory: one truthful angle should be able to produce several genuinely different hook candidates without duplicating or weakening the trust boundary.
+
+`BookEvidence v1` is now the semantic trust layer immediately above the existing planner. Each evidence item has:
+
+- a stable evidence ID;
+- a semantic kind such as `premise`, `conflict`, `character`, `world`, `identity`, `emotion`, `thesis`, `question`, `quote`, `recommendation_context`, or `payoff`;
+- an exact trusted copy source;
+- a bounded `spoiler_level` from 0 through 3;
+- optional role tags for editorial/tooling use.
+
+A sellable angle can then carry multiple variants. Each variant names distinct evidence IDs for `hook`, optional `tension`, and optional `payoff`. The portfolio compiler creates a stable creative concept per `angle x variant`, preserves its hook-candidate identity, and compiles it into the existing `NarrativePlan v1` contract.
+
+This deliberately keeps the renderer and I05 compiler boundary unchanged. They still receive a NarrativePlan and do not need to know how many angles or hook candidates were explored upstream.
+
+The portfolio compiler can expand bounded matrices over duration, reveal timing and CTA treatment, and can reject concepts above a configured spoiler budget before render. The goal is a portfolio of semantically distinct, truth-preserving creative candidates, not a giant factorial over every visual axis.
 
 ## No-AI / no-fabrication contract
 
@@ -21,6 +41,8 @@ C27 never writes free-form book copy. Every visible semantic atom must resolve f
 
 - `book_payload_field`: exact full field, exact sentence, or exact character span from a permitted BookPayload field;
 - `human_verified`: exact editorial text carrying a `verification_id`.
+
+`BookEvidence` does not weaken that rule. It only gives trusted atoms explicit semantic identity so multiple angle/hook plans can reuse the evidence graph without turning the planner into a copywriter.
 
 The planner can reorder verified atoms, assign them to semantic roles, allocate time, choose reveal position, and select a CTA treatment. It cannot invent a plot event, quote, factual claim, recommendation comparison, or promise.
 
@@ -66,6 +88,8 @@ C27 preserves the C24 duration semantics:
 
 The planner owns exact semantic frame allocation. The runtime executes the plan rather than inferring duration from media side effects.
 
+The portfolio compiler respects the same boundary: 3s concepts force `none` CTA; 5s concepts only admit `none` or `soft_reveal`; 7s+ concepts require verified tension before they can compile.
+
 ## Phase A controlled matrix
 
 The fixture matrix uses six existing E08 books with two verified angle entry points per book and three reveal timings:
@@ -76,14 +100,19 @@ The CTA treatment is fixed to `intent`; the seed is fixed within each book. Visu
 
 For this lab fixture, angle text is constructed only from exact E08 hook sentences and exact BookPayload fields. Reordering is a mechanism test, not a claim that these are production-quality hooks.
 
+The new portfolio self-test is intentionally separate from that 36-video render matrix. It proves the upstream model first: one BookEvidence set can create multiple hook candidates under a shared angle, preserve exact provenance through compilation, enforce spoiler filtering, reject unknown/untrusted evidence, and retain the C24 duration/CTA rules. A later controlled live-content experiment should vary angle/hook/reveal before multiplying visual systems.
+
 ## Renderer contract and machine gates
 
 The C27 adapter reuses the existing C20-C26 visual primitives. `hook`, `tension`, and `desire_payoff` use the same hook renderer; `book_reveal` uses the existing book renderer with the generic hook suppressed; `cta` uses exact plan-owned CTA copy. Legacy fixed `/03` page numbering is suppressed because NarrativePlan can contain a variable number of semantic roles.
 
 CI checks:
 
-- deterministic replay;
-- exact copy provenance / no invented text;
+- deterministic NarrativePlan replay;
+- deterministic creative-portfolio replay and stable hook-candidate identity;
+- exact BookEvidence copy provenance / no invented visible text;
+- rejection of unknown or untrusted evidence;
+- spoiler-budget filtering before render;
 - exact frame coverage with no gaps or overlaps;
 - strict `early < mid < late` reveal start order;
 - no structured title/author identity leak before reveal;
@@ -99,3 +128,5 @@ CI checks:
 ## What this does not prove
 
 Passing C27 does not prove that a video is viral, persuasive, attractive, or semantically strong enough for publication. Machine gates prove that the intended narrative mechanism was executed faithfully. Visual/semantic review is still required for creative quality, and real retention, rewatches, shares, saves, CTA actions, and downstream book actions require live publishing.
+
+C27 also does not yet choose the best angle or hook. It creates a safe experimental search space. Real distribution and intent measurements, not an offline `viral_score`, must decide which concepts deserve more traffic.
