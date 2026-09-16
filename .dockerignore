@@ -1,0 +1,11 @@
+.git
+node_modules
+frames
+frames-*
+shots
+*.mp4
+*.h264
+*.wav
+*.zip
+artifacts
+.lab-*
