@@ -54,7 +54,7 @@ The gate proves:
 
 ## Real C27 -> C26 translation validation
 
-Canonical I05 CI run: `35150147829`. C27 source is pinned to commit `853a3c30a6c31afd5ef6f84e2ae20eda76fcef07` so the evidence does not move while C27 continues development.
+Canonical I05 CI run: `35150147829`. C27 source is pinned to commit `853a3c30a6c31afd5ef6f84e2ae20eda76fcef07` so the evidence does not move while C27 continues development. Canonical artifact: `10468154415`, ZIP digest `sha256:8adef5ea46292746afa24b55df0016a6627d860f2ca9ba18f258f1ac11531631`.
 
 I05 independently rebuilds the current C26 stack, applies the real pinned C27 adapter, generates real C27 `NarrativePlan` objects, and compares semantic checkpoints.
 
