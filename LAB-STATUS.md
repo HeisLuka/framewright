@@ -32,9 +32,15 @@ The old stacked PRs for these stages are archival and do not need to remain open
 - PR #11: style-class throughput matrix — experimental branch retained for results/reference.
 - PR #12: real RIS TV pinned-worker profile — experimental branch retained for results/reference.
 - PR #13: plate-aware Book Ad QA gate — experimental branch retained for follow-up; not promoted into this branch yet.
-- PR #14: Node Canvas renderer probe — experimental branch retained. It showed a strong speed signal (about 2.6x end-to-end on Book Ad v0 and no temporary PNGs) but insufficient visual parity, with differences concentrated largely in text/font rendering.
-- PR #15: pinned-font parity experiment — current follow-up to isolate the Node Canvas parity gap.
+- PR #14: Node Canvas renderer probe — archival. It showed ~2.6x end-to-end speedup and no temporary PNGs, but initially had a large visual parity gap dominated by text/font rendering.
+- PR #15: pinned-font parity — completed. Pinning DejaVu Sans raised decoded parity from SSIM 0.961873 to 0.994484 and PSNR from 21.25 dB to 32.56 dB while keeping Node Canvas ~2.31x faster end-to-end. Full result: `LAB-E07-NODE-CANVAS-FONT-PARITY.md`.
+
+## Current experiment
+
+Next: batch production probe for Node Canvas with pinned fonts, raster cover assets and diverse BookAdPayload fixtures. The goal is to test mass-production behavior rather than further Chromium-vs-Node pixel matching.
 
 ## Current architectural direction
 
-The working hypothesis is to preserve the JS/TS scene/template layer and optimize or replace only the rendering/encoding backend when measurements justify it. A full Rust/C++ rewrite is not a current default direction.
+Preserve the JS/TS scene/template layer. For cheap/editorial book ads, `@napi-rs/canvas` is now a serious backend candidate because it removes Chromium and temporary frame files while preserving the current scene logic. Production determinism should come from one pinned renderer + pinned fonts/assets + golden-frame regression tests, not from requiring two different renderers to be pixel-identical.
+
+A full Rust/C++ rewrite is not a current default direction. Native/GPU work should be reserved for measured bottlenecks such as expensive full-frame post-processing.
