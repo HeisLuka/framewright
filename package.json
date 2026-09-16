@@ -18,5 +18,8 @@
     "make": "bash scripts/make.sh",
     "example": "HTML=examples/ris-tv/index.html node .agents/skills/framewright/scripts/look.mjs sheet 24 480 7 shots/example-sheet.png"
   },
-  "dependencies": { "puppeteer": "^23.11.1" }
+  "dependencies": {
+    "@chenglou/pretext": "^0.0.9",
+    "puppeteer": "^23.11.1"
+  }
 }
