@@ -39,3 +39,5 @@ Otherwise kill/hold H20 at the background-cache level. A broader cover/text subt
 ## Reproduction
 
 Canonical evidence is produced by `.github/workflows/r44-static-layer-cache.yml` and uploaded as `r44-static-layer-cache` with baseline/candidate reports, cross-variant parity report, final decision report, and summary.
+
+The benchmark harness was first merged into `lab/framewright-research`; the follow-up evidence PR exists only to run that now-base-resident workflow against an unchanged benchmark implementation. No result is accepted until that run completes and the cross-variant parity gate passes.
