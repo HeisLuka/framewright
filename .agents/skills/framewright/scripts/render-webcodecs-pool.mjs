@@ -74,15 +74,16 @@ let stopping = false;
 let origin = null;
 let apiPrefix = null;
 let chromeLaunchMs = null;
+let renderSequence = 0;
 
 function acquirePage() {
   if (availablePages.length) return Promise.resolve(availablePages.shift());
   return new Promise(resolve => pageWaiters.push(resolve));
 }
-function releasePage(page) {
+function releasePage(lease) {
   const waiter = pageWaiters.shift();
-  if (waiter) waiter(page);
-  else availablePages.push(page);
+  if (waiter) waiter(lease);
+  else availablePages.push(lease);
 }
 
 function injectPayload(html, payload) {
@@ -93,6 +94,7 @@ function injectPayload(html, payload) {
 }
 
 async function renderJob(job) {
+  const sequence = ++renderSequence;
   const t0 = performance.now();
   const htmlPath = path.resolve(String(job.html || ''));
   const payloadPath = path.resolve(String(job.payload || ''));
@@ -104,6 +106,7 @@ async function renderJob(job) {
   const requestedCodec = String(job.codec || '').trim();
   const latencyMode = String(job.latencyMode || 'realtime').trim();
   const expectedHeight = job.expectedHeight == null ? null : Number(job.expectedHeight);
+  const fingerprint = Boolean(job.fingerprint);
   if (!fs.existsSync(htmlPath)) throw new Error(`pool missing HTML ${htmlPath}`);
   if (!fs.existsSync(payloadPath)) throw new Error(`pool missing payload ${payloadPath}`);
   if (!Number.isFinite(seed) || !Number.isFinite(width) || !Number.isFinite(bitrate)) throw new Error('pool seed/width/bitrate invalid');
@@ -112,7 +115,8 @@ async function renderJob(job) {
   const htmlRoot = path.dirname(htmlPath);
   const htmlName = path.basename(htmlPath);
   activeScenes.set(sceneId, { root: htmlRoot, htmlName, payload });
-  const page = await acquirePage();
+  const lease = await acquirePage();
+  const { page, slot } = lease;
   const uploadId = randomUUID();
   uploads.delete(uploadId);
   try {
@@ -130,7 +134,7 @@ async function renderJob(job) {
     if (bootError) throw new Error(bootError);
     const uploadUrl = `${origin}${apiPrefix}/h264/${uploadId}`;
     const evaluate0 = performance.now();
-    const meta = await page.evaluate(async ({ seed, width, bitrate, requestedCodec, latencyMode, queueLimit, uploadUrl, expectedHeight }) => {
+    const meta = await page.evaluate(async ({ seed, width, bitrate, requestedCodec, latencyMode, queueLimit, uploadUrl, expectedHeight, fingerprint }) => {
       if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') throw new Error('WebCodecs unavailable');
       const canvas = document.getElementById('c');
       if (!canvas) throw new Error('main canvas #c not found');
@@ -139,6 +143,27 @@ async function renderJob(job) {
       window.RISO.frame(0, width, seed);
       const actualWidth = Number(canvas.width), actualHeight = Number(canvas.height);
       if (expectedHeight != null && actualHeight !== expectedHeight) throw new Error(`runtime height mismatch: expected ${expectedHeight}, got ${actualHeight}`);
+
+      let stateFingerprint = null;
+      if (fingerprint) {
+        const frames = [...new Set([0, Math.floor(total * 0.25), Math.floor(total * 0.62), Math.max(0, total - 1)])];
+        const scratch = document.createElement('canvas');
+        scratch.width = 96;
+        scratch.height = 96;
+        const sx = scratch.getContext('2d', { willReadFrequently: true });
+        stateFingerprint = [];
+        for (const frame of frames) {
+          window.RISO.frame(frame, width, seed);
+          sx.clearRect(0, 0, 96, 96);
+          sx.drawImage(canvas, 0, 0, 96, 96);
+          const data = sx.getImageData(0, 0, 96, 96).data;
+          let hash = 2166136261 >>> 0;
+          for (let i = 0; i < data.length; i += 1) hash = Math.imul(hash ^ data[i], 16777619) >>> 0;
+          stateFingerprint.push({ frame, hash: hash.toString(16).padStart(8, '0') });
+        }
+        window.RISO.frame(0, width, seed);
+      }
+
       const codecCandidates = requestedCodec ? [requestedCodec] : ['avc1.4d002a','avc1.42002a','avc1.4d0028','avc1.420028'];
       let selected = null;
       for (const codec of codecCandidates) {
@@ -197,9 +222,9 @@ async function renderJob(job) {
       return {
         total, fps, width: actualWidth, height: actualHeight, codec: selected, encodedBytes: totalBytes, chunks: chunks.length,
         browserWallMs, renderMs, videoFrameMs, enqueueMs, uploadMs: performance.now() - upload0, maxQueue, decoderConfig,
-        isSecureContext: self.isSecureContext,
+        isSecureContext: self.isSecureContext, stateFingerprint,
       };
-    }, { seed, width, bitrate, requestedCodec, latencyMode, queueLimit, uploadUrl, expectedHeight });
+    }, { seed, width, bitrate, requestedCodec, latencyMode, queueLimit, uploadUrl, expectedHeight, fingerprint });
     const evaluateWallMs = performance.now() - evaluate0;
     const h264 = uploads.get(uploadId);
     if (!h264?.length) throw new Error(`pool missing H264 upload ${uploadId}`);
@@ -221,7 +246,10 @@ async function renderJob(job) {
       startup: { chromeLaunchMs: 0, pageLoadMs: +pageLoadMs.toFixed(3) },
       browser: meta,
       node: { evaluateWallMs: +evaluateWallMs.toFixed(3), base64DecodeMs: 0, muxMs: +muxMs.toFixed(3), timestampNormalization: `setts time_base=1/${meta.fps}, pts=dts=N, duration=1; MP4 track timescale=${meta.fps}` },
-      pool: { schema: 'framewright-webcodecs-pool-v1', pid: process.pid, concurrency, chromeLaunchMs: +chromeLaunchMs.toFixed(3), fullDocumentNavigation: true },
+      pool: {
+        schema: 'framewright-webcodecs-pool-v1', pid: process.pid, concurrency, pageSlot: slot, sequence,
+        chromeLaunchMs: +chromeLaunchMs.toFixed(3), fullDocumentNavigation: true,
+      },
       output: { h264Bytes: h264.byteLength, mp4Bytes: fs.statSync(out).size, ffprobe },
       totalRunMs: +(performance.now() - t0).toFixed(3),
     };
@@ -230,7 +258,7 @@ async function renderJob(job) {
   } finally {
     activeScenes.delete(sceneId);
     uploads.delete(uploadId);
-    releasePage(page);
+    releasePage(lease);
   }
 }
 
@@ -241,7 +269,7 @@ const server = http.createServer((req, res) => {
     const localPath = url.pathname.slice(apiPrefix.length) || '/';
     if (req.method === 'GET' && localPath === '/health') {
       res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, concurrency, pages: concurrency }));
+      res.end(JSON.stringify({ ok: true, concurrency, pages: concurrency, pid: process.pid, renderSequence }));
       return;
     }
     if (req.method === 'POST' && localPath === '/render') {
@@ -308,7 +336,7 @@ async function main() {
   const launch0 = performance.now();
   browser = await puppeteer.launch({ headless: true, protocolTimeout: 600_000, args });
   chromeLaunchMs = performance.now() - launch0;
-  for (let i = 0; i < concurrency; i += 1) availablePages.push(await browser.newPage());
+  for (let i = 0; i < concurrency; i += 1) availablePages.push({ page: await browser.newPage(), slot: i });
   await atomicJson(portFile, { schema: 'framewright-webcodecs-pool-v1', url: `${origin}${apiPrefix}`, pid: process.pid, concurrency, chromeLaunchMs: +chromeLaunchMs.toFixed(3) });
   console.log(JSON.stringify({ ready: true, url: `${origin}${apiPrefix}`, pid: process.pid, concurrency, chromeLaunchMs: +chromeLaunchMs.toFixed(3) }));
   await new Promise(resolve => {
