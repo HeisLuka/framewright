@@ -13,6 +13,12 @@ function replaceOnce(needle,replacement,label){
   source=source.slice(0,first)+replacement+source.slice(first+needle.length);
 }
 
+replaceOnce(
+  "const jobsN = Math.max(36, Math.min(720, Math.trunc(Number(process.env.JOBS || 180))));",
+  "const jobsN = Math.max(36, Math.min(1440, Math.trunc(Number(process.env.JOBS || 180))));",
+  'jobs clamp'
+);
+
 const warmupRe=/const warmupJobs = [^\n]+\n/;
 const warmupMatch=source.match(warmupRe);
 if(!warmupMatch)throw new Error('R47 warmup marker missing');
@@ -131,4 +137,4 @@ replaceOnce("# R34 mixed-catalog warm soak","# R47 state-recycle 1k+ freeze soak
 
 fs.mkdirSync(path.dirname(output),{recursive:true});
 fs.writeFileSync(output,source);
-console.log(JSON.stringify({input,output,contract:{batchSize:6,learnJobs:36,thresholdMultiplier:1.25,streakRequired:3,idleSettleMs:100}},null,2));
+console.log(JSON.stringify({input,output,contract:{batchSize:6,learnJobs:36,thresholdMultiplier:1.25,streakRequired:3,idleSettleMs:100,maxJobs:1440}},null,2));
