@@ -8,6 +8,7 @@ on:
       - 'Dockerfile.node-canvas-worker'
       - 'package.node-canvas-worker.json'
       - '.agents/skills/framewright/scripts/node-canvas-soak.mjs'
+      - '.agents/skills/framewright/scripts/e09-write-summary.mjs'
       - '.agents/skills/framewright/scripts/node-canvas-batch.mjs'
       - '.agents/skills/framewright/scripts/make-e08-fixtures.mjs'
       - '.agents/skills/framewright/scripts/prepare-pinned-font-template.mjs'
@@ -24,7 +25,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Syntax check
-        run: node --check .agents/skills/framewright/scripts/node-canvas-soak.mjs
+        run: |
+          node --check .agents/skills/framewright/scripts/node-canvas-soak.mjs
+          node --check .agents/skills/framewright/scripts/e09-write-summary.mjs
 
       - name: Build pinned browserless worker
         run: docker build -f Dockerfile.node-canvas-worker -t framewright-node-canvas:e09 .
@@ -79,17 +82,7 @@ jobs:
 
       - name: Write summary
         if: always()
-        run: |
-          if [ -f artifacts/e09/soak.json ]; then
-            node - <<'NODE'
-            const fs=require('fs');
-            const r=JSON.parse(fs.readFileSync('artifacts/e09/soak.json','utf8'));
-            const mib=n=>n/1048576;
-            let md='# E09 soak summary\n\n';
-            md+=`- canvas: ${r.canvasVersion}\n- host: ${r.host.cpus} vCPU · ${r.host.cpuModel}\n- videos: ${r.count}\n- total: ${(r.totalMs/60000).toFixed(2)} min\n- throughput: ${r.videosPerHour} videos/hour\n- p50: ${(r.perVideoMs.p50/1000).toFixed(3)} s\n- p95: ${(r.perVideoMs.p95/1000).toFixed(3)} s\n- peak Node+FFmpeg RSS: ${mib(r.peakCombinedRssBytes).toFixed(1)} MiB\n- Node RSS first-quartile median: ${mib(r.memory.firstQuartileMedianBytes).toFixed(1)} MiB\n- Node RSS last-quartile median: ${mib(r.memory.lastQuartileMedianBytes).toFixed(1)} MiB\n- quartile delta: ${mib(r.memory.quartileDeltaBytes).toFixed(1)} MiB\n- linear RSS slope: ${(r.memory.linearSlopeBytesPerVideo/1024).toFixed(1)} KiB/video\n- layout warning groups: ${r.layoutWarningGroups}\n`;
-            fs.writeFileSync('artifacts/e09/summary.md',md);console.log(md);
-            NODE
-          fi
+        run: node .agents/skills/framewright/scripts/e09-write-summary.mjs artifacts/e09/soak.json artifacts/e09/summary.md
 
       - uses: actions/upload-artifact@v4
         if: always()
