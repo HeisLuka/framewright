@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://newboo.dev/contracts/copy-language-v1.schema.json",
+  "title": "NEwBOO CopyLanguage v1",
+  "type": "object",
+  "required": ["schema", "copy_language_id", "copy_language_hash", "context_pack_id", "context_hash", "locale", "books"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "newboo-copy-language-v1" },
+    "copy_language_id": { "type": "string", "minLength": 1 },
+    "copy_language_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "context_pack_id": { "type": "string", "minLength": 1 },
+    "context_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "locale": { "type": "string", "minLength": 1 },
+    "books": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/BookLanguage" }
+    }
+  },
+  "$defs": {
+    "SurfaceForm": {
+      "type": "object",
+      "required": ["form_id", "fact_id", "surface_type", "text", "spoiler_level", "composition_groups"],
+      "additionalProperties": false,
+      "properties": {
+        "form_id": { "type": "string", "minLength": 1 },
+        "fact_id": { "type": "string", "minLength": 1 },
+        "surface_type": { "enum": ["sentence", "clause", "fragment", "question_body", "noun_phrase"] },
+        "text": { "type": "string", "minLength": 1 },
+        "spoiler_level": { "type": "integer", "minimum": 0 },
+        "composition_groups": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "LiteralPart": {
+      "type": "object",
+      "required": ["kind", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "literal" },
+        "text": { "type": "string" }
+      }
+    },
+    "SlotPart": {
+      "type": "object",
+      "required": ["kind", "slot_id", "fact_kinds", "surface_types"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "slot" },
+        "slot_id": { "type": "string", "minLength": 1 },
+        "fact_kinds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+        "surface_types": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["sentence", "clause", "fragment", "question_body", "noun_phrase"] } }
+      }
+    },
+    "Template": {
+      "type": "object",
+      "required": ["template_id", "role", "angle_types", "parts", "require_shared_group", "allow_fact_reuse", "max_output_chars"],
+      "additionalProperties": false,
+      "properties": {
+        "template_id": { "type": "string", "minLength": 1 },
+        "role": { "enum": ["hook", "tension", "payoff"] },
+        "angle_types": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["premise", "conflict", "identity", "emotion", "question", "world", "character", "thesis", "quote", "recommendation_context"] }
+        },
+        "parts": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "oneOf": [{ "$ref": "#/$defs/LiteralPart" }, { "$ref": "#/$defs/SlotPart" }] }
+        },
+        "require_shared_group": { "type": "boolean" },
+        "allow_fact_reuse": { "type": "boolean" },
+        "max_output_chars": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "BookLanguage": {
+      "type": "object",
+      "required": ["book_id", "surface_forms", "templates"],
+      "additionalProperties": false,
+      "properties": {
+        "book_id": { "type": "string", "minLength": 1 },
+        "surface_forms": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/SurfaceForm" } },
+        "templates": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/Template" } }
+      }
+    }
+  }
+}
