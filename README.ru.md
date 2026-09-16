@@ -21,6 +21,27 @@
 
 ---
 
+## NEwBOO Video Factory / локальная лаборатория Codex
+
+В этом форке также живёт детерминированная исследовательская фабрика книжных роликов NEwBOO.
+Для локальной работы через Codex используйте ветку `lab/framewright-research` и начните с
+[`docs/codex-local-lab.md`](docs/codex-local-lab.md).
+
+```text
+ContextPack / CopyLanguage
+  -> C35 CreativeIngress
+  -> C27 NarrativePlan
+  -> C19 CreativeSpec / RenderSpec
+  -> локальная очередь I07
+  -> I03 / FAST
+  -> MP4 + QA + provenance
+```
+
+Модель может свободно предлагать креативные варианты и новые переиспользуемые primitives,
+но факты, trust-state, канонические identity и физическое исполнение остаются за строгими
+контрактами. Исходный one-off workflow Framewright ниже по-прежнему поддерживается для
+отдельных ручных procedural-video задач.
+
 <p align="center">
   <img src="examples/ris-tv/preview.webp" alt="Превью примера RIS TV: телевизор включается, настроечная таблица, отсчёт, телетекст, осциллограф" width="720" />
 </p>
