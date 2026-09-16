@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1500" viewBox="0 0 1000 1500">
+  <rect width="1000" height="1500" fill="#16161a"/>
+  <circle cx="760" cy="260" r="260" fill="#ff4b2b"/>
+  <rect x="110" y="200" width="40" height="1100" fill="#f2eadf"/>
+  <path d="M240 1040 C420 790 580 820 760 560" fill="none" stroke="#f2eadf" stroke-width="18"/>
+  <path d="M300 1190 C470 990 670 1040 850 820" fill="none" stroke="#ff4b2b" stroke-width="8"/>
+  <text x="220" y="360" fill="#f2eadf" font-family="Arial, sans-serif" font-size="76" font-weight="700">АРХИВ</text>
+  <text x="220" y="450" fill="#f2eadf" font-family="Arial, sans-serif" font-size="76" font-weight="700">НОЧНОГО</text>
+  <text x="220" y="540" fill="#f2eadf" font-family="Arial, sans-serif" font-size="76" font-weight="700">ГОРОДА</text>
+  <text x="220" y="1280" fill="#f2eadf" font-family="Arial, sans-serif" font-size="36" letter-spacing="6">АЛЕКСЕЙ МОРОЗОВ</text>
+</svg>
