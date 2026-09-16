@@ -1,0 +1,70 @@
+name: Lab C28 Hybrid Catalog Fatigue
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/c28-catalog-fatigue.mjs'
+      - '.agents/skills/framewright/scripts/c28-hybrid-fatigue.mjs'
+      - '.github/workflows/lab-c28-hybrid-fatigue.yml'
+      - 'docs/c28-hybrid-fatigue.md'
+  workflow_dispatch:
+
+jobs:
+  hybrid-fatigue:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install pinned sampled-frame renderer
+        run: npm install --no-save @napi-rs/canvas@1.0.9
+      - name: Install pinned fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/c28-catalog-fatigue.mjs
+          node --check .agents/skills/framewright/scripts/c28-hybrid-fatigue.mjs
+      - name: Reproduce semantic-only baseline
+        run: node .agents/skills/framewright/scripts/c28-catalog-fatigue.mjs artifacts/c28/semantic-report.json
+      - name: Prepare canonical C20-C26 visual stack and real-cover corpus
+        run: |
+          node .agents/skills/framewright/scripts/make-c20-fixtures.mjs examples/book-ad-systems/generated-c20
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-c28-hybrid.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-c28-hybrid.html examples/book-ad-systems/index-c22-c28-hybrid.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-c22-c28-hybrid.html examples/book-ad-systems/index-e17-c28-hybrid.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-c28-hybrid.html examples/book-ad-systems/index-e17-e14-c28-hybrid.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-c28-hybrid.html examples/book-ad-systems/index-e18-c28-hybrid.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-c28-hybrid.html examples/book-ad-systems/index-c20-c28-hybrid.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-c28-hybrid.html examples/book-ad-systems/index-c21-c28-hybrid.html
+          node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c21-c28-hybrid.html examples/book-ad-systems/index-c23-c28-hybrid.html
+          node .agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs examples/book-ad-systems/index-c23-c28-hybrid.html examples/book-ad-systems/index-c24-c28-hybrid.html
+          node .agents/skills/framewright/scripts/prepare-c25-typography-axis.mjs examples/book-ad-systems/index-c24-c28-hybrid.html examples/book-ad-systems/index-c25-c28-hybrid.html
+          node .agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs examples/book-ad-systems/index-c25-c28-hybrid.html examples/book-ad-systems/index-c28-hybrid.html examples/book-ad-systems/platform-ui-profiles.v1.json
+      - name: Select with bounded preview and validate with independent sampled visual oracle
+        env:
+          SEMANTIC: artifacts/c28/semantic-report.json
+          HTML: examples/book-ad-systems/index-c28-hybrid.html
+          C20_DIR: examples/book-ad-systems/generated-c20
+          OUT_DIR: artifacts/c28-hybrid
+          REPORT: artifacts/c28-hybrid/report.json
+          PREVIEW_WIDTH: '135'
+          VALIDATE_WIDTH: '270'
+          SEMANTIC_TOLERANCE: '2.5'
+          MIN_VISUAL_RATIO: '1.05'
+          MAX_SEMANTIC_OVERLAP_RATIO: '1.10'
+          MAX_PREVIEW_MS_PER_BOOK: '600'
+        run: node .agents/skills/framewright/scripts/c28-hybrid-fatigue.mjs
+      - name: Show result
+        if: always()
+        run: cat artifacts/c28-hybrid/summary.md || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c28-hybrid-fatigue
+          path: |
+            artifacts/c28/semantic-report.json
+            artifacts/c28-hybrid/
+          retention-days: 14
