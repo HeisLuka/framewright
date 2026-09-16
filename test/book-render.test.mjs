@@ -29,6 +29,7 @@ test("maps public Newboo BookResponse without inventing cover identity", () => {
   assert.equal(payload.quoteLabel, "ABOUT THE BOOK");
   assert.equal(payload.cover.asset, null);
   assert.equal(payload.cover.publicUrl, "https://books.example/i/public.webp");
+  assert.equal(payload.metadata.year, undefined);
 });
 
 test("maps admin BookRepositoryRow cover_id to canonical Newboo source key", () => {
@@ -95,5 +96,5 @@ test("book-ad-v0 job is 15 seconds at 30 fps and survives base64url transport", 
 
   const token = encodeBookRenderJob(job);
   assert.match(token, /^[A-Za-z0-9_-]+$/);
-  assert.deepEqual(decodeBookRenderJob(token), job);
+  assert.deepEqual(decodeBookRenderJob(token), JSON.parse(JSON.stringify(job)));
 });
