@@ -1,0 +1,67 @@
+name: R31 Typography ROI Codec Policy
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r31-typography-roi-codec.mjs'
+      - '.github/workflows/r31-typography-roi-codec.yml'
+      - 'docs/r31-typography-roi-codec.md'
+  workflow_dispatch:
+
+jobs:
+  semantic-roi-codec:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r31-typography-roi-codec.mjs
+      - name: Prepare exact C18 fixture
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r31.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r31.html examples/book-ad-systems/index-e17-for-r31.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r31.html examples/book-ad-systems/index-e17-e14-for-r31.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r31.html examples/book-ad-systems/index-e18-for-r31.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r31
+      - name: Run semantic ROI codec scout
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r31.html
+          MANIFEST: examples/book-ad-systems/generated-r31/manifest.json
+          OUT_DIR: artifacts/r31
+          REPORT: artifacts/r31/report.json
+          BITRATES: '2000000,3000000,4000000,5000000'
+        run: node .agents/skills/framewright/scripts/r31-typography-roi-codec.mjs
+      - name: Validate report
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r31/report.json','utf8'));
+          if(!r.rows?.length) throw new Error('missing rows');
+          const x=r.rows.find(x=>x.id==='x264-crf22');
+          if(!x) throw new Error('missing x264 reference');
+          for(const row of r.rows) for(const [name,m] of Object.entries(row.metrics||{})) {
+            if(!Number.isFinite(m.ssim)||!Number.isFinite(m.psnr)) throw new Error(`${row.id}/${name}: invalid metric`);
+          }
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - name: Show result
+        if: always()
+        run: test -f artifacts/r31/summary.md && cat artifacts/r31/summary.md || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r31-typography-roi-codec
+          path: |
+            artifacts/r31/report.json
+            artifacts/r31/summary.md
+            artifacts/r31/*.mp4
+          retention-days: 14
