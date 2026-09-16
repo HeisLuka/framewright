@@ -6,8 +6,10 @@ on:
     paths:
       - '.agents/skills/framewright/scripts/r41-intel-hw-preflight.mjs'
       - '.agents/skills/framewright/scripts/r41-intel-hw-economics.mjs'
+      - '.agents/skills/framewright/scripts/r41-intel-hw-color-oracle.mjs'
       - '.github/workflows/r41-intel-hw-economics.yml'
       - 'docs/r41-intel-hw-economics.md'
+      - 'docs/r43-r41-hardware-color-oracle.md'
   workflow_dispatch:
     inputs:
       provider_monthly_price:
@@ -47,6 +49,7 @@ jobs:
         run: |
           node --check .agents/skills/framewright/scripts/r41-intel-hw-preflight.mjs
           node --check .agents/skills/framewright/scripts/r41-intel-hw-economics.mjs
+          node --check .agents/skills/framewright/scripts/r41-intel-hw-color-oracle.mjs
       - name: Confirm GitHub-hosted runner is not canonical hardware evidence
         run: |
           mkdir -p artifacts/r41
@@ -106,7 +109,38 @@ jobs:
           PROVIDER_PRICE_CURRENCY: ${{ inputs.provider_price_currency }}
           CHROME_EXECUTABLE: ${{ inputs.chrome_executable }}
         run: node .agents/skills/framewright/scripts/r41-intel-hw-economics.mjs
-      - name: Validate report completeness
+      - name: Resolve economics deep-pass gate
+        id: economics_gate
+        run: |
+          node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r41/report.json','utf8'));
+          console.log(`earned=${r.decision?.performanceEarned===true?'true':'false'}`);
+          NODE
+      - name: Run same-host R39/R40 color oracle
+        if: steps.economics_gate.outputs.earned == 'true'
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r41.html
+          MANIFEST: examples/book-ad-systems/generated-r41/manifest.json
+          OUT_DIR: artifacts/r41
+          REPORT: artifacts/r41/report.json
+          COLOR_REPORT: artifacts/r41/color-oracle.json
+          BITRATE: '3000000'
+          WEBCODECS_QUEUE: '8'
+          CHROME_EXECUTABLE: ${{ inputs.chrome_executable }}
+        run: node .agents/skills/framewright/scripts/r41-intel-hw-color-oracle.mjs
+      - name: Close color gate when economics already failed
+        if: steps.economics_gate.outputs.earned != 'true'
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const p='artifacts/r41/report.json';
+          const r=JSON.parse(fs.readFileSync(p,'utf8'));
+          r.decision.colorGate='not-run: performance/economics gate failed';
+          r.decision.standardEligible=false;
+          fs.writeFileSync(p,JSON.stringify(r,null,2)+'\n');
+          NODE
+      - name: Validate complete economics + color decision
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
@@ -118,12 +152,21 @@ jobs:
             if(x.failures.length) throw new Error(`${x.backend} c${x.concurrency} has failures`);
             if(!(x.videosPerHour>0&&x.cpuMsPerVideo>0)) throw new Error(`${x.backend} c${x.concurrency} invalid metrics`);
           }
-          if(typeof r.decision?.hardwareActivityProven!=='boolean'||typeof r.decision?.performanceEarned!=='boolean') throw new Error('missing decision');
+          if(typeof r.decision?.hardwareActivityProven!=='boolean'||typeof r.decision?.performanceEarned!=='boolean') throw new Error('missing economics decision');
+          if(r.decision.performanceEarned){
+            if(!r.colorOracle||typeof r.colorOracle.pass!=='boolean') throw new Error('performance pass without color oracle');
+            if(!['pass','fail'].includes(r.decision.colorGate)) throw new Error('unresolved color gate');
+            if(r.decision.standardEligible!==r.colorOracle.pass) throw new Error('STANDARD/color decision mismatch');
+          }else if(r.decision.standardEligible!==false){
+            throw new Error('economics failure cannot be STANDARD eligible');
+          }
           console.log(JSON.stringify(r.decision,null,2));
           NODE
       - name: Show result
         if: always()
-        run: test -f artifacts/r41/summary.md && cat artifacts/r41/summary.md || true
+        run: |
+          test -f artifacts/r41/summary.md && cat artifacts/r41/summary.md || true
+          test -f artifacts/r41/color-summary.md && cat artifacts/r41/color-summary.md || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -132,6 +175,12 @@ jobs:
             artifacts/r41/preflight.json
             artifacts/r41/report.json
             artifacts/r41/summary.md
+            artifacts/r41/color-oracle.json
+            artifacts/r41/color-summary.md
+            artifacts/r41/color-synthetic-reference.png
+            artifacts/r41/color-book-refs/*.png
+            artifacts/r41/color-book-decoded/*.png
+            artifacts/r41/color-*.mp4
             artifacts/r41/gpu-*.json
             artifacts/r41/sample-*.mp4
           retention-days: 14
