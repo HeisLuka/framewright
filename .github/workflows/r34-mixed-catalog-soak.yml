@@ -1,0 +1,100 @@
+name: R34 Mixed Catalog Warm Soak
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r34-mixed-catalog-soak.mjs'
+      - '.github/workflows/r34-mixed-catalog-soak.yml'
+      - 'docs/r34-mixed-catalog-soak.md'
+  workflow_dispatch:
+
+jobs:
+  mixed-catalog-soak:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r34-mixed-catalog-soak.mjs
+      - name: Prepare exact C18 catalog fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r34.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r34.html examples/book-ad-systems/index-e17-for-r34.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r34.html examples/book-ad-systems/index-e17-e14-for-r34.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r34.html examples/book-ad-systems/index-e18-for-r34.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r34
+      - name: Build canonical AAC fixture once
+        run: |
+          mkdir -p artifacts/r34
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i 'sine=frequency=110:sample_rate=48000:duration=12' \
+            -filter:a 'volume=0.06' -t 12 -c:a aac -b:a 192k \
+            -movflags +faststart artifacts/r34/track.m4a
+      - name: Run bounded mixed-catalog soak
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r34.html
+          MANIFEST: examples/book-ad-systems/generated-r34/manifest.json
+          OUT_DIR: artifacts/r34
+          AUDIO: artifacts/r34/track.m4a
+          REPORT: artifacts/r34/report.json
+          JOBS: '180'
+          BITRATE: '3000000'
+          WINDOW_SIZE: '36'
+          WARMUP_JOBS: '36'
+        run: node .agents/skills/framewright/scripts/r34-mixed-catalog-soak.mjs
+      - name: Correct memory gate for cgroup file-cache accounting
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const p='artifacts/r34/report.json';
+          const r=JSON.parse(fs.readFileSync(p,'utf8'));
+          const rawMemoryTrigger=Boolean(r.decision?.triggers?.memoryDrift);
+          const rssReliable=Number(r.decision?.rssGrowth||0)>=0.25 && Number(r.decision?.rssSlopeMiBPerJob||0)>=0.5;
+          r.decision.triggers.memoryDriftRawIncludingCgroupCurrent=rawMemoryTrigger;
+          r.decision.triggers.memoryDrift=rssReliable;
+          r.decision.cgroupMemoryCurrentIsAdvisory=true;
+          r.decision.memoryGateBasis='recursive process-tree RSS; memory.current retained only as advisory because it includes reclaimable file cache from temporary MP4/H264 IO';
+          r.decision.recycleEarnedRaw=Boolean(r.decision.recycleEarned);
+          r.decision.recycleEarned=Boolean(r.decision.triggers.failure||r.decision.triggers.latencyDrift||rssReliable);
+          r.decision.policy=r.decision.recycleEarned
+            ? 'state-based recycle earns a deep pass before final freeze soak'
+            : 'do not add recycle yet; keep the simpler warm c2/full-navigation pool and reserve 1k+ soak for final freeze';
+          fs.writeFileSync(p,JSON.stringify(r,null,2)+'\n');
+          fs.appendFileSync('artifacts/r34/summary.md',`\nMemory-gate correction: cgroup memory.current is advisory because it includes file cache; canonical recycle decision uses recursive process-tree RSS for memory drift. Corrected recycle decision: **${r.decision.recycleEarned?'EARNED DEEP PASS':'NOT EARNED'}**.\n`);
+          NODE
+      - name: Validate scout completeness
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r34/report.json','utf8'));
+          if(r.schema!=='framewright-r34-mixed-catalog-soak-v1') throw new Error('wrong report schema');
+          if(r.fixtureSet?.entries?.length!==36) throw new Error('expected 36 fixtures');
+          if((r.result.successfulJobs+r.result.failedJobs)!==r.config.jobsRequested) throw new Error('incomplete job accounting');
+          if(!r.result.windows?.length) throw new Error('missing soak windows');
+          if(r.config.windowSize!==36 || r.config.warmupJobs!==36) throw new Error('canonical R34 windows must equal one full 36-fixture catalog cycle');
+          if(r.decision.memoryGateBasis?.length<10) throw new Error('memory gate correction missing');
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - name: Show result
+        if: always()
+        run: |
+          test -f artifacts/r34/summary.md && cat artifacts/r34/summary.md || true
+          test -f artifacts/r34/report.json && node -e "const r=require('./artifacts/r34/report.json'); console.log(JSON.stringify({result:r.result,decision:r.decision},null,2));" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r34-mixed-catalog-soak
+          path: |
+            artifacts/r34/report.json
+            artifacts/r34/summary.md
+            artifacts/r34/track.m4a
+          retention-days: 14
