@@ -23,7 +23,7 @@ function __c24Load(){
   };
   return{stats:{hook,title,author,cta},score:+score.toFixed(2),desired};
 }
-function __c24DurationBand(score){if(score<=40)return 3;if(score<=90)return 5;if(score<=130)return 7;if(score<=210)return 9;if(score<=285)return 12;return 15;}
+function __c24DurationBand(score){if(score<=40)return 3;if(score<=100)return 5;if(score<=130)return 7;if(score<=210)return 9;if(score<=285)return 12;return 15;}
 function __c24Allocate(target,bounds,desired,keys){
   const frames={hook:0,book:0,cta:0},rawTotal=keys.reduce((s,k)=>s+Math.max(.001,desired[k]),0),targetShare={};
   for(const k of keys){const [lo,hi]=bounds[k];targetShare[k]=target*Math.max(.001,desired[k])/rawTotal;frames[k]=Math.round(clamp(targetShare[k],lo,hi));}
