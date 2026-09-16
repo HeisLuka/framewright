@@ -42,11 +42,11 @@ const server = http.createServer((req,res) => {
   if (u.pathname === scenePath) {
     const idx = Number(u.searchParams.get('fixture')); const entry = entries[idx];
     if (!entry) { res.writeHead(404); res.end(); return; }
-    const injected = html.replace('<script>', `<script>window.FRAMEWRIGHT_PAYLOAD=${JSON.stringify(entry.payload)};<\\/script>\n<script>`);
+    const injected = html.replace('<script>', `<script>window.FRAMEWRIGHT_PAYLOAD=${JSON.stringify(entry.payload)};<\/script>\n<script>`);
     res.writeHead(200, {'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); res.end(injected); return;
   }
   if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); res.end(); return; }
-  const rel = decodeURIComponent(u.pathname).replace(/^\\/+/, ''); const filename = path.resolve(root, rel || '.');
+  const rel = decodeURIComponent(u.pathname).replace(/^\/+/, ''); const filename = path.resolve(root, rel || '.');
   if (filename !== root && !filename.startsWith(root + path.sep)) { res.writeHead(403); res.end(); return; }
   fs.stat(filename, (error, stat) => { if (error || !stat.isFile()) { res.writeHead(404); res.end(); return; } res.writeHead(200, {'Content-Type':contentType(filename),'Cache-Control':'no-store'}); if (req.method === 'HEAD') res.end(); else fs.createReadStream(filename).pipe(res); });
 });
@@ -54,11 +54,11 @@ await new Promise((resolve,reject) => { server.once('error',reject); server.list
 const origin = `http://127.0.0.1:${server.address().port}`;
 
 function run(command,args) { return new Promise((resolve,reject) => { const child=spawn(command,args,{cwd:root,stdio:['ignore','pipe','pipe']}); let stdout='',stderr=''; child.stdout.on('data',d=>stdout+=d); child.stderr.on('data',d=>stderr+=d); child.once('error',reject); child.once('close',(code,signal)=>code===0?resolve({stdout,stderr}):reject(new Error(`${command} exited ${code ?? signal}\n${stderr.slice(-4000)}`))); }); }
-function cpuUsec() { try { return Number(fs.readFileSync('/sys/fs/cgroup/cpu.stat','utf8').match(/^usage_usec\\s+(\\d+)/m)?.[1] || 0); } catch { return 0; } }
+function cpuUsec() { try { return Number(fs.readFileSync('/sys/fs/cgroup/cpu.stat','utf8').match(/^usage_usec\s+(\d+)/m)?.[1] || 0); } catch { return 0; } }
 function processTreeRss() {
   try {
     const nodes=new Map();
-    for (const name of fs.readdirSync('/proc')) { if (!/^\\d+$/.test(name)) continue; try { const status=fs.readFileSync(`/proc/${name}/status`,'utf8'); const ppid=Number(status.match(/^PPid:\\s+(\\d+)/m)?.[1] || -1); const rss=Number(status.match(/^VmRSS:\\s+(\\d+)\\s+kB/m)?.[1] || 0)*1024; nodes.set(Number(name),{ppid,rss}); } catch {} }
+    for (const name of fs.readdirSync('/proc')) { if (!/^\d+$/.test(name)) continue; try { const status=fs.readFileSync(`/proc/${name}/status`,'utf8'); const ppid=Number(status.match(/^PPid:\s+(\d+)/m)?.[1] || -1); const rss=Number(status.match(/^VmRSS:\s+(\d+)\s+kB/m)?.[1] || 0)*1024; nodes.set(Number(name),{ppid,rss}); } catch {} }
     const wanted=new Set([process.pid]); let changed=true;
     while (changed) { changed=false; for (const [pid,node] of nodes) if (!wanted.has(pid) && wanted.has(node.ppid)) { wanted.add(pid); changed=true; } }
     let total=0; for (const pid of wanted) total += nodes.get(pid)?.rss || 0; return total;
