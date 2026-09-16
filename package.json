@@ -16,7 +16,10 @@
     "render": "node scripts/render.mjs frames 7 1920 5",
     "build": "bash scripts/build.sh out.mp4",
     "make": "bash scripts/make.sh",
-    "example": "HTML=examples/ris-tv/index.html node .agents/skills/framewright/scripts/look.mjs sheet 24 480 7 shots/example-sheet.png"
+    "example": "HTML=examples/ris-tv/index.html node .agents/skills/framewright/scripts/look.mjs sheet 24 480 7 shots/example-sheet.png",
+    "local:enqueue": "node .agents/skills/framewright/scripts/enqueue-local-render-job.mjs",
+    "local:worker": "node .agents/skills/framewright/scripts/local-render-worker.mjs",
+    "check:i07": "node contracts/check-i07-local-render-worker.mjs"
   },
   "dependencies": { "puppeteer": "^23.11.1" }
 }
