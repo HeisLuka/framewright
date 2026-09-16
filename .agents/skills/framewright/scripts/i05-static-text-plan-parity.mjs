@@ -26,20 +26,20 @@ function stable(v){if(Array.isArray(v))return v.map(stable);if(v&&typeof v==='ob
 const stableJson=v=>JSON.stringify(stable(v));
 const sha=v=>createHash('sha256').update(typeof v==='string'?v:stableJson(v)).digest('hex');
 function pixelSha(canvas){const d=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;return createHash('sha256').update(Buffer.from(d.buffer,d.byteOffset,d.byteLength)).digest('hex');}
-function planCore(bundle){return{schema:bundle.schema,version:bundle.version,environment:bundle.environment,plans:bundle.plans};}
+function planCore(bundle){return{schema:bundle.schema,version:bundle.version,environment:bundle.environment,consumption:bundle.consumption,plans:bundle.plans,fitSinglePlans:bundle.fitSinglePlans||[]};}
 function planDigest(bundle){return sha(planCore(bundle));}
 
 // @napi-rs/canvas exposes measureText as a native prototype method. Replacing an
 // individual context property is silently ineffective, so instrument the prototype
 // once and use a global counter around sequential diagnostic renders.
-let measureCalls=0,measurePrototype=null,nativeMeasureText=null;
+let measureCalls=0,measurePrototype=null;
 function ensureMeasureInstrumentation(ctx){
   const proto=Object.getPrototypeOf(ctx);
   if(measurePrototype){if(proto!==measurePrototype)throw new Error('unexpected multiple CanvasRenderingContext2D prototypes');return;}
   const native=proto.measureText;
   if(typeof native!=='function')throw new Error('native measureText method missing');
   Object.defineProperty(proto,'measureText',{configurable:true,writable:true,value:function(...args){measureCalls++;return native.apply(this,args);}});
-  measurePrototype=proto;nativeMeasureText=native;
+  measurePrototype=proto;
 }
 
 async function boot(source,payload,seed,label){
@@ -81,7 +81,9 @@ for(const style of styles){
     const bundle=cand.window.__I05_STATIC_TEXT_PLAN(),digest=planDigest(bundle);
     if(!bundle.plans.length)errors.push(`${style}/${platform}: no compiled text plans`);
     if(bundle.plans.some(p=>!['block','label','track'].includes(p.kind)))errors.push(`${style}/${platform}: unknown plan kind`);
-    rows.push({style,platform,initialEntries:initial.stats?.entries??null,entries:bundle.stats?.entries??bundle.plans.length,blockEntries:bundle.stats?.blockEntries??null,labelEntries:bundle.stats?.labelEntries??null,trackEntries:bundle.stats?.trackEntries??null,planDigest:digest,stats:bundle.stats,checks});
+    if(bundle.consumption?.label!=='i05-fitSingleSize-plan')errors.push(`${style}/${platform}: wrong label consumption policy`);
+    if(!(bundle.fitSinglePlans||[]).length)errors.push(`${style}/${platform}: no lowered fitSingleSize plans`);
+    rows.push({style,platform,initialEntries:initial.stats?.entries??null,entries:bundle.stats?.entries??bundle.plans.length,fitSingleEntries:bundle.stats?.fitSingleEntries??bundle.fitSinglePlans?.length??0,blockEntries:bundle.stats?.blockEntries??null,labelEntries:bundle.stats?.labelEntries??null,trackEntries:bundle.stats?.trackEntries??null,planDigest:digest,stats:bundle.stats,checks});
   }
 }
 
@@ -96,10 +98,10 @@ for(const style of styles){
   const fBundle=forward.window.__I05_STATIC_TEXT_PLAN(),rBundle=reverse.window.__I05_STATIC_TEXT_PLAN(),fDigest=planDigest(fBundle),rDigest=planDigest(rBundle),orderIndependent=fDigest===rDigest;
   if(!orderIndependent)errors.push(`${style}: plan bundle depends on frame traversal order`);
   const reduction=baseMeasures?1-forwardMeasures/baseMeasures:0;if(!baseMeasures)errors.push(`${style}: measureText instrumentation observed zero baseline calls`);else if(reduction<.25)errors.push(`${style}: measureText reduction ${(reduction*100).toFixed(1)}% < 25%`);
-  diagnostics.push({style,frames:plan.total_frames,baseline:{measureTextCalls:baseMeasures,wallMs:+baseMs.toFixed(3)},compiledForward:{measureTextCalls:forwardMeasures,wallMs:+forwardMs.toFixed(3),entries:fBundle.stats?.entries??fBundle.plans.length,digest:fDigest},compiledReverse:{measureTextCalls:reverseMeasures,wallMs:+reverseMs.toFixed(3),entries:rBundle.stats?.entries??rBundle.plans.length,digest:rDigest},measureTextReduction:+reduction.toFixed(6),orderIndependent});
+  diagnostics.push({style,frames:plan.total_frames,baseline:{measureTextCalls:baseMeasures,wallMs:+baseMs.toFixed(3)},compiledForward:{measureTextCalls:forwardMeasures,wallMs:+forwardMs.toFixed(3),entries:fBundle.stats?.entries??fBundle.plans.length,fitSingleEntries:fBundle.stats?.fitSingleEntries??fBundle.fitSinglePlans?.length??0,digest:fDigest},compiledReverse:{measureTextCalls:reverseMeasures,wallMs:+reverseMs.toFixed(3),entries:rBundle.stats?.entries??rBundle.plans.length,fitSingleEntries:rBundle.stats?.fitSingleEntries??rBundle.fitSinglePlans?.length??0,digest:rDigest},measureTextReduction:+reduction.toFixed(6),orderIndependent});
 }
 
 const report={schema:'framewright-i05-static-text-plan-parity-v1',sourcePlan:{id:item.id,narrativePlanId:plan.narrative_plan_id,totalFrames:plan.total_frames,roles:plan.roles.map(r=>({role:r.role,frames:r.frames}))},matrix:{styles,platforms,scenes:rows.length,checkpointsPerScene:checkpoints.length},pixelParity:{total:totalCheckpoints,firstPassExact,replayExact,firstPassRatio:+(firstPassExact/Math.max(1,totalCheckpoints)).toFixed(6),replayRatio:+(replayExact/Math.max(1,totalCheckpoints)).toFixed(6)},semanticParity:{exact:semanticExact,total:totalCheckpoints,ratio:+(semanticExact/Math.max(1,totalCheckpoints)).toFixed(6)},diagnostics,rows,errors,passed:errors.length===0};
 fs.mkdirSync(path.dirname(reportPath),{recursive:true});fs.writeFileSync(reportPath,JSON.stringify(report,null,2)+'\n');
-console.log(JSON.stringify({matrix:report.matrix,pixelParity:report.pixelParity,semanticParity:report.semanticParity,diagnostics:report.diagnostics.map(x=>({style:x.style,baselineMeasures:x.baseline.measureTextCalls,compiledMeasures:x.compiledForward.measureTextCalls,reduction:x.measureTextReduction,entries:x.compiledForward.entries,orderIndependent:x.orderIndependent})),errors:errors.length,passed:report.passed},null,2));
+console.log(JSON.stringify({matrix:report.matrix,pixelParity:report.pixelParity,semanticParity:report.semanticParity,diagnostics:report.diagnostics.map(x=>({style:x.style,baselineMeasures:x.baseline.measureTextCalls,compiledMeasures:x.compiledForward.measureTextCalls,reduction:x.measureTextReduction,entries:x.compiledForward.entries,fitSingleEntries:x.compiledForward.fitSingleEntries,orderIndependent:x.orderIndependent})),errors:errors.length,passed:report.passed},null,2));
 if(errors.length)throw new Error(`I05 static text plan gate failed with ${errors.length} errors`);
