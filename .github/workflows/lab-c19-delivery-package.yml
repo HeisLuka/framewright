@@ -1,0 +1,98 @@
+name: Lab C19 Delivery Package
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - '.agents/skills/framewright/scripts/c19-build-delivery-package.mjs'
+      - '.agents/skills/framewright/scripts/c19-validate-delivery-package.mjs'
+      - '.agents/skills/framewright/scripts/c19-make-audio-spec-fixture.mjs'
+      - '.agents/skills/framewright/scripts/e15-build-campaign-package.mjs'
+      - '.agents/skills/framewright/scripts/e15-validate-campaign-package.mjs'
+      - '.agents/skills/framewright/scripts/make-e13-routed-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/make-e14-variant-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e12-motion-template.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e14-variant-template.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs'
+      - '.agents/skills/framewright/scripts/e14-diversity.mjs'
+      - '.agents/skills/framewright/scripts/node-canvas-batch.mjs'
+      - 'contracts/factory-identity-v1.mjs'
+      - 'contracts/audio-identity-v1.mjs'
+      - 'contracts/video-factory-v1.schema.json'
+      - '.github/workflows/lab-c19-delivery-package.yml'
+  workflow_dispatch:
+
+jobs:
+  bounded-delivery-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install pinned worker dependencies
+        run: npm install --no-save @napi-rs/canvas@1.0.9
+      - name: Install FFmpeg + pinned fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/c19-build-delivery-package.mjs
+          node --check .agents/skills/framewright/scripts/c19-validate-delivery-package.mjs
+          node --check .agents/skills/framewright/scripts/c19-make-audio-spec-fixture.mjs
+      - name: Prepare E15 source and C18 responsive delivery template
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-c19.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e12-for-c19.html examples/book-ad-systems/index-e14.html
+          node .agents/skills/framewright/scripts/make-e14-variant-fixtures.mjs examples/book-ad-systems/generated-e14
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-c19.html examples/book-ad-systems/index-e17-for-c19.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-c19.html examples/book-ad-systems/index-e17-e14-for-c19.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-c19.html examples/book-ad-systems/index-e18-for-c19.html
+      - name: Render E15 candidate evidence
+        env:
+          HTML: examples/book-ad-systems/index-e14.html
+          MANIFEST: examples/book-ad-systems/generated-e14/manifest.json
+          OUT_DIR: artifacts/e15/videos
+          REPORT: artifacts/e15/batch.json
+          WIDTH: '1080'
+          PRESET: veryfast
+          CRF: '22'
+        run: node .agents/skills/framewright/scripts/node-canvas-batch.mjs
+      - name: Measure source diversity
+        run: node .agents/skills/framewright/scripts/e14-diversity.mjs artifacts/e15/batch.json examples/book-ad-systems/generated-e14/manifest.json artifacts/e15/diversity.json
+      - name: Build canonical E15 source package
+        env:
+          TEMPLATE: examples/book-ad-systems/index-e14.html
+          RENDERER: .agents/skills/framewright/scripts/node-canvas-batch.mjs
+          NEAR_DUP_THRESHOLD: '0.015'
+        run: node .agents/skills/framewright/scripts/e15-build-campaign-package.mjs examples/book-ad-systems/generated-e14/manifest.json examples/book-ad-systems/generated-e13/route-report.json artifacts/e15/batch.json artifacts/e15/diversity.json artifacts/e15/package
+      - name: Build C19 package with equivalent request orderings
+        run: |
+          mkdir -p artifacts/c19
+          node .agents/skills/framewright/scripts/c19-build-delivery-package.mjs artifacts/e15/package examples/book-ad-systems/generated-e14/manifest.json artifacts/c19/delivery-package.json 'landscape,vertical,square,vertical' examples/book-ad-systems/index-e18-for-c19.html
+          node .agents/skills/framewright/scripts/c19-build-delivery-package.mjs artifacts/e15/package examples/book-ad-systems/generated-e14/manifest.json artifacts/c19/delivery-package-check.json 'square,landscape,vertical' examples/book-ad-systems/index-e18-for-c19.html
+          node .agents/skills/framewright/scripts/c19-build-delivery-package.mjs artifacts/e15/package examples/book-ad-systems/generated-e14/manifest.json artifacts/c19/vertical-only.json 'vertical' examples/book-ad-systems/index-e18-for-c19.html
+      - name: Exercise VC-7 AudioSpec producer path without inventing campaign audio
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'anullsrc=r=48000:cl=mono' -t 12 -c:a pcm_s16le artifacts/c19/audio-source.wav
+          node .agents/skills/framewright/scripts/c19-make-audio-spec-fixture.mjs artifacts/c19/audio-source.wav artifacts/c19/audio-spec.json
+          node .agents/skills/framewright/scripts/c19-build-delivery-package.mjs artifacts/e15/package examples/book-ad-systems/generated-e14/manifest.json artifacts/c19/delivery-package-audio-adoption.json 'vertical,square,landscape' examples/book-ad-systems/index-e18-for-c19.html artifacts/c19/audio-spec.json
+      - name: Validate current factory identity, bounded expansion and determinism
+        run: node .agents/skills/framewright/scripts/c19-validate-delivery-package.mjs artifacts/c19/delivery-package.json artifacts/c19/delivery-package-check.json artifacts/e15/package artifacts/c19/vertical-only.json artifacts/c19/delivery-package-audio-adoption.json
+      - name: Keep compact provenance inputs
+        run: |
+          mkdir -p artifacts/c19/source
+          cp artifacts/e15/package/campaign-manifest.json artifacts/c19/source/e15-campaign-manifest.json
+          cp artifacts/e15/package/candidate-catalog.json artifacts/c19/source/e15-candidate-catalog.json
+          cp examples/book-ad-systems/generated-e14/manifest.json artifacts/c19/source/e14-manifest.json
+          cp examples/book-ad-systems/generated-e13/route-report.json artifacts/c19/source/e13-route-report.json
+          cp examples/book-ad-systems/index-e18-for-c19.html artifacts/c19/source/responsive-delivery-template.html
+          rm -f artifacts/c19/delivery-package-check.json artifacts/c19/audio-source.wav
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c19-delivery-package
+          path: artifacts/c19/
+          retention-days: 14
