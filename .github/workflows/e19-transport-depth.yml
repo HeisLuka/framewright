@@ -1,0 +1,54 @@
+name: E19 transport depth
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/scripts/bench-transport-depth.mjs"
+      - ".github/workflows/e19-transport-depth.yml"
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - name: Syntax
+        run: node --check .agents/skills/framewright/scripts/bench-transport-depth.mjs
+      - name: Transport depth 720
+        run: |
+          mkdir -p artifacts
+          node .agents/skills/framewright/scripts/bench-transport-depth.mjs artifacts/e19-720.json 720 32
+      - name: Transport depth 1080
+        run: node .agents/skills/framewright/scripts/bench-transport-depth.mjs artifacts/e19-1080.json 1080 16
+      - name: Summary
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const p720 = JSON.parse(fs.readFileSync('artifacts/e19-720.json', 'utf8'));
+          const p1080 = JSON.parse(fs.readFileSync('artifacts/e19-1080.json', 'utf8'));
+          const compact = (p) => ({
+            width: p.width,
+            height: p.height,
+            bytesPerFrame: p.bytesPerFrame,
+            depth4ConfirmedAt50Percent: p.hypothesis.depth4ConfirmedAt50Percent,
+            best: p.best,
+            runs: p.runs.map(({depth,millisecondsPerFrame,framesPerSecond,mebibytesPerSecond,throughputVsDepth1}) => ({depth,millisecondsPerFrame,framesPerSecond,mebibytesPerSecond,throughputVsDepth1})),
+          });
+          const summary = { experiment: 'E19-transport-depth-summary', profiles: [compact(p720), compact(p1080)] };
+          fs.writeFileSync('artifacts/e19-summary.json', JSON.stringify(summary, null, 2) + '\n');
+          console.log(JSON.stringify(summary, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e19-transport-depth
+          path: |
+            artifacts/e19-720.json
+            artifacts/e19-1080.json
+            artifacts/e19-summary.json
