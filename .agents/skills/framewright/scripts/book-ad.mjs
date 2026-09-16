@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { createHash, createHmac } from "node:crypto";
 import { spawn } from "node:child_process";
-import fs from "node:fs";
 import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -18,12 +17,13 @@ const ROOT = path.resolve(SCRIPT_DIR, "../../../..");
 const BOOK_AD_HTML = path.join(ROOT, "examples/book-ad-v0/index.html");
 const LOOK_SCRIPT = path.join(ROOT, ".agents/skills/framewright/scripts/look.mjs");
 const RENDER_SCRIPT = path.join(ROOT, ".agents/skills/framewright/scripts/render.mjs");
+const RAW_RENDER_SCRIPT = path.join(ROOT, ".agents/skills/framewright/scripts/render-raw.mjs");
 const BUILD_SCRIPT = path.join(ROOT, ".agents/skills/framewright/scripts/build.sh");
 const INVOCATION_CWD = process.cwd();
 
 const usage = () => {
   console.error(`usage:
-  node .agents/skills/framewright/scripts/book-ad.mjs <info|sheet|shot|render|video> [options]
+  node .agents/skills/framewright/scripts/book-ad.mjs <info|sheet|shot|render|video|video-raw> [options]
 
 book source:
   --book-id <id>                 fetch a Newboo book
@@ -53,9 +53,12 @@ render:
   --cells <n>                    sheet default 16
   --cell-width <px>              sheet default 270
   --tabs <n>                     render/video default 5
-  --frames-dir <path>            render/video default frames
+  --frames-dir <path>            PNG render/video default frames
   --out <path>                   sheet/shot/video output path
   --job-out <path>               write the immutable render job JSON
+
+video uses the reference PNG -> disk -> ffmpeg path.
+video-raw uses Canvas RGBA -> ordered local stream -> ffmpeg with no frame PNGs.
 `);
 };
 
@@ -89,6 +92,10 @@ const nonEmpty = (value) => {
   const text = String(value ?? "").trim();
   return text || "";
 };
+
+const flag = (value) => (
+  value === true || ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase())
+);
 
 const numberOption = (options, key, fallback) => {
   const raw = options[key];
@@ -327,7 +334,7 @@ const run = (command, args, env = {}) => new Promise((resolve, reject) => {
 const main = async () => {
   const { positionals, options } = parseArgs(process.argv.slice(2));
   const command = positionals[0] || "sheet";
-  if (!["info", "sheet", "shot", "render", "video"].includes(command)) {
+  if (!["info", "sheet", "shot", "render", "video", "video-raw"].includes(command)) {
     usage();
     process.exitCode = 2;
     return;
@@ -335,6 +342,7 @@ const main = async () => {
 
   const apiBase = nonEmpty(options["api-base"] || process.env.NEWBOO_API_BASE || "http://127.0.0.1:8000/api/v1");
   const apiHeaders = requestHeaders(options);
+  const strictAssets = flag(options["strict-assets"]);
   let bookInput;
   if (options["book-json"]) {
     bookInput = await readJsonFile(String(options["book-json"]));
@@ -348,7 +356,7 @@ const main = async () => {
       bookId,
       apiBase,
       headers: apiHeaders,
-      publicOnly: options["public-only"] === true,
+      publicOnly: flag(options["public-only"]),
     });
   }
 
@@ -375,10 +383,10 @@ const main = async () => {
   try {
     stagedCover = await stageCover({ payload, options, apiBase, apiHeaders });
   } catch (error) {
-    if (options["strict-assets"] === true) throw error;
+    if (strictAssets) throw error;
     console.warn(`cover staging failed: ${error.message}`);
   }
-  if (!stagedCover && options["strict-assets"] === true) {
+  if (!stagedCover && strictAssets) {
     throw new Error("no book cover could be staged");
   }
   if (stagedCover) console.log(`cover staged: ${stagedCover}`);
@@ -390,9 +398,10 @@ const main = async () => {
     query.set("coverUrl", pathToFileURL(stagedCover).href);
     query.set("coverCrossOrigin", "off");
   }
-  if (options["strict-assets"] === true) query.set("strictAssets", "1");
+  if (strictAssets) query.set("strictAssets", "1");
   const sharedEnv = {
     HTML: BOOK_AD_HTML,
+    FW_ROOT: ROOT,
     FW_QUERY: query.toString(),
   };
 
@@ -418,9 +427,15 @@ const main = async () => {
     return;
   }
 
-  const framesDir = path.resolve(INVOCATION_CWD, nonEmpty(options["frames-dir"] || "frames"));
   const width = Math.round(numberOption(options, "width", 1080));
   const tabs = Math.round(numberOption(options, "tabs", 5));
+  if (command === "video-raw") {
+    const output = path.resolve(INVOCATION_CWD, nonEmpty(options.out || "book-ad-v0-raw.mp4"));
+    await run(process.execPath, [RAW_RENDER_SCRIPT, output, String(seed), String(width), String(tabs)], sharedEnv);
+    return;
+  }
+
+  const framesDir = path.resolve(INVOCATION_CWD, nonEmpty(options["frames-dir"] || "frames"));
   await run(process.execPath, [RENDER_SCRIPT, framesDir, String(seed), String(width), String(tabs)], sharedEnv);
   if (command === "video") {
     const output = path.resolve(INVOCATION_CWD, nonEmpty(options.out || "book-ad-v0.mp4"));
