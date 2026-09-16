@@ -16,6 +16,8 @@
     "render": "node scripts/render.mjs frames 7 1920 5",
     "build": "bash scripts/build.sh out.mp4",
     "make": "bash scripts/make.sh",
+    "book-ad": "node .agents/skills/framewright/scripts/book-ad.mjs",
+    "test": "node --test test/*.test.mjs",
     "example": "HTML=examples/ris-tv/index.html node .agents/skills/framewright/scripts/look.mjs sheet 24 480 7 shots/example-sheet.png"
   },
   "dependencies": {
