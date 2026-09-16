@@ -1,0 +1,116 @@
+name: E13 native CRT core
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/native/crt-core.cpp"
+      - ".agents/skills/framewright/scripts/crt-core-reference.mjs"
+      - ".agents/skills/framewright/scripts/post-native-crt-core.mjs"
+      - ".agents/skills/framewright/scripts/verify-native-crt-core.mjs"
+      - ".agents/skills/framewright/scripts/render-raw.mjs"
+      - ".github/workflows/e13-native-crt-core.yml"
+  workflow_dispatch:
+
+jobs:
+  native-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Compile native CRT core
+        run: >-
+          g++ -O3 -std=c++20 -pthread
+          .agents/skills/framewright/native/crt-core.cpp
+          -o artifacts/crt-core
+      - name: Syntax checks
+        run: |
+          node --check .agents/skills/framewright/scripts/crt-core-reference.mjs
+          node --check .agents/skills/framewright/scripts/post-native-crt-core.mjs
+          node --check .agents/skills/framewright/scripts/verify-native-crt-core.mjs
+      - name: Native CRT byte parity
+        run: >-
+          node .agents/skills/framewright/scripts/verify-native-crt-core.mjs
+          artifacts/crt-core
+      - name: Composition floor
+        env:
+          HTML: examples/ris-tv/index.html
+          AR: "9:16"
+          START: "0"
+          END: "30"
+          PRESET: ultrafast
+          CRF: "28"
+          POST_MODULE: .agents/skills/framewright/scripts/post-identity.mjs
+          METRICS_OUT: artifacts/e13-identity.json
+        run: >-
+          node .agents/skills/framewright/scripts/render-raw.mjs
+          artifacts/e13-identity.mp4 7 720 3
+      - name: Native CRT core path
+        env:
+          HTML: examples/ris-tv/index.html
+          AR: "9:16"
+          START: "0"
+          END: "30"
+          PRESET: ultrafast
+          CRF: "28"
+          CRT_NATIVE_BIN: artifacts/crt-core
+          POST_MODULE: .agents/skills/framewright/scripts/post-native-crt-core.mjs
+          METRICS_OUT: artifacts/e13-native-core.json
+        run: >-
+          node .agents/skills/framewright/scripts/render-raw.mjs
+          artifacts/e13-native-core.mp4 7 720 3
+      - name: Legacy full CRT path
+        env:
+          HTML: examples/ris-tv/index.html
+          AR: "9:16"
+          START: "0"
+          END: "30"
+          PRESET: ultrafast
+          CRF: "28"
+          METRICS_OUT: artifacts/e13-legacy-full.json
+        run: >-
+          node .agents/skills/framewright/scripts/render-raw.mjs
+          artifacts/e13-legacy-full.mp4 7 720 3
+      - name: Summarize E13
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const read = (name) => JSON.parse(fs.readFileSync(name, 'utf8'));
+          const identity = read('artifacts/e13-identity.json');
+          const native = read('artifacts/e13-native-core.json');
+          const legacy = read('artifacts/e13-legacy-full.json');
+          for (const metrics of [identity, native, legacy]) {
+            if (metrics.frames !== 30) throw new Error(`incomplete render: ${metrics.frames}`);
+            if (metrics.incomingRgbaBytes !== metrics.writtenRgbaBytes) {
+              throw new Error('RGBA byte count mismatch');
+            }
+          }
+          if (!(native.postMillisecondsPerFrame > 0)) {
+            throw new Error('native CRT post timing missing');
+          }
+          console.log(JSON.stringify({
+            note: 'native-core excludes Chromium bloom and glass layers',
+            identityFps: identity.framesPerSecond,
+            nativeCoreFps: native.framesPerSecond,
+            legacyFullFps: legacy.framesPerSecond,
+            nativePostMsPerFrame: native.postMillisecondsPerFrame,
+            nativeVsIdentityThroughputRatio: native.framesPerSecond / identity.framesPerSecond,
+            nativeVsLegacyThroughputRatio: native.framesPerSecond / legacy.framesPerSecond,
+          }, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e13-native-crt-core
+          path: |
+            artifacts/e13-*.json
+            artifacts/e13-*.mp4
