@@ -29,10 +29,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
       - name: Compile native CRT core
-        run: >-
-          g++ -O3 -std=c++20 -pthread
-          .agents/skills/framewright/native/crt-core.cpp
-          -o artifacts/crt-core
+        run: |
+          mkdir -p artifacts
+          g++ -O3 -std=c++20 -pthread \
+            .agents/skills/framewright/native/crt-core.cpp \
+            -o artifacts/crt-core
       - name: Syntax checks
         run: |
           node --check .agents/skills/framewright/scripts/crt-core-reference.mjs
