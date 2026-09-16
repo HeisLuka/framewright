@@ -1,0 +1,93 @@
+name: R32 Canonical AAC Deep Pass
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r32-canonical-aac-deep.mjs'
+      - '.github/workflows/r32-canonical-aac-deep.yml'
+      - 'docs/r32-canonical-aac-deep.md'
+  workflow_dispatch:
+
+jobs:
+  canonical-aac-deep:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r32-canonical-aac-deep.mjs
+
+      - name: Prepare exact C18 production-shaped scene
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r32.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r32.html examples/book-ad-systems/index-e17-for-r32.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r32.html examples/book-ad-systems/index-e17-e14-for-r32.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r32.html examples/book-ad-systems/index-e18-for-r32.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r32
+
+      - name: Build deterministic source audio
+        run: |
+          mkdir -p artifacts/r32
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i 'sine=frequency=110:sample_rate=48000:duration=12' \
+            -filter:a 'volume=0.06' -c:a pcm_s16le artifacts/r32/track.wav
+
+      - name: Compare current audio path vs canonical AAC miss/hit
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r32.html
+          MANIFEST: examples/book-ad-systems/generated-r32/manifest.json
+          OUT_DIR: artifacts/r32
+          TRACK: artifacts/r32/track.wav
+          AUDIO_CACHE_DIR: artifacts/r32/audio-cache
+          REPORT: artifacts/r32/report.json
+          SUMMARY: artifacts/r32/summary.md
+          BOOK_ID: river-station
+          VARIANT: hook-first
+          PROFILE: vertical
+          REPEATS: '3'
+          BITRATE: '2000000'
+          AUDIO_BITRATE: 192k
+          WEBCODECS_QUEUE: '8'
+        run: node .agents/skills/framewright/scripts/r32-canonical-aac-deep.mjs
+
+      - name: Validate deep-pass contract
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r32/report.json','utf8'));
+          if(!r.audioIdentity.audioSpecId.startsWith('fwa1_')) throw new Error('bad audio_spec_id');
+          if(!r.audioIdentity.canonicalArtifactSha256) throw new Error('missing canonical audio hash');
+          if(r.rows.cachedMiss[0].audio.cacheHit!==false) throw new Error('expected explicit cache miss');
+          if(r.rows.cachedHit.some(x=>x.audio.cacheHit!==true)) throw new Error('expected cached audio hits');
+          for(const group of Object.values(r.rows)) for(const x of group){
+            const v=x.media.streams.find(s=>s.codec_type==='video');
+            const a=x.media.streams.find(s=>s.codec_type==='audio');
+            if(Number(v?.nb_read_frames)!==360) throw new Error(`${x.id}: frame mismatch`);
+            if(a?.codec_name!=='aac') throw new Error(`${x.id}: AAC missing`);
+          }
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+
+      - name: Show result
+        if: always()
+        run: |
+          test -f artifacts/r32/summary.md && cat artifacts/r32/summary.md || true
+          test -f artifacts/r32/report.json && node -e "const r=require('./artifacts/r32/report.json'); console.log(JSON.stringify(r.summary,null,2));" || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r32-canonical-aac-deep
+          path: artifacts/r32/
+          retention-days: 14
