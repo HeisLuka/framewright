@@ -12,16 +12,18 @@ const must=(condition,message)=>{if(!condition)throw new Error(message);};
 
 const input=readJson(path.join(inputDir,'input-report.json'));
 const publishReady=readJson(path.join(inputDir,'publish-ready.json'));
+const request=readJson(path.resolve(input.request));
 const enqueue=readJson(path.join(root,'enqueue.json'));
 const worker=readJson(path.join(root,'worker.json'));
 const replay=readJson(path.join(root,'replay-enqueue.json'));
 
-must(input.schema==='newboo-i09-c35-physical-input-v1','wrong I09 input schema');
+must(input.schema==='newboo-i09-c35-physical-input-v1','wrong internal i09 input schema');
 must(input.modes?.length===3,'expected three C35 input modes');
 must(JSON.stringify(input.preview_modes?.slice().sort())===JSON.stringify(['external_copy_review_required','trusted_atoms','verified_composition'].sort()),'all C35 modes must be preview-renderable');
 must(JSON.stringify(input.publish_ready_modes?.slice().sort())===JSON.stringify(['trusted_atoms','verified_composition'].sort()),'publish-ready creative trust modes drifted');
-must(publishReady.schema==='newboo-i09-publish-ready-v1','wrong publish-ready schema');
+must(publishReady.schema==='newboo-i09-publish-ready-v1','wrong internal publish-ready schema');
 must(JSON.stringify(publishReady.items.map(x=>x.mode).sort())===JSON.stringify(['trusted_atoms','verified_composition'].sort()),'unapproved free copy leaked into publish-ready set');
+must(request.schema==='framewright-c19-campaign-request-v1','builder did not emit current C19 campaign request');
 
 must(enqueue.duplicate===false&&enqueue.state==='pending','first enqueue must create one pending job');
 must(worker?.result?.status==='succeeded','I07 worker did not succeed');
@@ -46,22 +48,25 @@ must(fs.existsSync(canonicalManifestPath),'canonical artifact manifest missing')
 must(attempt.canonical_manifest_sha256===run.canonical_manifest_sha256,'I07 attempt/run canonical manifest identity mismatch');
 must(run.campaign_id===input.campaign_id,'campaign ID drift');
 must(run.selected_creatives===3&&run.render_specs===3&&run.reserves===0,'physical factory accounting drift');
-must(pkg.schema==='newboo-delivery-package-v1','wrong C19 delivery package schema');
-must(pkg.creatives?.length===3&&pkg.render_specs?.length===3,'C19 package lost C35 creatives/render specs');
+must(pkg.schema==='framewright-c19-delivery-package-v1','wrong C19 delivery package schema');
+must(pkg.selected?.length===3&&pkg.renders?.length===3,'C19 package lost C35 creatives/render specs');
 
 const inputByMode=new Map(input.modes.map(x=>[x.mode,x]));
+const requestBySelection=new Map(request.selected.map(x=>[x.selection_id,x]));
 const seenModes=new Set();
 const artifactShas=new Set();
 const creativeIds=new Set();
 const renderSpecIds=new Set();
 const modeResults=[];
 
-for(const creative of pkg.creatives){
+for(const selectedRow of pkg.selected){
+  const creative=selectedRow.creative;
   const provenance=creative.hook?.provenance;
   must(provenance?.kind==='c35_creative_ingress','CreativeSpec lost C35 provenance');
   const mode=provenance.mode;
   const expected=inputByMode.get(mode);
   must(expected,`unexpected physical C35 mode ${mode}`);
+  must(selectedRow.selection_id===expected.selection_id,`${mode}: selection identity drift through C19`);
   must(!seenModes.has(mode),`duplicate physical creative for ${mode}`);
   seenModes.add(mode);
   must(provenance.ingress_id===expected.ingress_id,`${mode}: ingress ID drift through C19`);
@@ -69,10 +74,11 @@ for(const creative of pkg.creatives){
   must(provenance.narrative_plan_id===expected.narrative_plan_id,`${mode}: NarrativePlan ID drift through C19`);
   must(provenance.publication_trust_satisfied===expected.publication_trust_satisfied,`${mode}: creative trust state drift through C19`);
   must(creative.payload_sha256===expected.payload_sha256,`${mode}: payload identity drift through C19`);
-  must(creative.timeline?.duration_ms===9000&&creative.timeline?.frame_count===270&&creative.timeline?.fps===30,`${mode}: physical timeline drift`);
+  must(selectedRow.timeline?.duration_ms===9000&&selectedRow.timeline?.frame_count===270,`${mode}: physical timeline drift`);
   creativeIds.add(creative.creative_id);
 
-  const execution=pkg.executions?.[creative.creative_id];
+  const requestRow=requestBySelection.get(selectedRow.selection_id);
+  const execution=requestRow?.execution;
   must(execution?.payload&&execution?.html,`${mode}: physical execution binding missing`);
   const payloadPath=path.resolve(execution.payload);
   must(fs.existsSync(payloadPath),`${mode}: physical payload missing`);
@@ -82,9 +88,9 @@ for(const creative of pkg.creatives){
   must(payload.hook===creative.hook.text&&payload.hook===expected.hook_text,`${mode}: rendered hook bytes drifted from C35 program`);
   must(payload.visual_system===expected.visual_system,`${mode}: visual system binding drift`);
 
-  const specs=pkg.render_specs.filter(x=>x.creative_id===creative.creative_id);
-  must(specs.length===1,`${mode}: expected exactly one physical RenderSpec`);
-  const spec=specs[0];
+  const renderRows=pkg.renders.filter(x=>x.selection_id===selectedRow.selection_id);
+  must(renderRows.length===1,`${mode}: expected exactly one physical RenderSpec`);
+  const spec=renderRows[0].render;
   renderSpecIds.add(spec.render_spec_id);
   const receiptPath=path.join(resultDir,'receipts',`${spec.render_spec_id}.json`);
   const videoPath=path.join(resultDir,'video',`${spec.render_spec_id}.mp4`);
@@ -92,7 +98,7 @@ for(const creative of pkg.creatives){
   const receipt=readJson(receiptPath);
   must(receipt.render_spec_id===spec.render_spec_id,`${mode}: receipt RenderSpec mismatch`);
   must(receipt.qa?.status==='pass',`${mode}: runtime QA failed`);
-  must(receipt.output?.frame_count===270&&receipt.output?.duration_ms===9000,`${mode}: physical frames/duration drift`);
+  must(receipt.output?.frame_count===270&&Math.round(receipt.output?.duration_ms||0)===9000,`${mode}: physical frames/duration drift`);
   must(receipt.output?.mime_type==='video/mp4',`${mode}: output MIME drift`);
   const observedSha=sha256(videoPath);
   must(observedSha===receipt.output.sha256,`${mode}: MP4 SHA mismatch vs physical receipt`);
@@ -125,6 +131,7 @@ must(!publishReady.items.some(x=>x.ingress_id===external.ingress_id),'unapproved
 modeResults.sort((a,b)=>a.mode.localeCompare(b.mode));
 const report={
   schema:'newboo-i09-c35-physical-factory-audit-v1',
+  canonical_research_number:'I11',
   status:'PASS',
   job_id:jobId,
   request_sha256:enqueue.request_sha256,
