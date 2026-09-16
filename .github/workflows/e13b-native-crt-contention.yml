@@ -1,0 +1,125 @@
+name: E13b native CRT contention
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/native/crt-core.cpp"
+      - ".agents/skills/framewright/scripts/post-native-crt-core.mjs"
+      - ".agents/skills/framewright/scripts/post-identity.mjs"
+      - ".agents/skills/framewright/scripts/render-raw.mjs"
+      - ".github/workflows/e13b-native-crt-contention.yml"
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HTML: examples/ris-tv/index.html
+      AR: "9:16"
+      START: "0"
+      END: "20"
+      PRESET: ultrafast
+      CRF: "28"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - run: npm test
+      - name: Compile native CRT core
+        run: |
+          mkdir -p artifacts
+          g++ -O3 -std=c++20 -pthread \
+            .agents/skills/framewright/native/crt-core.cpp \
+            -o artifacts/crt-core
+      - name: Verify byte parity after cache/thread changes
+        env:
+          CRT_THREADS: "1"
+        run: >-
+          node .agents/skills/framewright/scripts/verify-native-crt-core.mjs
+          artifacts/crt-core
+      - name: Run tabs/thread matrix at 720x1280
+        run: |
+          set -euo pipefail
+          ROOT=.agents/skills/framewright/scripts
+          render() {
+            local name="$1"
+            local tabs="$2"
+            shift 2
+            env "$@" \
+              METRICS_OUT="artifacts/${name}.json" \
+              node "$ROOT/render-raw.mjs" \
+              "artifacts/${name}.mp4" 7 720 "$tabs"
+          }
+
+          render e13b-tabs1-identity 1 \
+            POST_MODULE="$ROOT/post-identity.mjs"
+          render e13b-tabs1-legacy 1
+          render e13b-tabs1-native-t1 1 \
+            CRT_THREADS=1 \
+            CRT_NATIVE_BIN=artifacts/crt-core \
+            POST_MODULE="$ROOT/post-native-crt-core.mjs"
+          render e13b-tabs1-native-auto 1 \
+            CRT_NATIVE_BIN=artifacts/crt-core \
+            POST_MODULE="$ROOT/post-native-crt-core.mjs"
+
+          render e13b-tabs3-identity 3 \
+            POST_MODULE="$ROOT/post-identity.mjs"
+          render e13b-tabs3-legacy 3
+          render e13b-tabs3-native-t1 3 \
+            CRT_THREADS=1 \
+            CRT_NATIVE_BIN=artifacts/crt-core \
+            POST_MODULE="$ROOT/post-native-crt-core.mjs"
+          render e13b-tabs3-native-auto 3 \
+            CRT_NATIVE_BIN=artifacts/crt-core \
+            POST_MODULE="$ROOT/post-native-crt-core.mjs"
+      - name: Summarize E13b
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const read = (name) => JSON.parse(fs.readFileSync(`artifacts/${name}.json`, 'utf8'));
+          const cases = [
+            ['tabs1-identity', 'e13b-tabs1-identity'],
+            ['tabs1-legacy', 'e13b-tabs1-legacy'],
+            ['tabs1-native-t1', 'e13b-tabs1-native-t1'],
+            ['tabs1-native-auto', 'e13b-tabs1-native-auto'],
+            ['tabs3-identity', 'e13b-tabs3-identity'],
+            ['tabs3-legacy', 'e13b-tabs3-legacy'],
+            ['tabs3-native-t1', 'e13b-tabs3-native-t1'],
+            ['tabs3-native-auto', 'e13b-tabs3-native-auto'],
+          ];
+          const result = {};
+          for (const [label, file] of cases) {
+            const m = read(file);
+            if (m.frames !== 20) throw new Error(`${label}: incomplete ${m.frames}`);
+            result[label] = {
+              fps: m.framesPerSecond,
+              seconds: m.seconds,
+              postMsPerFrame: m.postMillisecondsPerFrame,
+            };
+          }
+          for (const tabs of [1, 3]) {
+            const legacy = result[`tabs${tabs}-legacy`].fps;
+            const identity = result[`tabs${tabs}-identity`].fps;
+            for (const mode of ['native-t1', 'native-auto']) {
+              const native = result[`tabs${tabs}-${mode}`].fps;
+              result[`tabs${tabs}-${mode}`].vsLegacy = native / legacy;
+              result[`tabs${tabs}-${mode}`].vsIdentity = native / identity;
+            }
+          }
+          fs.writeFileSync('artifacts/e13b-summary.json', `${JSON.stringify(result, null, 2)}\n`);
+          console.log(JSON.stringify(result, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e13b-native-crt-contention
+          path: |
+            artifacts/e13b-*.json
