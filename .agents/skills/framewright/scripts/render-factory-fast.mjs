@@ -172,6 +172,7 @@ for (let attempt = 0; attempt <= retries; attempt += 1) {
         bitrate: plan.video.bitrate_bps,
         codec: plan.video.codec,
         latencyMode: 'realtime',
+        fingerprint: flag(process.env.WEBCODECS_POOL_FINGERPRINT),
       });
     } else {
       await run(process.execPath, [INNER_RENDERER, rawVideo, String(bundle.creative.seed), String(plan.delivery.width), String(plan.video.bitrate_bps)], innerEnv);
@@ -226,6 +227,7 @@ const receipt = {
     runtime_plan_schema: plan.schema,
     scene_payload_sha256: payloadBinding?.sha256 || null,
     runtime_pool: inner.pool || null,
+    state_fingerprint: inner.browser?.stateFingerprint || null,
   },
   invocation: { cache_hit: false, attempts: attemptsUsed },
 };
