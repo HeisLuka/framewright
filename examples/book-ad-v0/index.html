@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Book Ad v0</title>
+<style>
+html,body{margin:0;height:100%;background:#07131f;overflow:hidden}
+canvas{display:block;margin:0 auto;max-width:100vw;max-height:100vh}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "@chenglou/pretext": "../../node_modules/@chenglou/pretext/dist/layout.js"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+import { BOOK } from "./book-data.mjs";
+import {
+  compileRenderPlan,
+  createMotionRuntime,
+  installRisoBridge,
+} from "../../src/motion-core.mjs";
+import {
+  buildGlyphHomes,
+  compileTextFlow,
+  drawCompiledText,
+  fitTextBlock,
+} from "../../src/typography.mjs";
+
+const canvas = document.getElementById("c");
+const query = new URLSearchParams(location.search);
+const DEFAULT_WIDTH = Number(query.get("w") || 1080);
+const DEFAULT_SEED = Number(query.get("s") || 7);
+
+await document.fonts.ready;
+
+const STYLE = Object.freeze({
+  bg: "#07131f",
+  paper: "#e8e2d3",
+  ink: "#e9edf0",
+  navy: "#10263a",
+  accent: "#e2673f",
+  dim: "#7f929f",
+  grid: "rgba(232,226,211,0.10)",
+});
+
+const hookLayout = fitTextBlock({
+  text: BOOK.hook,
+  width: 850,
+  maxHeight: 520,
+  maxLines: 4,
+  minSize: 68,
+  maxSize: 152,
+  lineHeightRatio: 0.98,
+  family: "Arial Black, Arial, sans-serif",
+  weight: 900,
+  letterSpacing: 1.5,
+});
+const hookGlyphs = buildGlyphHomes(hookLayout, {
+  originX: 115,
+  originY: 430,
+  align: "left",
+});
+
+const coverObstacle = Object.freeze({
+  type: "rect",
+  x: 610,
+  y: 520,
+  width: 350,
+  height: 520,
+  padding: 42,
+});
+const quoteLayout = compileTextFlow({
+  text: `“${BOOK.quote}”`,
+  fontSize: 57,
+  family: "Georgia, Times New Roman, serif",
+  weight: 700,
+  lineHeightRatio: 1.18,
+  region: { x: 90, y: 340, width: 900, height: 900 },
+  obstacles: [coverObstacle],
+  minSlotWidth: 250,
+});
+
+const coverTitle = fitTextBlock({
+  text: BOOK.title,
+  width: 260,
+  maxHeight: 220,
+  maxLines: 4,
+  minSize: 28,
+  maxSize: 58,
+  lineHeightRatio: 0.98,
+  family: "Arial Black, Arial, sans-serif",
+  weight: 900,
+  align: "center",
+});
+
+const revealTitle = fitTextBlock({
+  text: BOOK.title,
+  width: 820,
+  maxHeight: 300,
+  maxLines: 3,
+  minSize: 60,
+  maxSize: 140,
+  lineHeightRatio: 0.96,
+  family: "Arial Black, Arial, sans-serif",
+  weight: 900,
+  align: "center",
+});
+
+const ctaLayout = fitTextBlock({
+  text: BOOK.cta,
+  width: 840,
+  maxHeight: 220,
+  maxLines: 2,
+  minSize: 54,
+  maxSize: 112,
+  lineHeightRatio: 1,
+  family: "Arial Black, Arial, sans-serif",
+  weight: 900,
+  align: "center",
+});
+
+const drawGrid = (g, alpha = 1) => {
+  g.save();
+  g.globalAlpha = alpha;
+  g.strokeStyle = STYLE.grid;
+  g.lineWidth = 2;
+  for (let x = 0; x <= 1080; x += 90) {
+    g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 1920); g.stroke();
+  }
+  for (let y = 0; y <= 1920; y += 90) {
+    g.beginPath(); g.moveTo(0, y); g.lineTo(1080, y); g.stroke();
+  }
+  g.restore();
+};
+
+const drawRegistration = (g, x, y, size, alpha = 1) => {
+  g.save();
+  g.globalAlpha = alpha;
+  g.strokeStyle = STYLE.accent;
+  g.lineWidth = 5;
+  g.beginPath();
+  g.arc(x, y, size, 0, Math.PI * 2);
+  g.stroke();
+  g.beginPath(); g.moveTo(x - size * 1.5, y); g.lineTo(x + size * 1.5, y); g.stroke();
+  g.beginPath(); g.moveTo(x, y - size * 1.5); g.lineTo(x, y + size * 1.5); g.stroke();
+  g.restore();
+};
+
+const drawCover = (g, x, y, width, height, progress = 1) => {
+  const p = Math.max(0, Math.min(1, progress));
+  g.save();
+  g.translate(x + width / 2, y + height / 2);
+  g.rotate((1 - p) * -0.06);
+  g.scale(0.90 + p * 0.10, 0.90 + p * 0.10);
+  g.translate(-width / 2, -height / 2);
+  g.globalAlpha = p;
+  g.fillStyle = "rgba(0,0,0,0.28)";
+  g.fillRect(22, 26, width, height);
+  g.fillStyle = BOOK.cover.background;
+  g.fillRect(0, 0, width, height);
+  g.fillStyle = BOOK.cover.accent;
+  g.fillRect(0, 0, 18, height);
+  g.strokeStyle = BOOK.cover.ink;
+  g.lineWidth = 5;
+  g.strokeRect(28, 28, width - 56, height - 56);
+
+  g.save();
+  g.translate(0, 78);
+  drawCompiledText(g, coverTitle, {
+    x: (width - coverTitle.width) / 2,
+    y: 0,
+    color: BOOK.cover.ink,
+    align: "center",
+  });
+  g.restore();
+
+  g.strokeStyle = BOOK.cover.accent;
+  g.lineWidth = 6;
+  const cx = width / 2;
+  const baseY = height * 0.68;
+  g.beginPath(); g.moveTo(cx, baseY + 70); g.lineTo(cx, baseY - 150); g.stroke();
+  for (let index = 0; index < 7; index += 1) {
+    const yy = baseY - 10 - index * 30;
+    const spread = 40 + index * 12;
+    g.beginPath(); g.moveTo(cx, yy); g.lineTo(cx - spread, yy - 45); g.stroke();
+    g.beginPath(); g.moveTo(cx, yy - 5); g.lineTo(cx + spread, yy - 58); g.stroke();
+  }
+  g.fillStyle = BOOK.cover.ink;
+  g.font = `700 28px Arial, sans-serif`;
+  g.textAlign = "center";
+  g.fillText(BOOK.author, width / 2, height - 74);
+  g.restore();
+};
+
+const plan = compileRenderPlan({
+  id: "book-ad-v0",
+  fps: 30,
+  aspect: "9:16",
+  background: STYLE.bg,
+  scenes: [
+    { id: "hook", recipe: "hook", seconds: 3 },
+    { id: "quote", recipe: "quote", seconds: 5 },
+    { id: "cover", recipe: "cover", seconds: 4 },
+    { id: "cta", recipe: "cta", seconds: 3, transitionFrames: 0 },
+  ],
+});
+
+const recipes = {
+  hook(g, S, _params, api) {
+    drawGrid(g, 0.65);
+    const enter = api.windowedProgress(S.progress, 0.02, 0.24, "out");
+    const exit = 1 - api.windowedProgress(S.progress, 0.80, 1, "in");
+    g.fillStyle = STYLE.accent;
+    g.fillRect(90, 230, 130 * enter, 14);
+    g.fillStyle = STYLE.dim;
+    g.font = "700 30px Arial, sans-serif";
+    g.fillText(BOOK.genre, 92, 305);
+    drawRegistration(g, 918, 245, 36, enter);
+
+    const stagger = 0.55 / Math.max(1, hookGlyphs.length);
+    for (let index = 0; index < hookGlyphs.length; index += 1) {
+      const glyph = hookGlyphs[index];
+      const gp = api.windowedProgress(S.progress, 0.10 + index * stagger, 0.30 + index * stagger, "out");
+      if (gp <= 0) continue;
+      g.save();
+      g.font = glyph.font;
+      g.textAlign = "center";
+      g.textBaseline = "alphabetic";
+      g.fillStyle = STYLE.ink;
+      g.globalAlpha = gp * exit;
+      const jitter = Math.sin(S.localTime * 12 + index * 0.7) * 2 * (1 - gp);
+      g.translate(glyph.x + jitter, glyph.y + (1 - gp) * 70);
+      g.fillText(glyph.text, 0, 0);
+      g.restore();
+    }
+    g.strokeStyle = STYLE.accent;
+    g.lineWidth = 6;
+    const lineP = api.windowedProgress(S.progress, 0.45, 0.80, "inOut");
+    api.strokePolylineProgress(g, [[100, 1190], [260, 1190], [260, 1450], [880, 1450], [880, 1640]], lineP);
+  },
+
+  quote(g, S, _params, api) {
+    drawGrid(g, 0.28);
+    const headerP = api.windowedProgress(S.progress, 0.02, 0.18, "out");
+    g.fillStyle = STYLE.accent;
+    g.fillRect(90, 220, 110 * headerP, 12);
+    g.fillStyle = STYLE.dim;
+    g.font = "700 28px Arial, sans-serif";
+    g.fillText("EXCERPT", 90, 290);
+
+    const coverP = api.windowedProgress(S.progress, 0.08, 0.34, "back");
+    drawCover(g, coverObstacle.x, coverObstacle.y, coverObstacle.width, coverObstacle.height, coverP);
+
+    g.save();
+    g.font = quoteLayout.font;
+    g.fillStyle = STYLE.ink;
+    g.textBaseline = "alphabetic";
+    g.textAlign = "left";
+    for (let index = 0; index < quoteLayout.lines.length; index += 1) {
+      const line = quoteLayout.lines[index];
+      const lp = api.windowedProgress(S.progress, 0.12 + index * 0.055, 0.30 + index * 0.055, "out");
+      g.globalAlpha = lp;
+      g.fillText(line.text, line.x, line.y + quoteLayout.lineHeight * 0.82 + (1 - lp) * 30);
+    }
+    g.restore();
+
+    drawRegistration(g, 160, 1510, 28, api.windowedProgress(S.progress, 0.50, 0.75, "out"));
+    g.fillStyle = STYLE.dim;
+    g.font = "700 26px Arial, sans-serif";
+    g.fillText(BOOK.author, 210, 1520);
+  },
+
+  cover(g, S, _params, api) {
+    drawGrid(g, 0.18);
+    const coverP = api.windowedProgress(S.progress, 0.02, 0.32, "back");
+    drawCover(g, 340, 330, 400, 600, coverP);
+    const titleP = api.windowedProgress(S.progress, 0.28, 0.58, "out");
+    g.save();
+    g.globalAlpha = titleP;
+    g.translate(0, (1 - titleP) * 55);
+    drawCompiledText(g, revealTitle, {
+      x: 130,
+      y: 1050,
+      color: STYLE.ink,
+      align: "center",
+    });
+    g.restore();
+    const authorP = api.windowedProgress(S.progress, 0.48, 0.72, "out");
+    g.globalAlpha = authorP;
+    g.fillStyle = STYLE.accent;
+    g.font = "800 38px Arial, sans-serif";
+    g.textAlign = "center";
+    g.fillText(BOOK.author, 540, 1425);
+    g.globalAlpha = 1;
+    drawRegistration(g, 540, 1600, 34, api.windowedProgress(S.progress, 0.62, 0.88, "out"));
+  },
+
+  cta(g, S, _params, api) {
+    const p = api.windowedProgress(S.progress, 0.04, 0.30, "out");
+    drawGrid(g, 0.15);
+    g.fillStyle = STYLE.accent;
+    g.fillRect(120, 470, 840 * p, 16);
+    g.save();
+    g.globalAlpha = p;
+    g.translate(0, (1 - p) * 60);
+    drawCompiledText(g, ctaLayout, {
+      x: 120,
+      y: 620,
+      color: STYLE.ink,
+      align: "center",
+    });
+    g.restore();
+    const bookP = api.windowedProgress(S.progress, 0.28, 0.58, "back");
+    drawCover(g, 405, 1050, 270, 405, bookP);
+    g.fillStyle = STYLE.dim;
+    g.font = "700 26px Arial, sans-serif";
+    g.textAlign = "center";
+    g.globalAlpha = api.windowedProgress(S.progress, 0.55, 0.76, "out");
+    g.fillText(`${BOOK.title}  /  ${BOOK.author}`, 540, 1570);
+    g.globalAlpha = 1;
+  },
+};
+
+const runtime = createMotionRuntime({ canvas, plan, recipes });
+installRisoBridge({ runtime, canvas, defaultWidth: DEFAULT_WIDTH, defaultSeed: DEFAULT_SEED });
+
+const requestedFrame = query.get("f");
+if (requestedFrame !== null) {
+  runtime.render(Number(requestedFrame) || 0, DEFAULT_WIDTH, DEFAULT_SEED);
+  window.__ready = true;
+} else {
+  let frame = Number(query.get("from") || 0);
+  let last = 0;
+  const tick = (now) => {
+    if (now - last >= 1000 / plan.fps) {
+      last = now;
+      runtime.render(frame++, Math.min(DEFAULT_WIDTH, 720), DEFAULT_SEED);
+    }
+    requestAnimationFrame(tick);
+  };
+  runtime.render(frame, Math.min(DEFAULT_WIDTH, 720), DEFAULT_SEED);
+  window.__ready = true;
+  requestAnimationFrame(tick);
+}
+</script>
+</body>
+</html>
