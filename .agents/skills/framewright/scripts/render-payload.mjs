@@ -16,7 +16,9 @@ if(!fs.existsSync(payloadPath)){console.error(`no such payload: ${payloadPath}`)
 let payload;try{payload=JSON.parse(fs.readFileSync(payloadPath,'utf8'));}catch(e){console.error(`bad payload JSON: ${e.message}`);process.exit(1);}
 fs.mkdirSync(dir,{recursive:true});
 const url='file://'+html+`?f=0&w=320&s=${seed}`;
-const browser=await puppeteer.launch({headless:true,protocolTimeout:600000,args:['--allow-file-access-from-files']});
+const browserArgs=['--allow-file-access-from-files'];
+if(process.env.CI)browserArgs.push('--no-sandbox','--disable-setuid-sandbox');
+const browser=await puppeteer.launch({headless:true,protocolTimeout:600000,args:browserArgs});
 async function openPage(){
   const p=await browser.newPage();
   p.on('pageerror',e=>console.error('PAGE ERROR',e.message));
