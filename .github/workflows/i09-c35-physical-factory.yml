@@ -87,7 +87,7 @@ jobs:
           node .agents/skills/framewright/scripts/local-render-worker.mjs \
             --queue artifacts/i09/queue \
             --workspace . \
-            --once | tee artifacts/i09/worker.json
+            --once | tee artifacts/i09/worker.log
       - name: Re-enqueue identical request after success
         run: |
           node .agents/skills/framewright/scripts/enqueue-local-render-job.mjs \
@@ -110,7 +110,7 @@ jobs:
             artifacts/i09/input/publish-ready.json
             artifacts/i09/input/request.json
             artifacts/i09/enqueue.json
-            artifacts/i09/worker.json
+            artifacts/i09/worker.log
             artifacts/i09/replay-enqueue.json
             artifacts/i09/report.json
             artifacts/i09/summary.md
