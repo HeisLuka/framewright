@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Benchmark the current PNG/dataURL pipeline against the raw RGBA stream using
-// the same HTML, seed, frame range, encoder settings, and visual code.
+// the same HTML, seed, actual frame range, encoder settings, and visual code.
 //
 //   node bench-render.mjs [html=examples/ris-tv/index.html] [frames=300] [width=720] [tabs=5] [outBase=.bench/render]
 //
-// Env is forwarded, including FW_QUERY, AR, PRESET, CRF, MAXRATE and SEED.
+// Env is forwarded, including FW_QUERY, AR, PRESET, CRF, MAXRATE, BUFSIZE,
+// VIDEO_CODEC and SEED.
 import { spawn } from "node:child_process";
 import fsp from "node:fs/promises";
 import path from "node:path";
@@ -20,7 +21,7 @@ const [
 ] = process.argv;
 
 const html = path.resolve(htmlS);
-const frames = Math.max(1, Math.round(Number(framesS) || 300));
+const requestedFrames = Math.max(1, Math.round(Number(framesS) || 300));
 const width = Math.max(64, Math.round(Number(widthS) || 720));
 const tabs = Math.max(1, Math.round(Number(tabsS) || 5));
 const seed = Math.round(Number(process.env.SEED) || 7);
@@ -77,23 +78,34 @@ const capture = (command, args, extraEnv = {}) => new Promise((resolve, reject) 
   });
 });
 
-const commonEnv = {
+const referenceEnv = {
   HTML: html,
   FW_ROOT: ROOT,
   START: "0",
-  END: String(frames),
+  END: String(requestedFrames),
 };
 
 console.log(`benchmark: ${html}`);
-console.log(`range: 0..${frames - 1}, width=${width}, tabs=${tabs}, seed=${seed}`);
+console.log(`requested range: 0..${requestedFrames - 1}, width=${width}, tabs=${tabs}, seed=${seed}`);
 console.log(`run dir: ${runDir}`);
 
 const referenceRenderWallSeconds = await elapsed(() => run(
   process.execPath,
   [renderScript, framesDir, String(seed), String(width), String(tabs)],
-  { ...commonEnv, METRICS_OUT: referenceMetricsPath },
+  { ...referenceEnv, METRICS_OUT: referenceMetricsPath },
 ));
 const referenceMetrics = JSON.parse(await fsp.readFile(referenceMetricsPath, "utf8"));
+const actualStart = Number(referenceMetrics.start);
+const actualEnd = Number(referenceMetrics.end);
+const actualFrames = actualEnd - actualStart;
+if (!Number.isInteger(actualStart) || !Number.isInteger(actualEnd) || actualFrames <= 0) {
+  throw new Error(`reference renderer returned invalid range ${actualStart}..${actualEnd}`);
+}
+if (referenceMetrics.failedFrames || referenceMetrics.successfulFrames !== actualFrames) {
+  throw new Error(
+    `reference renderer incomplete: successful=${referenceMetrics.successfulFrames} failed=${referenceMetrics.failedFrames} expected=${actualFrames}`,
+  );
+}
 
 const referenceBuildWallSeconds = await elapsed(() => run(
   "bash",
@@ -101,12 +113,26 @@ const referenceBuildWallSeconds = await elapsed(() => run(
   { FPS: String(referenceMetrics.fps || 30) },
 ));
 
+const rawEnv = {
+  ...referenceEnv,
+  START: String(actualStart),
+  END: String(actualEnd),
+};
 const rawWallSeconds = await elapsed(() => run(
   process.execPath,
   [rawScript, rawMp4, String(seed), String(width), String(tabs)],
-  { ...commonEnv, METRICS_OUT: rawMetricsPath, TRACK: noAudioPath },
+  { ...rawEnv, METRICS_OUT: rawMetricsPath, TRACK: noAudioPath },
 ));
 const rawMetrics = JSON.parse(await fsp.readFile(rawMetricsPath, "utf8"));
+if (
+  Number(rawMetrics.start) !== actualStart
+  || Number(rawMetrics.end) !== actualEnd
+  || Number(rawMetrics.frames) !== actualFrames
+) {
+  throw new Error(
+    `raw renderer range mismatch: got ${rawMetrics.start}..${rawMetrics.end} (${rawMetrics.frames}), expected ${actualStart}..${actualEnd} (${actualFrames})`,
+  );
+}
 
 const psnrRun = await capture("ffmpeg", [
   "-v", "info", "-nostats",
@@ -133,30 +159,35 @@ const summary = {
   html,
   runDir,
   seed,
-  frames,
+  requestedFrames,
+  frames: actualFrames,
+  start: actualStart,
+  end: actualEnd,
   width,
   tabs,
   encoder: {
+    videoCodec: process.env.VIDEO_CODEC || "libx264",
     preset: process.env.PRESET || "slow",
     crf: process.env.CRF || "22",
     maxrate: process.env.MAXRATE || "14M",
+    bufsize: process.env.BUFSIZE || "28M",
   },
   reference: {
     renderWallSeconds: referenceRenderWallSeconds,
     buildWallSeconds: referenceBuildWallSeconds,
     totalWallSeconds: referenceTotalWallSeconds,
-    framesPerSecond: frames / referenceTotalWallSeconds,
+    framesPerSecond: actualFrames / Math.max(referenceTotalWallSeconds, 1e-9),
     frameFileBytes: referenceMetrics.frameFileBytes,
     outputBytes: (await fsp.stat(referenceMp4)).size,
     metrics: referenceMetrics,
   },
   raw: {
     wallSeconds: rawWallSeconds,
-    framesPerSecond: frames / rawWallSeconds,
+    framesPerSecond: actualFrames / Math.max(rawWallSeconds, 1e-9),
     outputBytes: (await fsp.stat(rawMp4)).size,
     metrics: rawMetrics,
   },
-  speedup: referenceTotalWallSeconds / rawWallSeconds,
+  speedup: referenceTotalWallSeconds / Math.max(rawWallSeconds, 1e-9),
   visualComparison: {
     psnrAverage: psnrMatch ? psnrMatch[1] : null,
     ssimAll: ssimMatch ? ssimMatch[1] : null,
