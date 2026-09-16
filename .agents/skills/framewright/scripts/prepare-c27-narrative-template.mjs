@@ -21,6 +21,10 @@ P.narrative_reveal_timing=C27_PLAN.reveal_timing;
 P.narrative_cta_treatment=C27_PLAN.cta_treatment;
 P.duration_profile=C27_PLAN.duration_seconds;
 
+// The old template hard-codes "/ 03" pagination. NarrativePlan can have 1..5 semantic roles,
+// so suppress that legacy decoration rather than display impossible counters such as 04 / 03.
+pageNum=function(){};
+
 function __c27RoleText(role){return(role.atoms||[]).map(a=>String(a.text||'').trim()).filter(Boolean).join(' ');}
 function __c27With(overrides,fn){const old={};for(const [k,v] of Object.entries(overrides)){old[k]=P[k];P[k]=v;}try{return fn();}finally{for(const [k,v] of Object.entries(old))P[k]=v;}}
 function __c27Mapped(S,sourceLen,roleName){return{...S,i:Math.round(clamp(S.t)*(sourceLen-1)),t:clamp(S.t),plate:roleName};}
