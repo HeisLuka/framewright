@@ -2,28 +2,30 @@
 
 ## Question
 
-Can the factory derive a useful visual art direction from the actual book cover, deterministically and without AI, while keeping readability safe and render cost effectively flat?
+Can the factory derive useful visual art direction from the actual book cover, deterministically and without AI, while keeping readability safe and render cost effectively flat?
 
-C20 isolates that question. The book payload, visual system, seed, delivery profile and structural timing stay fixed inside each pair. The only changed axis is whether the visual system uses the generic treatment or a cover-derived art direction.
+C20 isolates that question. Within every generic/adaptive pair, book payload, visual system, seed, delivery profile, structural variant, hook and motion stay fixed. The changed axis is cover-derived art direction only.
 
-## Canonical run
+## Final verification run
 
-GitHub Actions run: `35132993811`.
+Final post-review verification: GitHub Actions run `35133994670`, artifact `10462707805`.
+
+This run contains the Newspaper refinement produced after manual review of the first green pass. It therefore verifies the exact C20 implementation merged into `lab/framewright-research`.
 
 Matrix:
 
 - 36 deliberately diverse synthetic cover fixtures
 - Swiss / Newspaper / Paper
 - strict generic vs cover-adaptive pair for every fixture
-- **72 full renders**
+- **72 full 12-second renders**
 - review stills at hook (`1.5s`) and book (`5.2s`)
 
-Canonical batch result:
+Final batch result:
 
 - outputs: **72/72**
 - layout warning groups: **0**
-- aggregate sequential throughput: **846.28 videos/hour**
-- peak Node + FFmpeg RSS: **771.1 MiB**
+- aggregate sequential throughput: **701.72 videos/hour** on this runner
+- peak Node + FFmpeg RSS: **779.9 MiB**
 
 ### Palette and accessibility gates
 
@@ -39,73 +41,75 @@ Adaptive/generic end-to-end render-time ratio:
 
 | metric | ratio |
 |---|---:|
-| mean | 1.0189 |
-| p50 | 1.0207 |
-| p95 | 1.0500 |
-| max | 1.0515 |
+| mean | 1.0131 |
+| p50 | 1.0174 |
+| p95 | 1.0391 |
+| max | 1.0501 |
 
-Mean render-cost regression is therefore about **+1.89%** on this runner; p95 is **+5.0%**. This is comfortably inside the C20 gate and is small enough that cover adaptation should be treated as a creative primitive, not an expensive effect.
+Mean render-cost regression is therefore about **+1.31%** on this runner; p95 is **+3.91%**. This is small enough that cover adaptation should be treated as a creative primitive, not an expensive effect.
 
 By visual system, mean cost ratio was:
 
-- Swiss: **1.0272**
-- Newspaper: **1.0203**
-- Paper: **1.0094**
+- Swiss: **1.0135**
+- Newspaper: **1.0228**
+- Paper: **1.0029**
 
-Encoded output size did not materially increase: mean adaptive/generic byte ratio was **0.9874**, p95 **1.0341**.
+Encoded output size did not materially increase: mean adaptive/generic byte ratio was **0.9884**, p95 **1.0341**.
 
 These are runner-specific diagnostics, not provider pricing measurements.
 
-## Useful failure before the canonical run
+## Useful negative result: bad fixtures, not a reason to weaken the gate
 
 The first strict palette audit failed with only **13 unique palette signatures** from 36 fixtures.
 
-The extractor was not the real problem. The fixture generator had produced nominally different covers that still collapsed into a small number of underlying colour families. Lowering the diversity threshold would have made the test easier without improving the product.
+The extractor was not the real problem. The fixture generator had produced nominally different covers that still reused a small number of underlying colour families. Lowering the diversity threshold would have made the test easier without improving the product.
 
-We changed the **fixture set**, not the acceptance gate. The canonical run then produced 36/36 unique palette signatures while still passing all contrast thresholds.
+We changed the **fixture set**, not the acceptance gate. The corrected set produces 36/36 unique palette signatures while still passing all contrast thresholds.
 
-This is the useful lesson: synthetic QA data must contain the variation the test claims to exercise. A green gate over repetitive fixtures is not evidence of robustness.
+Lesson: synthetic QA data must contain the variation the test claims to exercise. A green gate over repetitive fixtures is not evidence of robustness.
 
-## Manual review
+## Manual review and Newspaper refinement
 
-The six canonical review pages cover all 36 strict pairs with this cell order:
+The review pages use this order:
 
 1. generic hook @ 1.5s
 2. adaptive hook @ 1.5s
 3. generic book @ 5.2s
 4. adaptive book @ 5.2s
 
-Manual review found the adaptation to be visually meaningful rather than a simple random tint:
+The first green review showed a real system-specific weakness: Swiss and Paper clearly inherited cover character, while Newspaper was often too conservative, especially on neutral and low-chroma covers.
 
-- dark navy / amber covers produce restrained blue/amber systems;
-- purple covers produce coherent lavender/purple treatments;
-- green and teal covers shift background, accent and supporting geometry together;
-- red/black, blue, beige/paper and lower-chroma covers retain distinct identities;
-- low-chroma covers intentionally produce subtler adaptation rather than forced saturated colour;
-- no reviewed pair showed obvious clipping, muddy body text or unsafe CTA contrast.
+We did **not** solve that by globally increasing saturation. Newspaper received cover-derived editorial devices that preserve its black/white hierarchy: a restrained surface tint, accent rule, edge device, and structured editorial rules when cover complexity warrants them. Final review shows a stronger book-specific Newspaper identity without turning it into Swiss/Paper.
 
-The cover-driven motifs also matter: Swiss, Newspaper and Paper do not merely receive the same palette swap; their existing visual grammar consumes the derived art direction differently.
+Low-chroma covers such as the neutral Newspaper fixtures still adapt more subtly. That is intentional: the system should not invent saturated colour that the source cover does not contain.
+
+Across all reviewed pairs:
+
+- dark/navy/amber, purple, green/teal, red/black, blue and beige covers produce coherent book-specific treatments;
+- background, accent and supporting geometry move together rather than as an arbitrary tint;
+- Swiss / Newspaper / Paper consume the same cover evidence differently;
+- no reviewed pair showed clipping, muddy body text or unsafe CTA contrast.
 
 ## Decision
 
 **C20 passes as a production creative primitive.**
 
-The factory can cheaply derive deterministic art direction from a cover without AI. The implementation gives us a useful new independent creative axis:
+The factory can cheaply derive deterministic art direction from a cover without AI:
 
 ```text
 book cover
-  -> deterministic visual features
+  -> deterministic palette + luminance + entropy + edge evidence
   -> contrast-safe art direction
   -> visual-system-specific treatment
 ```
 
-This result does **not** prove CTR, CPA or conversion lift. It proves that cover adaptation is robust, visually meaningful, auditable and cheap enough to include in controlled campaign experiments.
+This does **not** prove CTR, CPA or conversion lift. It proves that cover adaptation is robust, visibly meaningful, auditable and cheap enough to include in controlled campaign experiments.
 
-The important product consequence is that a large catalogue no longer needs one generic palette per template. Each book can inherit a recognizable visual identity at effectively negligible renderer cost.
+Current limitation: v1 uses palette and simple spatial-complexity heuristics, not OCR or semantic image understanding. Neutral covers intentionally produce less dramatic variation.
 
 ## Next
 
-1. Move to C21: deterministic opening / hook grammar.
-2. Keep verified copy fixed and vary only first-1.5-to-2.5-second presentation semantics.
-3. Require material opening divergence but convergence after the opening, so C21 remains a clean causal creative axis rather than another whole-video variant.
-4. Later expose both `art_direction` and `opening_grammar` in `CreativeSpec`; campaign outcomes, not synthetic diversity metrics, decide which combinations earn more traffic.
+1. C21 — deterministic opening / hook grammar.
+2. Keep factual copy provenance explicit; do not invent claims.
+3. Vary first-1.5-to-2.5-second presentation semantics while keeping the rest of the creative controlled.
+4. After that, C22 — motion quality / choreography as a separate causal axis.
