@@ -71,11 +71,25 @@ export function validatePriorSnapshot(snapshot,primaryMetric){
   return {prior_snapshot_id:priorSnapshotId,portfolio_id:portfolioId,candidates};
 }
 
-function distributeEven(total,targets,allocation,key){
-  if(total<0)throw new Error('cannot distribute negative traffic');
-  if(!targets.length){if(total!==0)throw new Error('no targets available for non-zero traffic');return;}
-  const base=Math.floor(total/targets.length),remainder=total%targets.length;
-  for(let i=0;i<targets.length;i++)allocation.get(targets[i].creative_id)[key]+=base+(i<remainder?1:0);
+function allocateCapped({allocation,targets,total,key,maxAdaptiveBps}){
+  let remaining=total,active=[...targets];
+  while(remaining>0){
+    active=active.filter(candidate=>{
+      const row=allocation.get(candidate.creative_id);
+      return row.exploration_bps+row.exploitation_bps<maxAdaptiveBps;
+    });
+    if(!active.length)throw new Error('adaptive cap exhausted before traffic allocation completed');
+    const share=Math.max(1,Math.floor(remaining/active.length));
+    let progressed=0;
+    for(const candidate of active){
+      if(remaining<=0)break;
+      const row=allocation.get(candidate.creative_id);
+      const capacity=maxAdaptiveBps-row.exploration_bps-row.exploitation_bps;
+      const give=Math.min(capacity,share,remaining);
+      if(give>0){row[key]+=give;remaining-=give;progressed+=give;}
+    }
+    if(progressed===0)throw new Error('traffic allocation made no progress');
+  }
 }
 
 export function buildTrafficPlan({snapshot,policy}){
@@ -85,36 +99,31 @@ export function buildTrafficPlan({snapshot,policy}){
   if(!control)throw new Error(`control_creative_id ${p.control_creative_id} is not in snapshot`);
   const n=s.candidates.length;
   if(p.exploit_top_k>n)throw new Error(`exploit_top_k ${p.exploit_top_k} exceeds candidate count ${n}`);
-  const explorationTotal=p.exploration_bps_per_candidate*n;
-  if(p.holdout_bps+explorationTotal>=10000)throw new Error('holdout + mandatory exploration leaves no bounded exploitation budget');
+  const mandatoryExploration=p.exploration_bps_per_candidate*n;
+  if(p.holdout_bps+mandatoryExploration>=10000)throw new Error('holdout + mandatory exploration leaves no bounded adaptive budget');
   if(p.exploration_bps_per_candidate>p.max_adaptive_bps_per_candidate)throw new Error('exploration floor exceeds per-candidate adaptive cap');
-  const exploitationTotal=10000-p.holdout_bps-explorationTotal;
+  const remainingAdaptiveBudget=10000-p.holdout_bps-mandatoryExploration;
   const eligible=s.candidates.filter(x=>x.primary_metric.denominator>=p.min_primary_denominator).sort((a,b)=>
     b.primary_metric.posterior_mean-a.primary_metric.posterior_mean||
     b.primary_metric.denominator-a.primary_metric.denominator||
     a.creative_id.localeCompare(b.creative_id)
   );
   const mode=eligible.length?'adaptive':'explore_only';
-  const exploitTargets=eligible.length?eligible.slice(0,Math.min(p.exploit_top_k,eligible.length)):s.candidates;
-  const totalExploitCapacity=exploitTargets.reduce((sum)=>sum+(p.max_adaptive_bps_per_candidate-p.exploration_bps_per_candidate),0);
-  if(exploitationTotal>totalExploitCapacity)throw new Error(`per-candidate adaptive cap cannot absorb exploitation budget: need ${exploitationTotal}, capacity ${totalExploitCapacity}`);
+  const exploitTargets=mode==='adaptive'?eligible.slice(0,Math.min(p.exploit_top_k,eligible.length)):[];
+  const allocation=new Map(s.candidates.map(candidate=>[candidate.creative_id,{
+    holdout_bps:candidate.creative_id===control.creative_id?p.holdout_bps:0,
+    exploration_bps:p.exploration_bps_per_candidate,
+    exploitation_bps:0
+  }]));
 
-  const allocation=new Map(s.candidates.map(candidate=>[candidate.creative_id,{holdout_bps:candidate.creative_id===control.creative_id?p.holdout_bps:0,exploration_bps:p.exploration_bps_per_candidate,exploitation_bps:0}]));
-  let remaining=exploitationTotal;
-  let active=[...exploitTargets];
-  while(remaining>0){
-    active=active.filter(candidate=>allocation.get(candidate.creative_id).exploration_bps+allocation.get(candidate.creative_id).exploitation_bps<p.max_adaptive_bps_per_candidate);
-    if(!active.length)throw new Error('adaptive cap exhausted before traffic allocation completed');
-    const share=Math.max(1,Math.floor(remaining/active.length));
-    let progressed=0;
-    for(const candidate of active){
-      if(remaining<=0)break;
-      const row=allocation.get(candidate.creative_id);
-      const capacity=p.max_adaptive_bps_per_candidate-row.exploration_bps-row.exploitation_bps;
-      const give=Math.min(capacity,share,remaining);
-      if(give>0){row.exploitation_bps+=give;remaining-=give;progressed+=give;}
-    }
-    if(progressed===0)throw new Error('traffic allocation made no progress');
+  if(mode==='adaptive'){
+    const capacity=exploitTargets.reduce((sum,candidate)=>sum+(p.max_adaptive_bps_per_candidate-allocation.get(candidate.creative_id).exploration_bps),0);
+    if(remainingAdaptiveBudget>capacity)throw new Error(`per-candidate adaptive cap cannot absorb exploitation budget: need ${remainingAdaptiveBudget}, capacity ${capacity}`);
+    allocateCapped({allocation,targets:exploitTargets,total:remainingAdaptiveBudget,key:'exploitation_bps',maxAdaptiveBps:p.max_adaptive_bps_per_candidate});
+  }else{
+    const capacity=s.candidates.reduce((sum,candidate)=>sum+(p.max_adaptive_bps_per_candidate-allocation.get(candidate.creative_id).exploration_bps),0);
+    if(remainingAdaptiveBudget>capacity)throw new Error(`per-candidate adaptive cap cannot absorb cold-start exploration budget: need ${remainingAdaptiveBudget}, capacity ${capacity}`);
+    allocateCapped({allocation,targets:s.candidates,total:remainingAdaptiveBudget,key:'exploration_bps',maxAdaptiveBps:p.max_adaptive_bps_per_candidate});
   }
 
   const candidates=s.candidates.map(candidate=>{
@@ -140,8 +149,11 @@ export function buildTrafficPlan({snapshot,policy}){
   });
   const totalBps=candidates.reduce((sum,row)=>sum+row.total_bps,0);
   const adaptiveBps=candidates.reduce((sum,row)=>sum+row.adaptive_bps,0);
+  const explorationBps=candidates.reduce((sum,row)=>sum+row.exploration_bps,0);
+  const exploitationBps=candidates.reduce((sum,row)=>sum+row.exploitation_bps,0);
   if(totalBps!==10000)throw new Error(`traffic plan must sum to 10000 bps, got ${totalBps}`);
   if(adaptiveBps!==10000-p.holdout_bps)throw new Error('adaptive traffic total drift');
+  if(mode==='explore_only'&&exploitationBps!==0)throw new Error('cold-start plan emitted exploitation traffic');
   if(candidates.some(row=>row.adaptive_bps>p.max_adaptive_bps_per_candidate))throw new Error('per-candidate adaptive cap violated');
   const body={
     schema:C33_PLAN_SCHEMA,
@@ -154,8 +166,9 @@ export function buildTrafficPlan({snapshot,policy}){
     mode,
     control_creative_id:p.control_creative_id,
     holdout_bps:p.holdout_bps,
-    exploration_bps_per_candidate:p.exploration_bps_per_candidate,
-    exploitation_bps:exploitationTotal,
+    mandatory_exploration_bps_per_candidate:p.exploration_bps_per_candidate,
+    exploration_bps:explorationBps,
+    exploitation_bps:exploitationBps,
     exploit_top_k:p.exploit_top_k,
     min_primary_denominator:p.min_primary_denominator,
     max_adaptive_bps_per_candidate:p.max_adaptive_bps_per_candidate,
