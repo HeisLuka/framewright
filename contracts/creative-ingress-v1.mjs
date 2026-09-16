@@ -6,6 +6,10 @@ import {
 } from './creative-proposal-v1.mjs';
 import { compileCreativeProposal } from './compile-creative-proposal-v1.mjs';
 import {
+  COMPOSED_PROPOSAL_SCHEMA,
+} from './compositional-copy-v1.mjs';
+import { compileComposedCreativeProposal } from './compile-composed-creative-proposal-v1.mjs';
+import {
   EXTERNAL_DRAFT_SCHEMA,
   compileExternalCreativeDraft,
   evaluatePublishEligibility,
@@ -13,7 +17,7 @@ import {
 
 export const CREATIVE_INGRESS_SCHEMA='newboo-creative-ingress-v1';
 export const CREATIVE_INGRESS_RESULT_SCHEMA='newboo-creative-ingress-result-v1';
-export const CREATIVE_INGRESS_MODES=['trusted_atoms','external_copy_review_required'];
+export const CREATIVE_INGRESS_MODES=['trusted_atoms','verified_composition','external_copy_review_required'];
 
 function isObject(value){return Boolean(value)&&typeof value==='object'&&!Array.isArray(value);}
 function add(errors,code,path,message){errors.push({code,path,message});}
@@ -39,7 +43,16 @@ export function validateCreativeIngressEnvelope(ingress){
   requireString(errors,ingress.context_pack_id,'/context_pack_id');
   if(typeof ingress.context_hash!=='string'||!/^[a-f0-9]{64}$/.test(ingress.context_hash))add(errors,'INVALID_SHA256','/context_hash','context_hash must be lowercase sha256 hex');
   if(!isObject(ingress.payload))add(errors,'TYPE_OBJECT_REQUIRED','/payload','payload must be an object');
-  else checkUnknown(errors,ingress.payload,new Set(['account_id','book_id','narrative','presentation','selected_asset_ids']),'/payload');
+  else{
+    const allowed=new Set(['account_id','book_id','narrative','presentation','selected_asset_ids']);
+    if(ingress.mode==='verified_composition'){
+      allowed.add('copy_language_id');
+      allowed.add('copy_language_hash');
+      requireString(errors,ingress.payload.copy_language_id,'/payload/copy_language_id');
+      if(typeof ingress.payload.copy_language_hash!=='string'||!/^[a-f0-9]{64}$/.test(ingress.payload.copy_language_hash))add(errors,'INVALID_SHA256','/payload/copy_language_hash','copy_language_hash must be lowercase sha256 hex');
+    }
+    checkUnknown(errors,ingress.payload,allowed,'/payload');
+  }
   return {valid:errors.length===0,errors:sortErrors(errors)};
 }
 
@@ -65,6 +78,15 @@ function buildTrustedProposal(ingress){
   return proposal;
 }
 
+function buildComposedProposal(ingress){
+  return {
+    schema:COMPOSED_PROPOSAL_SCHEMA,
+    context_pack_id:ingress.context_pack_id,
+    context_hash:ingress.context_hash,
+    ...clone(ingress.payload),
+  };
+}
+
 function buildExternalDraft(ingress){
   return {
     schema:EXTERNAL_DRAFT_SCHEMA,
@@ -81,7 +103,7 @@ function computeDecisionId({ingress_id,creative_gate}){
   return `nbid1_${sha256Canonical({ingress_id,creative_gate})}`;
 }
 
-export async function processCreativeIngress({ingress,loadContextPack,loadTrustedApproval=null}){
+export async function processCreativeIngress({ingress,loadContextPack,loadCopyLanguage=null,loadTrustedApproval=null}){
   const envelope=validateCreativeIngressEnvelope(ingress);
   if(!envelope.valid)throw new CreativeIngressError('CREATIVE_INGRESS_REJECTED',envelope.errors);
   if(typeof loadContextPack!=='function')fail('SERVER_CONTEXT_RESOLVER_REQUIRED','/context_pack_id','server-owned ContextPack resolver is required');
@@ -93,10 +115,9 @@ export async function processCreativeIngress({ingress,loadContextPack,loadTruste
   if(pack.context_pack_id!==ingress.context_pack_id)fail('CONTEXT_ID_MISMATCH','/context_pack_id',`server resolver returned ${pack.context_pack_id}`);
   if(pack.context_hash!==ingress.context_hash)fail('CONTEXT_HASH_MISMATCH','/context_hash',`expected server context hash ${pack.context_hash}`);
 
-  let inputId,inputSchema,program,creativeGate,acceptedDraft=null,canonicalInput;
+  let inputId,inputSchema,program,creativeGate,acceptedDraft=null;
   if(ingress.mode==='trusted_atoms'){
     const proposal=buildTrustedProposal(ingress);
-    canonicalInput=proposal;
     inputId=proposal.proposal_id;
     inputSchema=proposal.schema;
     try{
@@ -105,14 +126,25 @@ export async function processCreativeIngress({ingress,loadContextPack,loadTruste
       if(error?.report?.errors)throw new CreativeIngressError(error.report.code||'CREATIVE_PROPOSAL_REJECTED',prefixErrors(error.report.errors,'/payload'));
       throw error;
     }
-    creativeGate={
-      preview_render_allowed:true,
-      publication_trust_satisfied:true,
-      reason:'trusted_atoms',
-    };
+    creativeGate={preview_render_allowed:true,publication_trust_satisfied:true,reason:'trusted_atoms'};
+  }else if(ingress.mode==='verified_composition'){
+    if(typeof loadCopyLanguage!=='function')fail('SERVER_COPY_LANGUAGE_RESOLVER_REQUIRED','/payload/copy_language_id','server-owned CopyLanguage resolver is required');
+    const language=await loadCopyLanguage(ingress.payload.copy_language_id);
+    if(!language)fail('COPY_LANGUAGE_NOT_FOUND','/payload/copy_language_id',`server CopyLanguage ${ingress.payload.copy_language_id} was not found`);
+    if(language.copy_language_id!==ingress.payload.copy_language_id)fail('COPY_LANGUAGE_ID_MISMATCH','/payload/copy_language_id',`server resolver returned ${language.copy_language_id}`);
+    if(language.copy_language_hash!==ingress.payload.copy_language_hash)fail('COPY_LANGUAGE_HASH_MISMATCH','/payload/copy_language_hash',`expected server copy language hash ${language.copy_language_hash}`);
+    const proposal=buildComposedProposal(ingress);
+    inputSchema=proposal.schema;
+    try{
+      program=compileComposedCreativeProposal(pack,language,proposal);
+    }catch(error){
+      if(error?.report?.errors)throw new CreativeIngressError(error.report.code||'COMPOSED_CREATIVE_PROPOSAL_REJECTED',prefixErrors(error.report.errors,'/payload'));
+      throw error;
+    }
+    inputId=program.proposal_id;
+    creativeGate={preview_render_allowed:true,publication_trust_satisfied:true,reason:'verified_composition'};
   }else{
     const draft=buildExternalDraft(ingress);
-    canonicalInput=draft;
     inputSchema=draft.schema;
     let compiled;
     try{
