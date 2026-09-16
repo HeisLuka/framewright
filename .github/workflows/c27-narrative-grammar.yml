@@ -38,7 +38,10 @@ jobs:
       - name: Standalone planner self-test
         run: node .agents/skills/framewright/scripts/c27-narrative-selftest.mjs
       - name: Creative portfolio self-test
-        run: node .agents/skills/framewright/scripts/c27-creative-portfolio-selftest.mjs
+        run: |
+          mkdir -p artifacts/c27
+          node .agents/skills/framewright/scripts/c27-creative-portfolio-selftest.mjs > artifacts/c27/portfolio-selftest.log 2>&1 || { cat artifacts/c27/portfolio-selftest.log; exit 1; }
+          cat artifacts/c27/portfolio-selftest.log
       - name: Build exact E08 narrative matrix
         run: node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs artifacts/c27/fixtures
       - name: Audit semantic contract
@@ -88,6 +91,7 @@ jobs:
         with:
           name: c27-narrative-grammar
           path: |
+            artifacts/c27/portfolio-selftest.log
             artifacts/c27/audit.json
             artifacts/c27/render-audit.json
             artifacts/c27/summary.json
