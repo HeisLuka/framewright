@@ -1,0 +1,81 @@
+name: R40 Explicit Color Input Control
+
+on:
+  push:
+    branches: [lab/r40-color-input-control]
+    paths:
+      - '.agents/skills/framewright/scripts/r40-color-input-control.mjs'
+      - '.github/workflows/r40-color-input-control.yml'
+      - 'docs/r40-color-input-control.md'
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r40-color-input-control.mjs'
+      - '.github/workflows/r40-color-input-control.yml'
+      - 'docs/r40-color-input-control.md'
+  workflow_dispatch:
+
+jobs:
+  color-input-control:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r40-color-input-control.mjs
+      - name: Prepare exact C18 fixture
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r40.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r40.html examples/book-ad-systems/index-e17-for-r40.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r40.html examples/book-ad-systems/index-e17-e14-for-r40.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r40.html examples/book-ad-systems/index-e18-for-r40.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r40
+      - name: Run explicit color-input control scout
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r40.html
+          MANIFEST: examples/book-ad-systems/generated-r40/manifest.json
+          OUT_DIR: artifacts/r40
+          REPORT: artifacts/r40/report.json
+        run: node .agents/skills/framewright/scripts/r40-color-input-control.mjs
+      - name: Validate report completeness
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r40/report.json','utf8'));
+          if(r.schema!=='framewright-r40-color-input-control-v1') throw new Error('wrong schema');
+          for(const m of ['canvas-direct','rgba-srgb','rgba-bt709-rgb']) {
+            if(!r.synthetic?.[m]||!r.book?.[m]) throw new Error(`missing ${m}`);
+            if(!Number.isFinite(r.synthetic[m].summary?.meanAbsChannelError)) throw new Error(`bad synthetic metrics ${m}`);
+            if(!Number.isFinite(r.book[m].summary?.ssimWorst)) throw new Error(`bad semantic metrics ${m}`);
+          }
+          for(const m of ['rgba-srgb','rgba-bt709-rgb']) {
+            const c=r.candidates?.[m];
+            for(const k of ['nativeBt709','syntheticPass','semanticPass','productionPass']) if(typeof c?.[k]!=='boolean') throw new Error(`${m}: missing ${k}`);
+            if(!Number.isFinite(c.wallOverhead)) throw new Error(`${m}: missing wallOverhead`);
+          }
+          if(typeof r.decision?.apiLevelBt709ControlValidated!=='boolean'||typeof r.decision?.fallbackMeasuredReference!=='boolean') throw new Error('missing decision');
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - name: Show result
+        if: always()
+        run: test -f artifacts/r40/summary.md && cat artifacts/r40/summary.md || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r40-color-input-control
+          path: |
+            artifacts/r40/report.json
+            artifacts/r40/summary.md
+            artifacts/r40/synthetic-reference.png
+            artifacts/r40/*.mp4
+            artifacts/r40/book-refs/*.png
+            artifacts/r40/book-decoded/*.png
+          retention-days: 14
