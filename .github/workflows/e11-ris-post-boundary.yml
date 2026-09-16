@@ -1,0 +1,37 @@
+name: E11 RIS post boundary
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/scripts/bench-ris-post-boundary.mjs"
+      - ".agents/skills/framewright/scripts/frame-packet.mjs"
+      - "test/frame-packet.test.mjs"
+      - "examples/ris-tv/index.html"
+      - ".github/workflows/e11-ris-post-boundary.yml"
+  workflow_dispatch:
+
+jobs:
+  boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: node --check .agents/skills/framewright/scripts/bench-ris-post-boundary.mjs
+      - name: Run 720x1280 RIS TV boundary benchmark
+        env:
+          AR: "9:16"
+          ROUNDS: "2"
+        run: >-
+          node .agents/skills/framewright/scripts/bench-ris-post-boundary.mjs
+          artifacts/e11-ris-post-boundary.json 720 90 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e11-ris-post-boundary
+          path: artifacts/e11-ris-post-boundary.json
