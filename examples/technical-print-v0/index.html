@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Technical Print v0</title>
+<style>
+html,body{margin:0;height:100%;background:#06192b;overflow:hidden}canvas{display:block;margin:0 auto;max-width:100vw;max-height:100vh}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script type="module">
+import {
+  compileRenderPlan,
+  createMotionRuntime,
+  installRisoBridge,
+} from "../../src/motion-core.mjs";
+
+const Q = new URLSearchParams(location.search);
+const canvas = document.getElementById("c");
+const WIDTH = Number(Q.get("w") || 720);
+const SEED = Number(Q.get("s") || 7);
+const PLAN = compileRenderPlan({
+  id: "technical-print-v0",
+  fps: 30,
+  aspect: "9:16",
+  shortSide: 1080,
+  background: "#0b3558",
+  style: {
+    ink: "#f3efe0",
+    blue: "#0b3558",
+    orange: "#ff6438",
+    cyan: "#5dc1c9",
+  },
+  scenes: [
+    { id: "circuit", recipe: "circuit", seconds: 2.4, params: { label: "SIGNAL / 01" } },
+    { id: "cards", recipe: "cards", seconds: 2.2, params: { count: 7 } },
+    { id: "portrait", recipe: "portrait", seconds: 3.2, params: { caption: "THE HUMAN LAYER" } },
+    { id: "dissolve", recipe: "dissolve", seconds: 2.2, params: { count: 520 } },
+    { id: "title", recipe: "title", seconds: 2.5, params: { top: "BOOKS ARE", main: "SIGNAL" } },
+    { id: "chip", recipe: "chip", seconds: 3.3, params: { rows: 12, cols: 8 } },
+  ],
+});
+
+const style = PLAN.style;
+const font = '700 96px Arial, Helvetica, sans-serif';
+
+const line = (g, x1, y1, x2, y2, width = 5, color = style.ink, alpha = 1) => {
+  g.save(); g.strokeStyle = color; g.globalAlpha = alpha; g.lineWidth = width; g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.stroke(); g.restore();
+};
+const label = (g, text, x, y, size = 42, color = style.ink, align = 'left', alpha = 1) => {
+  g.save(); g.fillStyle = color; g.globalAlpha = alpha; g.font = `700 ${size}px Arial, Helvetica, sans-serif`; g.textAlign = align; g.textBaseline = 'middle'; g.fillText(text,x,y); g.restore();
+};
+const dot = (g,x,y,r,color,alpha=1) => { g.save(); g.fillStyle=color; g.globalAlpha=alpha; g.beginPath(); g.arc(x,y,r,0,Math.PI*2); g.fill(); g.restore(); };
+
+const recipes = {
+  circuit(g,S,p,H){
+    const { windowedProgress, lerp, strokePolylineProgress } = H;
+    const W=S.plan.logicalWidth,Hh=S.plan.logicalHeight;
+    const cx=W*0.5, cy=Hh*0.52;
+    const reveal=windowedProgress(S.progress,0.05,0.82,'inOut');
+    const paths=[
+      [[90,250],[330,250],[330,520],[cx-160,520]],
+      [[W-90,310],[W-320,310],[W-320,620],[cx+160,620]],
+      [[120,1280],[360,1280],[360,910],[cx-150,910]],
+      [[W-120,1370],[W-360,1370],[W-360,1010],[cx+150,1010]],
+    ];
+    g.lineWidth=8; g.strokeStyle=style.orange;
+    paths.forEach((pts,index)=>strokePolylineProgress(g,pts,Math.max(0,Math.min(1,reveal*1.25-index*0.12))));
+    g.save(); g.translate(cx,cy); g.rotate(Math.sin(S.localTime*1.6)*0.015); g.fillStyle=style.ink; g.fillRect(-165,-210,330,420); g.fillStyle=style.blue; g.fillRect(-140,-185,280,370); g.strokeStyle=style.orange; g.lineWidth=8; g.strokeRect(-120,-160,240,320); g.restore();
+    for(let i=0;i<12;i++){ const t=i/11; dot(g,lerp(145,W-145,t),cy+Math.sin(i*1.7)*240,8, i%3===0?style.orange:style.ink,0.9); }
+    label(g,p.label,90,90,34,style.ink);
+  },
+  cards(g,S,p,H){
+    const { easing, lerp }=H; const W=S.plan.logicalWidth,Hh=S.plan.logicalHeight; const count=p.count||7;
+    g.save(); g.translate(W*0.5,Hh*0.54); const t=easing.out(S.progress);
+    for(let i=0;i<count;i++){
+      const z=i/(count-1); const spread=lerp(0,1,t); const x=(i-(count-1)/2)*120*spread; const y=(i%2?1:-1)*55*spread; const rot=(i-(count-1)/2)*0.06;
+      g.save(); g.translate(x,y); g.rotate(rot); g.transform(1,0.12*(z-0.5),-0.18,1,0,0); g.globalAlpha=0.2+0.8*t; g.fillStyle=i%2?style.ink:style.orange; g.fillRect(-100,-180,200,360); g.fillStyle=style.blue; g.fillRect(-82,-162,164,324); g.restore();
+    }
+    g.restore();
+    label(g,'MODULAR / MEMORY / IMAGE',W*0.5,Hh*0.82,42,style.ink,'center',Math.min(1,S.progress*2));
+  },
+  portrait(g,S,p,H){
+    const { strokePolylineProgress, windowedProgress }=H; const W=S.plan.logicalWidth,Hh=S.plan.logicalHeight;
+    const cx=W*0.5, top=360; const reveal=windowedProgress(S.progress,0.02,0.75,'inOut');
+    const head=[[cx-170,top+170],[cx-130,top+60],[cx-40,top],[cx+70,top+20],[cx+145,top+95],[cx+175,top+230],[cx+130,top+360],[cx+60,top+470],[cx,top+500],[cx-70,top+455],[cx-145,top+330],[cx-175,top+220],[cx-170,top+170]];
+    g.strokeStyle=style.orange; g.lineWidth=10; strokePolylineProgress(g,head,reveal);
+    const features=[[[cx-95,top+205],[cx-45,top+188],[cx-5,top+208]],[[cx+20,top+210],[cx+62,top+190],[cx+105,top+210]],[[cx-20,top+260],[cx-5,top+315],[cx+25,top+320]],[[cx-70,top+375],[cx,top+400],[cx+75,top+372]]];
+    g.strokeStyle=style.ink; g.lineWidth=7; features.forEach((pts,i)=>strokePolylineProgress(g,pts,Math.max(0,reveal*1.35-i*0.08)));
+    label(g,p.caption,W*0.5,1180,52,style.ink,'center',windowedProgress(S.progress,0.45,0.9,'out'));
+  },
+  dissolve(g,S,p,H){
+    const { createRng, lerp, easing }=H; const W=S.plan.logicalWidth,Hh=S.plan.logicalHeight; const r=createRng(S.sceneSeed); const t=easing.inOut(S.progress); const count=p.count||420;
+    for(let i=0;i<count;i++){
+      const a=r.float(0,Math.PI*2), rad=r.float(40,340), sx=W*0.5+Math.cos(a)*rad*0.35, sy=Hh*0.48+Math.sin(a)*rad;
+      const ex=sx+Math.cos(a)*r.float(120,600), ey=sy+Math.sin(a)*r.float(120,900)-t*r.float(0,180);
+      const x=lerp(sx,ex,t), y=lerp(sy,ey,t); const size=r.float(2,8)*(1-t*0.35); dot(g,x,y,size,i%5===0?style.orange:style.ink,1-t*0.5);
+    }
+    label(g,'DISASSEMBLE / RECOMPOSE',W*0.5,Hh*0.84,44,style.ink,'center',1-t);
+  },
+  title(g,S,p,H){
+    const { windowedProgress }=H; const W=S.plan.logicalWidth,Hh=S.plan.logicalHeight;
+    const a=windowedProgress(S.progress,0.05,0.55,'out'); const b=windowedProgress(S.progress,0.24,0.8,'out');
+    label(g,p.top,W*0.5,Hh*0.42,62,style.ink,'center',a);
+    g.save(); g.globalAlpha=b; g.font=font; g.fillStyle=style.orange; g.textAlign='center'; g.textBaseline='middle'; g.translate(W*0.5,Hh*0.56); g.scale(0.88+0.12*b,0.88+0.12*b); g.fillText(p.main,0,0); g.restore();
+    line(g,130,Hh*0.67,W-130,Hh*0.67,8,style.ink,b);
+  },
+  chip(g,S,p,H){
+    const { windowedProgress }=H; const W=S.plan.logicalWidth,Hh=S.plan.logicalHeight; const rows=p.rows||10, cols=p.cols||8; const t=windowedProgress(S.progress,0.02,0.82,'inOut'); const gap=12; const cellW=(W-170-gap*(cols-1))/cols; const cellH=cellW*0.8; const y0=300;
+    for(let row=0;row<rows;row++) for(let col=0;col<cols;col++){
+      const order=(row*cols+col)/(rows*cols); if(t<order*0.82) continue;
+      const x=85+col*(cellW+gap), y=y0+row*(cellH+gap); const hot=((row+col*3)%11===0)||((row*5+col)%17===0); g.fillStyle=hot?style.orange:style.ink; g.globalAlpha=0.88; g.fillRect(x,y,cellW,cellH);
+      if(!hot){ g.fillStyle=style.blue; g.fillRect(x+8,y+8,cellW-16,cellH-16); }
+    }
+    g.globalAlpha=1; label(g,'PROCESS / STRUCTURE / SIGNAL',W*0.5,1320,46,style.ink,'center',windowedProgress(S.progress,0.55,0.95,'out'));
+  },
+};
+
+const afterScene=(g,S)=>{
+  const W=S.plan.logicalWidth,H=S.plan.logicalHeight; const phase=(S.frame%4);
+  g.save(); g.globalAlpha=0.1; g.strokeStyle=style.ink; g.lineWidth=2;
+  for(let y=phase;y<H;y+=8){ g.beginPath(); g.moveTo(0,y); g.lineTo(W,y); g.stroke(); }
+  g.globalAlpha=0.18; g.fillStyle=style.orange;
+  for(let i=0;i<26;i++){ const x=(i*157+S.frame*3)%W; const y=(i*271+S.frame*7)%H; g.fillRect(x,y,2,2); }
+  g.restore();
+};
+
+const runtime=createMotionRuntime({canvas,plan:PLAN,recipes,afterScene});
+installRisoBridge({runtime,canvas,defaultWidth:WIDTH,defaultSeed:SEED});
+
+window.addEventListener('load',()=>{
+  if(Q.has('f')){ runtime.render(Number(Q.get('f')||0),WIDTH,SEED); window.__ready=true; return; }
+  let frame=0,last=0; const tick=(ts)=>{ if(ts-last>=1000/PLAN.fps){ last=ts; runtime.render(frame++,Math.min(WIDTH,720),SEED); } requestAnimationFrame(tick); }; requestAnimationFrame(tick); window.__ready=true;
+});
+</script>
+</body>
+</html>
