@@ -7,6 +7,7 @@ on:
       - '.agents/skills/framewright/scripts/i02-fast-backend-scout.mjs'
       - '.agents/skills/framewright/scripts/i02-stage-summary.mjs'
       - '.agents/skills/framewright/scripts/i02-quality-calibration.mjs'
+      - '.agents/skills/framewright/scripts/i02-consistent-quality-target.mjs'
       - '.agents/skills/framewright/scripts/i02-webcodecs-quality-matrix.mjs'
       - '.github/workflows/i02-fast-backend-scout.yml'
       - 'docs/i02-fast-backend-scout.md'
@@ -35,6 +36,7 @@ jobs:
           node --check .agents/skills/framewright/scripts/i02-fast-backend-scout.mjs
           node --check .agents/skills/framewright/scripts/i02-stage-summary.mjs
           node --check .agents/skills/framewright/scripts/i02-quality-calibration.mjs
+          node --check .agents/skills/framewright/scripts/i02-consistent-quality-target.mjs
           node --check .agents/skills/framewright/scripts/i02-webcodecs-quality-matrix.mjs
 
       - name: Prepare exact C18 semantic scene + fixtures
@@ -74,10 +76,20 @@ jobs:
           REPORT: artifacts/i02/report.json
         run: node .agents/skills/framewright/scripts/i02-stage-summary.mjs
 
-      - name: Measure codec loss against each backend raster
+      - name: Measure legacy four-frame codec sample
         env:
           OUT_DIR: artifacts/i02
         run: node .agents/skills/framewright/scripts/i02-quality-calibration.mjs
+
+      - name: Recalibrate quality on identical semantic frames
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-i02.html
+          MANIFEST: examples/book-ad-systems/generated-i02/manifest.json
+          OUT_DIR: artifacts/i02
+          BOOK_ID: river-station
+          VARIANT: hook-first
+          PROFILE: vertical
+        run: node .agents/skills/framewright/scripts/i02-consistent-quality-target.mjs
 
       - name: Sweep WebCodecs bitrate and scene keyframes
         env:
