@@ -34,4 +34,29 @@ A complexity model earns implementation only if:
 3. equal-weight projected encoded-byte savings versus fixed 3 Mbps are at least **20%**;
 4. no semantic ROI is weakened relative to its same-raster x264 CRF22 reference.
 
-If the oracle fails this prerequisite, do not build complexity scoring, per-job bitrate routing or new production policy. Fixed 3 Mbps remains the safe software default.
+## Canonical result
+
+GitHub Actions run `35155585167`, artifact `10470029892`:
+
+| fixture | style | lowest stable PASS | bytes saved vs 3M | 3M result |
+|---|---|---:|---:|---|
+| river-station | paper | 2.75 Mbps | 4.1% | PASS |
+| city-seven | swiss | none <=3M | n/a | FAIL |
+| long-title | newspaper | none <=3M | n/a | FAIL |
+
+`river-station` reproduces the non-monotonic shape that motivated the stability rule: 2.00M PASS, 2.25M PASS, 2.50M FAIL, then 2.75M and 3.00M PASS. Therefore the usable floor is 2.75M, not either lower isolated pass, and the byte saving is only 4.1%.
+
+The other two visual systems expose a more important issue than adaptive savings. At 3 Mbps:
+
+- `city-seven / swiss` misses the same-raster x264 reference by only `0.000164` SSIM on `hook` and `0.000050` on `book_hook`;
+- `long-title / newspaper` misses by `0.000125` on `cta_cover` and `0.000566` on `cta_title`.
+
+Their WebCodecs mean/worst ROI quality is still high, but the established R31 contract is binary: **every semantic ROI must be >= the same-raster x264 CRF22 ROI**. Under that contract, neither fixture has a stable pass at or below 3 Mbps.
+
+## Decision
+
+**Do not implement a content-adaptive bitrate model.** The prerequisite fails before any complexity score is justified: only one of three representative visual systems has a stable passing point <=3 Mbps, and its byte saving is 4.1%, far below the 20% gate.
+
+R46 also invalidates a stronger assumption that had been inferred from the single R31 fixture: **3 Mbps is not yet proven as a catalog-wide x264-relative semantic-ROI floor.** Keep the existing 3 Mbps runtime default until a replacement is validated, but do not describe it as universally clearing the R31 oracle across visual systems.
+
+Follow-up should be a separate catalog-floor pass, not adaptive routing: extend the upper ladder above 3 Mbps across heterogeneous styles/books, find the smallest robust global (or clearly justified style-specific) target, and only then change codec policy.
