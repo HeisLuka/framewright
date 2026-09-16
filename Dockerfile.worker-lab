@@ -1,4 +1,4 @@
-FROM node:20.20.2-bookworm-slim
+FROM node:20.20.2-bookworm-slim@sha256:672e756543d555ea2f8bb66e265d9848febce2e05f10bde577b9e55ce1a7a356
 
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
@@ -32,6 +32,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && fc-cache -f
 
 WORKDIR /app
+RUN mkdir -p /home/node/.cache/puppeteer \
+    && chown -R node:node /home/node/.cache /app
 COPY --chown=node:node package.json package-lock.json ./
 USER node
 RUN npm ci --no-audit --no-fund
