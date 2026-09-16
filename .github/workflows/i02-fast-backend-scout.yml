@@ -7,6 +7,7 @@ on:
       - '.agents/skills/framewright/scripts/i02-fast-backend-scout.mjs'
       - '.agents/skills/framewright/scripts/i02-stage-summary.mjs'
       - '.agents/skills/framewright/scripts/i02-quality-calibration.mjs'
+      - '.agents/skills/framewright/scripts/i02-webcodecs-quality-matrix.mjs'
       - '.github/workflows/i02-fast-backend-scout.yml'
       - 'docs/i02-fast-backend-scout.md'
   workflow_dispatch:
@@ -34,6 +35,7 @@ jobs:
           node --check .agents/skills/framewright/scripts/i02-fast-backend-scout.mjs
           node --check .agents/skills/framewright/scripts/i02-stage-summary.mjs
           node --check .agents/skills/framewright/scripts/i02-quality-calibration.mjs
+          node --check .agents/skills/framewright/scripts/i02-webcodecs-quality-matrix.mjs
 
       - name: Prepare exact C18 semantic scene + fixtures
         run: |
@@ -77,10 +79,23 @@ jobs:
           OUT_DIR: artifacts/i02
         run: node .agents/skills/framewright/scripts/i02-quality-calibration.mjs
 
+      - name: Sweep WebCodecs bitrate and scene keyframes
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-i02.html
+          MANIFEST: examples/book-ad-systems/generated-i02/manifest.json
+          OUT_DIR: artifacts/i02
+          BOOK_ID: river-station
+          VARIANT: hook-first
+          PROFILE: vertical
+          MATRIX_BITRATES: '1500000,2000000,2500000,3000000,4000000'
+          MATRIX_KEYFRAMES: 'fixed2s,scene+2s'
+          WEBCODECS_QUEUE: '8'
+        run: node .agents/skills/framewright/scripts/i02-webcodecs-quality-matrix.mjs
+
       - name: Show scout summaries
         if: always()
         run: |
-          for f in artifacts/i02/summary.md artifacts/i02/stage-summary.md artifacts/i02/quality-calibration.md; do
+          for f in artifacts/i02/summary.md artifacts/i02/stage-summary.md artifacts/i02/quality-calibration.md artifacts/i02/webcodecs-quality-matrix.md; do
             test -f "$f" && { echo; cat "$f"; } || true
           done
           test -f artifacts/i02/report.json && node -e "const r=require('./artifacts/i02/report.json'); console.log(JSON.stringify(r.summary,null,2));" || true
