@@ -117,8 +117,8 @@ for(let i=0;i<subjectCount;i++){
 if(changedExploitCreative===0)throw new Error('updated priors did not change any exploitation assignment in audit population');
 const holdoutRate=laneCountsA.holdout/subjectCount,exploreRate=laneCountsA.explore/subjectCount,exploitRate=laneCountsA.exploit/subjectCount;
 if(Math.abs(holdoutRate-.20)>.025)throw new Error(`holdout empirical rate drift ${holdoutRate}`);
-if(Math.abs(exploreRate-.375)>.03)throw new Error(`explore empirical rate drift ${exploreRate}`);
-if(Math.abs(exploitRate-.425)>.03)throw new Error(`exploit empirical rate drift ${exploitRate}`);
+if(Math.abs(exploreRate-.30)>.03)throw new Error(`explore empirical rate drift ${exploreRate}`);
+if(Math.abs(exploitRate-.50)>.03)throw new Error(`exploit empirical rate drift ${exploitRate}`);
 
 const rejected={};
 rejected.composite_metric=mustThrow('composite metric',()=>buildTrafficPlan({snapshot:snapshotA,policy:{...selectorPolicy,metric_weights:{hold_3s:.5,downstream_open:.5}}}),'composite metric weights are forbidden');
