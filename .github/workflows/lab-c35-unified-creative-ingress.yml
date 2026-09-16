@@ -9,12 +9,19 @@ on:
       - 'contracts/check-creative-ingress-v1.mjs'
       - 'contracts/creative-proposal-v1.mjs'
       - 'contracts/compile-creative-proposal-v1.mjs'
+      - 'contracts/compositional-copy-v1.mjs'
+      - 'contracts/compile-composed-creative-proposal-v1.mjs'
+      - 'contracts/check-compositional-copy-v1.mjs'
+      - 'contracts/check-composed-provenance-v1.mjs'
       - 'contracts/external-creative-draft-v1.mjs'
       - 'contracts/check-creative-proposal-v1.mjs'
       - 'contracts/check-context-atom-provenance-v1.mjs'
       - 'contracts/check-external-creative-draft-v1.mjs'
       - 'contracts/examples/context-pack-v1.example.json'
+      - 'contracts/examples/copy-language-v1.example.json'
+      - 'contracts/examples/composed-creative-proposal-v1.example.json'
       - 'contracts/examples/creative-ingress-trusted-atoms-v1.example.json'
+      - 'contracts/examples/creative-ingress-verified-composition-v1.example.json'
       - 'contracts/examples/creative-ingress-external-copy-v1.example.json'
       - 'docs/c35-unified-creative-ingress.md'
       - '.github/workflows/lab-c35-unified-creative-ingress.yml'
@@ -31,15 +38,21 @@ jobs:
           node-version: '22'
       - name: Parse schema and examples
         run: |
-          node -e "for (const f of ['contracts/creative-ingress-v1.schema.json','contracts/examples/creative-ingress-trusted-atoms-v1.example.json','contracts/examples/creative-ingress-external-copy-v1.example.json']) JSON.parse(require('fs').readFileSync(f,'utf8'));"
+          node -e "for (const f of ['contracts/creative-ingress-v1.schema.json','contracts/examples/creative-ingress-trusted-atoms-v1.example.json','contracts/examples/creative-ingress-verified-composition-v1.example.json','contracts/examples/creative-ingress-external-copy-v1.example.json']) JSON.parse(require('fs').readFileSync(f,'utf8'));"
       - name: Syntax check
         run: |
           node --check contracts/creative-ingress-v1.mjs
+          node --check contracts/compile-composed-creative-proposal-v1.mjs
+          node --check contracts/check-composed-provenance-v1.mjs
           node --check contracts/check-creative-ingress-v1.mjs
       - name: Preserve C32 trusted-atom contract
         run: node contracts/check-creative-proposal-v1.mjs
       - name: Preserve C32 honest context provenance
         run: node contracts/check-context-atom-provenance-v1.mjs
+      - name: Preserve C36 compositional-copy contract
+        run: node contracts/check-compositional-copy-v1.mjs
+      - name: Verify honest C36 derived-copy provenance
+        run: node contracts/check-composed-provenance-v1.mjs
       - name: Preserve C33 expressive-copy trust contract
         run: node contracts/check-external-creative-draft-v1.mjs
       - name: Run unified C35 ingress gate
@@ -52,8 +65,10 @@ jobs:
           import fs from 'node:fs';
           const r=JSON.parse(fs.readFileSync('artifacts/c35/report.json','utf8'));
           if(r.status!=='PASS'||r.schema!=='newboo-c35-creative-ingress-audit-v1') throw new Error('C35 receipt invalid');
-          if(JSON.stringify(r.modes)!==JSON.stringify(['trusted_atoms','external_copy_review_required'])) throw new Error('C35 modes drifted');
+          if(JSON.stringify(r.modes)!==JSON.stringify(['trusted_atoms','verified_composition','external_copy_review_required'])) throw new Error('C35 modes drifted');
           if(r.trusted.preview_render_allowed!==true||r.trusted.publication_trust_satisfied!==true) throw new Error('trusted-atoms gate drift');
+          if(r.composed.preview_render_allowed!==true||r.composed.publication_trust_satisfied!==true) throw new Error('verified-composition gate drift');
+          if(r.composed.context_atom_sources!==3||r.composed.human_verified_sources!==0) throw new Error('verified-composition provenance drift');
           if(r.external.preview_without_approval!==true||r.external.publication_trust_without_approval!==false) throw new Error('external preview gate drift');
           if(r.external.publication_trust_with_server_approval!==true||r.external.stale_approval_rejected!==true) throw new Error('external approval gate drift');
           if(r.external.approval_changes_program_identity!==false||r.external.approval_changes_ingress_identity!==false||r.external.approval_changes_decision_identity!==true) throw new Error('approval identity boundary drift');
