@@ -19,7 +19,13 @@
     "example": "HTML=examples/ris-tv/index.html node .agents/skills/framewright/scripts/look.mjs sheet 24 480 7 shots/example-sheet.png",
     "local:enqueue": "node .agents/skills/framewright/scripts/enqueue-local-render-job.mjs",
     "local:worker": "node .agents/skills/framewright/scripts/local-render-worker.mjs",
-    "check:i07": "node contracts/check-i07-local-render-worker.mjs"
+    "local:template": "node .agents/skills/framewright/scripts/build-local-video-template.mjs",
+    "local:console": "node .agents/skills/framewright/scripts/local-video-console.mjs",
+    "check:i07": "node contracts/check-i07-local-render-worker.mjs",
+    "check:i09": "node contracts/check-i09-local-video-console.mjs",
+    "check:i09:render": "node contracts/i09-local-render-smoke.mjs"
   },
-  "dependencies": { "puppeteer": "^23.11.1" }
+  "dependencies": {
+    "puppeteer": "^23.11.1"
+  }
 }
