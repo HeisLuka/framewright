@@ -17,7 +17,7 @@ if(primary.length!==10)throw new Error(`expected 10 E13 primary routes, got ${pr
 const VARIANTS=[
   {id:'hook-first',description:'hook -> product detail -> CTA'},
   {id:'cover-first',description:'product detail -> hook -> CTA'},
-  {id:'title-first',description:'title/cover statement -> product detail -> CTA'},
+  {id:'title-first',description:'title/cover statement -> hook -> CTA'},
   {id:'hook-title',description:'hook -> title/cover statement -> CTA'}
 ];
 const manifest={schema:'framewright-e14-variant-factory-v1',variants:VARIANTS,items:[]};
