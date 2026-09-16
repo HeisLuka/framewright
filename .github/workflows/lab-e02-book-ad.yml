@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - lab/e02-book-ad-v0
+  pull_request:
+    branches:
+      - main
+      - lab/e01-stage-profiler
   workflow_dispatch:
 
 jobs:
