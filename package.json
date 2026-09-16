@@ -15,10 +15,12 @@
     "audio": "node audio.mjs track.wav",
     "render": "node scripts/render.mjs frames 7 1920 5",
     "render:raw": "node .agents/skills/framewright/scripts/render-raw.mjs out.mp4 7 1920 5",
+    "render:webcodecs": "node .agents/skills/framewright/scripts/render-webcodecs.mjs out.mp4 7 1080",
     "bench:render": "node .agents/skills/framewright/scripts/bench-render.mjs",
     "build": "bash scripts/build.sh out.mp4",
     "make": "bash scripts/make.sh",
     "book-ad": "node .agents/skills/framewright/scripts/book-ad.mjs",
+    "book-ad:fast": "node .agents/skills/framewright/scripts/book-ad-fast.mjs",
     "test": "node --test test/*.test.mjs",
     "example": "HTML=examples/ris-tv/index.html node .agents/skills/framewright/scripts/look.mjs sheet 24 480 7 shots/example-sheet.png"
   },
