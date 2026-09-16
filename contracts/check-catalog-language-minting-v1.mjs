@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import {
   CATALOG_SOURCE_SCHEMA,
   computeCatalogSourceHash,
@@ -92,7 +92,16 @@ function makeContextDraft(source) {
   };
 }
 
+const sourceSchemaPath = new URL('./catalog-creative-source-v1.schema.json', import.meta.url);
+const manifestSchemaPath = new URL('./catalog-language-mint-manifest-v1.schema.json', import.meta.url);
+const exampleSourcePath = new URL('./examples/catalog-creative-source-v1.example.json', import.meta.url);
+JSON.parse(readFileSync(sourceSchemaPath, 'utf8'));
+JSON.parse(readFileSync(manifestSchemaPath, 'utf8'));
+const exampleSource = JSON.parse(readFileSync(exampleSourcePath, 'utf8'));
+assert.equal(computeCatalogSourceHash(exampleSource), exampleSource.source_hash, 'example source hash must be current');
+
 const source = makeSource();
+assert.deepEqual(exampleSource, source, 'checked-in source fixture must match self-test source');
 const draft = makeContextDraft(source);
 const first = mintCatalogLanguage({ source, contextPackDraft: draft });
 const second = mintCatalogLanguage({ source, contextPackDraft: draft });
