@@ -57,7 +57,9 @@ async function installProfiler(p){
 }
 
 let t=performance.now();
-const b=await puppeteer.launch({headless:true,protocolTimeout:600000,args:['--allow-file-access-from-files']});
+const browserArgs=['--allow-file-access-from-files'];
+if(process.env.CI)browserArgs.push('--no-sandbox','--disable-setuid-sandbox');
+const b=await puppeteer.launch({headless:true,protocolTimeout:600000,args:browserArgs});
 profile.startup.chromeLaunchMs=+(performance.now()-t).toFixed(3);
 async function preparedPage(){
   const p=await b.newPage();
