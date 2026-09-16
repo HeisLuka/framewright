@@ -19,6 +19,7 @@ const summaryPath = path.resolve(process.env.SUMMARY || path.join(outDir, 'summa
 const repeats = Math.max(2, Math.min(8, Math.trunc(Number(process.env.REPEATS || 3))));
 const bitrate = Math.max(250_000, Math.trunc(Number(process.env.BITRATE || 2_000_000)));
 const audioBitrate = process.env.AUDIO_BITRATE || '192k';
+const renderDurationSeconds = Math.max(.1, Number(process.env.RENDER_DURATION_SECONDS || 12));
 const queueLimit = Math.max(1, Math.min(64, Math.trunc(Number(process.env.WEBCODECS_QUEUE || 8))));
 const selector = {
   bookId: process.env.BOOK_ID || 'river-station',
@@ -43,11 +44,11 @@ const canonicalJson = (value) => {
 const sha256 = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 const sha256File = async (file) => sha256(await fsp.readFile(file));
 const sourceAudioSha256 = await sha256File(audioSource);
-const AUDIO_POLICY_VERSION = 'aac-lc-ffmpeg-192k-v1';
+const AUDIO_POLICY_VERSION = 'aac-lc-ffmpeg-192k-v2-explicit-duration';
 const audioSpec = {
   version: 1,
   sourceSha256: sourceAudioSha256,
-  timing: { trimStartSeconds: 0, trimEndSeconds: null, shortestAtFinalMux: true },
+  timing: { trimStartSeconds: 0, durationSeconds: renderDurationSeconds, finalMuxDurationSeconds: renderDurationSeconds },
   mix: { gainDb: 0, fades: null },
   codec: { name: 'aac', bitrate: audioBitrate, container: 'm4a', policy: AUDIO_POLICY_VERSION },
 };
@@ -121,7 +122,7 @@ async function ensureCanonicalAudio({ forceMiss = false } = {}) {
   }
   const tmp = `${canonicalAudio}.tmp-${process.pid}`;
   const encodeStarted = performance.now();
-  await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', audioSource, '-vn', '-c:a', 'aac', '-b:a', audioBitrate, '-movflags', '+faststart', tmp]);
+  await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', audioSource, '-t', String(renderDurationSeconds), '-vn', '-c:a', 'aac', '-b:a', audioBitrate, '-movflags', '+faststart', tmp]);
   const encodeMs = performance.now() - encodeStarted;
   await fsp.rename(tmp, canonicalAudio);
   const artifactSha256 = await sha256File(canonicalAudio);
@@ -186,21 +187,23 @@ async function renderJob({ id, audioMode, forceAudioMiss = false }) {
     } finally { await browser.close(); }
     const h264 = uploads.get(id); if (!h264?.length) throw new Error(`${id}: no H264 upload`);
     const h264Path = path.join(outDir, `${id}.h264`), mp4Path = path.join(outDir, `${id}.mp4`); await fsp.writeFile(h264Path, h264);
+    const expectedSec = browserMetrics.total / browserMetrics.fps;
+    if (Math.abs(expectedSec - renderDurationSeconds) > .001) throw new Error(`${id}: RenderSpec duration ${renderDurationSeconds}s does not match ${browserMetrics.total}/${browserMetrics.fps}=${expectedSec}s`);
     const muxStarted = performance.now();
     const args = ['-hide_banner', '-loglevel', 'error', '-y', '-fflags', '+genpts', '-r', String(browserMetrics.fps), '-i', h264Path];
     if (audioMode === 'cached') args.push('-i', audio.artifact); else args.push('-i', audioSource);
     args.push('-map', '0:v:0', '-map', '1:a:0?', '-c:v', 'copy');
     if (audioMode === 'cached') args.push('-c:a', 'copy'); else args.push('-c:a', 'aac', '-b:a', audioBitrate);
-    args.push('-shortest', '-movflags', '+faststart', mp4Path);
+    args.push('-t', String(expectedSec), '-movflags', '+faststart', mp4Path);
     await run('ffmpeg', args); const muxMs = performance.now() - muxStarted;
     const media = await probe(mp4Path), video = media.streams.find((x) => x.codec_type === 'video'), audioStream = media.streams.find((x) => x.codec_type === 'audio');
     if (Number(video?.nb_read_frames || 0) !== browserMetrics.total) throw new Error(`${id}: frame mismatch ${video?.nb_read_frames}/${browserMetrics.total}`);
     if (!audioStream || audioStream.codec_name !== 'aac') throw new Error(`${id}: AAC stream missing`);
-    const expectedSec = browserMetrics.total / browserMetrics.fps, audioDuration = Number(audioStream.duration || media.format.duration || 0), formatDuration = Number(media.format.duration || 0);
+    const audioDuration = Number(audioStream.duration || media.format.duration || 0), formatDuration = Number(media.format.duration || 0);
     if (Math.abs(formatDuration - expectedSec) > .10 || Math.abs(audioDuration - expectedSec) > .10) throw new Error(`${id}: duration drift expected=${expectedSec} format=${formatDuration} audio=${audioDuration}`);
     const outputSha256 = await sha256File(mp4Path), outputBytes = fs.statSync(mp4Path).size;
     const audioArtifactSha256 = audioMode === 'cached' ? audio.artifactSha256 : null;
-    const renderSpecId = `fwr32_${sha256(Buffer.from(canonicalJson({ fixture: entry.id, seed: entry.seed, width: entry.width, bitrate, audio: audioMode === 'cached' ? { audioSpecId, artifactSha256: audioArtifactSha256, mux: 'copy' } : { sourceSha256: sourceAudioSha256, codec: 'aac', bitrate: audioBitrate, mux: 'encode' } })) )}`;
+    const renderSpecId = `fwr32_${sha256(Buffer.from(canonicalJson({ fixture: entry.id, seed: entry.seed, width: entry.width, bitrate, durationSeconds: expectedSec, audio: audioMode === 'cached' ? { audioSpecId, artifactSha256: audioArtifactSha256, mux: 'copy' } : { sourceSha256: sourceAudioSha256, codec: 'aac', bitrate: audioBitrate, mux: 'encode' } })) )}`;
     const resources = stopResources(), wallMs = performance.now() - wallStarted;
     const row = {
       id, audioMode, renderSpecId, wallMs: +wallMs.toFixed(3), launchMs: +launchMs.toFixed(3), pageLoadMs: +pageLoadMs.toFixed(3), encodeMs: +browserMetrics.encodeMs.toFixed(3), uploadMs: +browserMetrics.uploadMs.toFixed(3), muxMs: +muxMs.toFixed(3),
@@ -212,7 +215,7 @@ async function renderJob({ id, audioMode, forceAudioMiss = false }) {
 }
 
 const rows = { baseline: [], cachedHit: [], cachedMiss: [] };
-console.log(`R32 fixture ${entry.id} ${entry.width}x${entry.height} seed=${entry.seed}; audio_spec_id=${audioSpecId}`);
+console.log(`R32 fixture ${entry.id} ${entry.width}x${entry.height} seed=${entry.seed}; duration=${renderDurationSeconds}s; audio_spec_id=${audioSpecId}`);
 for (let i = 1; i <= repeats; i += 1) { console.log(`baseline ${i}/${repeats}`); rows.baseline.push(await renderJob({ id: `baseline-${i}`, audioMode: 'baseline' })); }
 console.log('cached miss'); rows.cachedMiss.push(await renderJob({ id: 'cached-miss-1', audioMode: 'cached', forceAudioMiss: true }));
 for (let i = 1; i <= repeats; i += 1) { console.log(`cached hit ${i}/${repeats}`); rows.cachedHit.push(await renderJob({ id: `cached-hit-${i}`, audioMode: 'cached' })); }
@@ -220,10 +223,10 @@ for (let i = 1; i <= repeats; i += 1) { console.log(`cached hit ${i}/${repeats}`
 const summarize = (xs) => ({ wallMs: stats(xs.map((x) => x.wallMs)), muxMs: stats(xs.map((x) => x.muxMs)), cpuMs: stats(xs.map((x) => x.resources.cgroupCpuMs).filter((x) => x != null)), peakRssBytes: stats(xs.map((x) => x.resources.peakProcessTreeRssBytes)), outputBytes: stats(xs.map((x) => x.outputBytes)), audioPrepareMs: stats(xs.map((x) => x.audio.prepareMs).filter((x) => x != null)) });
 const summary = { baseline: summarize(rows.baseline), cachedMiss: summarize(rows.cachedMiss), cachedHit: summarize(rows.cachedHit) };
 const savedWall = summary.baseline.wallMs.p50 - summary.cachedHit.wallMs.p50, savedMux = summary.baseline.muxMs.p50 - summary.cachedHit.muxMs.p50;
-const report = { schema: 'framewright-r32-canonical-aac-deep-v1', fixture: { ...selector, id: entry.id, style: entry.style, width: entry.width, height: entry.height, seed: entry.seed, bitrate }, audioIdentity: { audioSpecId, audioSpec, sourceAudioSha256, canonicalArtifact: canonicalAudio, canonicalArtifactSha256: await sha256File(canonicalAudio) }, summary, decision: { p50FullWallSavedMs: +savedWall.toFixed(3), p50FullWallReduction: +(savedWall / summary.baseline.wallMs.p50).toFixed(4), p50MuxSavedMs: +savedMux.toFixed(3), promoteCanonicalAudio: savedWall >= Math.max(250, summary.baseline.wallMs.p50 * .05) }, rows, caveat: 'This deep pass proves runtime value and identity shape on a production-shaped C18 scene. Factory-wide contract promotion remains an Integration decision.' };
+const report = { schema: 'framewright-r32-canonical-aac-deep-v2', fixture: { ...selector, id: entry.id, style: entry.style, width: entry.width, height: entry.height, seed: entry.seed, bitrate, durationSeconds: renderDurationSeconds }, audioIdentity: { audioSpecId, audioSpec, sourceAudioSha256, canonicalArtifact: canonicalAudio, canonicalArtifactSha256: await sha256File(canonicalAudio) }, summary, decision: { p50FullWallSavedMs: +savedWall.toFixed(3), p50FullWallReduction: +(savedWall / summary.baseline.wallMs.p50).toFixed(4), p50MuxSavedMs: +savedMux.toFixed(3), promoteCanonicalAudio: savedWall >= Math.max(250, summary.baseline.wallMs.p50 * .05) }, rows, caveat: 'This deep pass proves runtime value and identity shape on a production-shaped C18 scene. Factory-wide contract promotion remains an Integration decision.' };
 await fsp.writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
 const mb = (n) => (n / 1048576).toFixed(2);
-const lines = ['# R32 canonical AAC deep integration', '', `Fixture: \`${entry.id}\` ${entry.width}x${entry.height}, seed ${entry.seed}, ${bitrate/1e6} Mbps H.264. Audio spec: \`${audioSpecId}\`.`, '', '| mode | p50 full wall | p95 full wall | p50 mux | p50 CPU | p50 peak RSS | mean MP4 |', '|---|---:|---:|---:|---:|---:|---:|'];
+const lines = ['# R32 canonical AAC deep integration', '', `Fixture: \`${entry.id}\` ${entry.width}x${entry.height}, seed ${entry.seed}, ${bitrate/1e6} Mbps H.264, explicit ${renderDurationSeconds}s RenderSpec duration. Audio spec: \`${audioSpecId}\`.`, '', '| mode | p50 full wall | p95 full wall | p50 mux | p50 CPU | p50 peak RSS | mean MP4 |', '|---|---:|---:|---:|---:|---:|---:|'];
 for (const [name, s] of Object.entries(summary)) lines.push(`| ${name} | ${(s.wallMs.p50/1000).toFixed(3)} s | ${(s.wallMs.p95/1000).toFixed(3)} s | ${s.muxMs.p50.toFixed(1)} ms | ${(s.cpuMs.p50/1000).toFixed(3)} s | ${mb(s.peakRssBytes.p50)} MiB | ${mb(s.outputBytes.mean)} MiB |`);
 lines.push('', `Canonical AAC cache hit saves **${savedWall.toFixed(1)} ms p50 full-job wall** (${(100*savedWall/summary.baseline.wallMs.p50).toFixed(1)}%) and **${savedMux.toFixed(1)} ms p50 mux wall**.`);
 lines.push(`Cache-miss audio preparation is measured explicitly: ${summary.cachedMiss.audioPrepareMs.p50.toFixed(1)} ms within the miss job.`);
