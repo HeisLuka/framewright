@@ -12,8 +12,8 @@ const request = {
     class: 'FAST',
     scene_contract_version: 'canvas-scene-v1',
     environment_id: 'video-worker-chromium-v1',
-    renderer: { id: 'webcodecs-h264', version: 'r39-standard-v1' },
-    encoder: { video_codec: 'avc1.42001f', bitrate_bps: 3000000, pixel_format: 'yuv420p' },
+    renderer: { id: 'webcodecs-h264', version: 'r35-standard-v1' },
+    encoder: { video_codec: 'avc1.420028', bitrate_bps: 3000000, pixel_format: 'yuv420p' },
     muxer: { id: 'ffmpeg-stream-copy-aac', version: '6.1.1' },
   },
   delivery_profiles: [
@@ -57,6 +57,7 @@ assert(first.renders.every(x => x.render.creative_id === first.selected[0].creat
 assert(new Set(first.renders.map(x => x.render.render_spec_id)).size === 2, 'delivery profiles did not produce distinct render_spec_id values');
 assert(first.renders.every(x => x.render.duration_ms === 9000 && x.render.frame_count === 270), 'semantic timeline did not own render duration/frame count');
 assert(first.renders.every(x => x.render.delivery.platform_ui_version === 'c26-ui-safe-v1-2026-09-17'), 'C26 platform provenance missing');
+assert(first.renders.every(x => x.render.runtime.encoder.video_codec === 'avc1.420028' && x.render.runtime.encoder.bitrate_bps === 3000000), 'C19 fixture drifted from canonical R35 FAST encoder policy');
 assert(first.renders.every(x => !('audio' in x.render)), 'compiler invented audio for a campaign without audio input');
 assert(first.renders.every(x => x.selection_id !== 'reserve-b'), 'reserve received a RenderSpec');
 assert(!bytesA.includes('"render":{"audio"'), 'serialized package unexpectedly contains audio');
@@ -72,4 +73,5 @@ console.log(JSON.stringify({
   manifestSha256: digest,
   byteIdentical: bytesA === bytesB,
   audioInvented: false,
+  canonicalFastCodec: first.renders[0].render.runtime.encoder.video_codec,
 }, null, 2));
