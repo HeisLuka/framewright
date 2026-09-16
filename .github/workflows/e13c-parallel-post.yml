@@ -1,0 +1,126 @@
+name: E13c parallel native post
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/scripts/render-raw.mjs"
+      - ".agents/skills/framewright/scripts/post-native-crt-core.mjs"
+      - ".agents/skills/framewright/native/crt-core.cpp"
+      - ".github/workflows/e13c-parallel-post.yml"
+  workflow_dispatch:
+
+jobs:
+  parallel-post:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HTML: examples/ris-tv/index.html
+      AR: "9:16"
+      START: "0"
+      END: "20"
+      PRESET: ultrafast
+      CRF: "28"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - run: npm test
+      - name: Syntax checks
+        run: |
+          node --check .agents/skills/framewright/scripts/render-raw.mjs
+          node --check .agents/skills/framewright/scripts/post-native-crt-core.mjs
+      - name: Compile native CRT core
+        run: |
+          mkdir -p artifacts
+          g++ -O3 -std=c++20 -pthread \
+            .agents/skills/framewright/native/crt-core.cpp \
+            -o artifacts/crt-core
+          echo "runner logical CPUs: $(nproc)"
+      - name: Verify byte parity
+        env:
+          CRT_PROCESSES: "2"
+          CRT_THREADS: "1"
+        run: >-
+          node .agents/skills/framewright/scripts/verify-native-crt-core.mjs
+          artifacts/crt-core
+      - name: Benchmark parallel post matrix
+        run: |
+          set -euo pipefail
+          ROOT=.agents/skills/framewright/scripts
+          render() {
+            local name="$1"
+            shift
+            env "$@" \
+              METRICS_OUT="artifacts/${name}.json" \
+              node "$ROOT/render-raw.mjs" \
+              "artifacts/${name}.mp4" 7 720 3
+          }
+
+          render e13c-identity \
+            POST_MODULE="$ROOT/post-identity.mjs"
+          render e13c-legacy
+          render e13c-p1-auto \
+            CRT_PROCESSES=1 \
+            CRT_NATIVE_BIN=artifacts/crt-core \
+            POST_MODULE="$ROOT/post-native-crt-core.mjs"
+          render e13c-p2-t1 \
+            CRT_PROCESSES=2 \
+            CRT_THREADS=1 \
+            CRT_NATIVE_BIN=artifacts/crt-core \
+            POST_MODULE="$ROOT/post-native-crt-core.mjs"
+          render e13c-p2-auto \
+            CRT_PROCESSES=2 \
+            CRT_NATIVE_BIN=artifacts/crt-core \
+            POST_MODULE="$ROOT/post-native-crt-core.mjs"
+          render e13c-p3-t1 \
+            CRT_PROCESSES=3 \
+            CRT_THREADS=1 \
+            CRT_NATIVE_BIN=artifacts/crt-core \
+            POST_MODULE="$ROOT/post-native-crt-core.mjs"
+      - name: Summarize E13c
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const read = (name) => JSON.parse(fs.readFileSync(`artifacts/${name}.json`, 'utf8'));
+          const names = ['e13c-identity', 'e13c-legacy', 'e13c-p1-auto', 'e13c-p2-t1', 'e13c-p2-auto', 'e13c-p3-t1'];
+          const metrics = Object.fromEntries(names.map((name) => [name, read(name)]));
+          const legacyFps = metrics['e13c-legacy'].framesPerSecond;
+          const identityFps = metrics['e13c-identity'].framesPerSecond;
+          const summary = {};
+          for (const name of names) {
+            const m = metrics[name];
+            if (m.frames !== 20) throw new Error(`${name}: incomplete render ${m.frames}`);
+            if (m.incomingRgbaBytes !== m.writtenRgbaBytes) throw new Error(`${name}: RGBA byte mismatch`);
+            summary[name] = {
+              fps: m.framesPerSecond,
+              seconds: m.seconds,
+              postMsPerFrame: m.postMillisecondsPerFrame,
+              maxConcurrentPost: m.maxConcurrentPost,
+              postCompletionRegressions: m.postCompletionRegressions,
+              backend: m.postBackendInfo,
+            };
+            if (name.startsWith('e13c-p')) {
+              summary[name].vsLegacy = m.framesPerSecond / legacyFps;
+              summary[name].vsIdentity = m.framesPerSecond / identityFps;
+            }
+          }
+          for (const name of ['e13c-p2-t1', 'e13c-p2-auto', 'e13c-p3-t1']) {
+            const m = metrics[name];
+            if (!(m.maxConcurrentPost >= 2)) throw new Error(`${name}: post stage never overlapped`);
+            if (!(m.postBackendInfo?.maxActiveClients >= 2)) throw new Error(`${name}: native pool never used two workers`);
+          }
+          fs.writeFileSync('artifacts/e13c-summary.json', `${JSON.stringify(summary, null, 2)}\n`);
+          console.log(JSON.stringify(summary, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e13c-parallel-post
+          path: artifacts/e13c-*.json
