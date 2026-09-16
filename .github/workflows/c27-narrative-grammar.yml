@@ -26,6 +26,8 @@ jobs:
         run: |
           node --check .agents/skills/framewright/scripts/c27-narrative-plan.mjs
           node --check .agents/skills/framewright/scripts/c27-narrative-selftest.mjs
+          node --check .agents/skills/framewright/scripts/c27-creative-portfolio.mjs
+          node --check .agents/skills/framewright/scripts/c27-creative-portfolio-selftest.mjs
           node --check .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs
           node --check .agents/skills/framewright/scripts/c27-narrative-audit.mjs
           node --check .agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs
@@ -35,6 +37,8 @@ jobs:
           node --check .agents/skills/framewright/scripts/c27-review-sheets.mjs
       - name: Standalone planner self-test
         run: node .agents/skills/framewright/scripts/c27-narrative-selftest.mjs
+      - name: Creative portfolio self-test
+        run: node .agents/skills/framewright/scripts/c27-creative-portfolio-selftest.mjs
       - name: Build exact E08 narrative matrix
         run: node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs artifacts/c27/fixtures
       - name: Audit semantic contract
