@@ -1,0 +1,119 @@
+name: Lab E07 Style Throughput
+
+on:
+  push:
+    branches:
+      - lab/e07-style-throughput
+  pull_request:
+    branches:
+      - lab/e06-repro-worker
+  workflow_dispatch:
+
+jobs:
+  style-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build pinned worker
+        run: docker build --pull=false -f Dockerfile.worker-lab -t framewright-worker:e07 .
+
+      - name: Prepare artifact directory
+        run: |
+          rm -rf artifacts/e07
+          mkdir -p artifacts/e07
+          chmod 0777 artifacts/e07
+
+      - name: Golden samples and warm c2 throughput
+        run: |
+          docker run --rm \
+            -e CI=true \
+            -v "$PWD/artifacts/e07:/artifacts" \
+            framewright-worker:e07 \
+            bash -lc '
+              set -e
+              node .agents/skills/framewright/scripts/prepare-style-fixtures.mjs /tmp/e07-styles
+              for s in cheap medium heavy; do
+                mkdir -p "/artifacts/${s}-golden"
+                HTML="/tmp/e07-styles/${s}.html" PAYLOAD="/tmp/e07-styles/payload.example.json" \
+                  node .agents/skills/framewright/scripts/golden-frames.mjs "/artifacts/${s}-golden" 0,90,180,359 1080 7
+                HTML="/tmp/e07-styles/${s}.html" PAYLOAD="/tmp/e07-styles/payload.example.json" \
+                  node .agents/skills/framewright/scripts/benchmark-warm-worker.mjs "/artifacts/${s}-warm-c2.json" 6 2 1080 1200000
+              done
+            '
+
+      - name: Bitrate quality probes against rendered frames
+        run: |
+          docker run --rm \
+            -e CI=true \
+            -v "$PWD/artifacts/e07:/artifacts" \
+            framewright-worker:e07 \
+            bash -lc '
+              set -e
+              node .agents/skills/framewright/scripts/prepare-style-fixtures.mjs /tmp/e07-styles
+              for s in cheap medium heavy; do
+                rm -rf "/tmp/${s}-frames"
+                HTML="/tmp/e07-styles/${s}.html" PAYLOAD="/tmp/e07-styles/payload.example.json" \
+                  node .agents/skills/framewright/scripts/render.mjs "/tmp/${s}-frames" 7 1080 1
+                for br in 1200000 1800000; do
+                  label=$((br/1000))
+                  HTML="/tmp/e07-styles/${s}.html" PAYLOAD="/tmp/e07-styles/payload.example.json" \
+                    node .agents/skills/framewright/scripts/render-webcodecs.mjs "/artifacts/${s}-${label}.mp4" 7 1080 "$br"
+                  ffmpeg -hide_banner -framerate 30 -i "/tmp/${s}-frames/f%05d.png" -i "/artifacts/${s}-${label}.mp4" \
+                    -lavfi "[0:v]setpts=PTS-STARTPTS[ref];[1:v]setpts=PTS-STARTPTS[test];[ref][test]ssim" -f null - \
+                    2> "/artifacts/${s}-${label}-ssim.txt"
+                  ffmpeg -hide_banner -framerate 30 -i "/tmp/${s}-frames/f%05d.png" -i "/artifacts/${s}-${label}.mp4" \
+                    -lavfi "[0:v]setpts=PTS-STARTPTS[ref];[1:v]setpts=PTS-STARTPTS[test];[ref][test]psnr" -f null - \
+                    2> "/artifacts/${s}-${label}-psnr.txt"
+                done
+                rm -rf "/tmp/${s}-frames"
+              done
+            '
+
+      - name: Summarize matrix
+        run: |
+          node - <<'NODE'
+          const fs=require('fs'), path=require('path');
+          const root='artifacts/e07', styles=['cheap','medium','heavy'];
+          const mean=(a,k)=>a.reduce((s,x)=>s+(+x[k]||0),0)/Math.max(1,a.length);
+          const metric=(file,re)=>{const t=fs.readFileSync(file,'utf8'),m=t.match(re);return m?m[1]:null};
+          const rows=[];
+          for(const style of styles){
+            const w=JSON.parse(fs.readFileSync(path.join(root,`${style}-warm-c2.json`),'utf8'));
+            const jobs=w.jobs.filter(x=>!x.failed);
+            const q={};
+            for(const br of [1200,1800]){
+              const mp4=path.join(root,`${style}-${br}.mp4`);
+              const ssim=metric(path.join(root,`${style}-${br}-ssim.txt`),/All:([0-9.]+)/);
+              const psnr=metric(path.join(root,`${style}-${br}-psnr.txt`),/average:(inf|[0-9.]+)/);
+              q[br]={bytes:fs.statSync(mp4).size,ssim:ssim?+ssim:null,psnr:psnr==='inf'?'inf':(psnr?+psnr:null)};
+            }
+            rows.push({
+              style,
+              videosPerHour:w.batch.steadyVideosPerHour,
+              p50Ms:w.batch.latency.p50Ms,
+              p95Ms:w.batch.latency.p95Ms,
+              peakRssBytes:w.memory.peakRssBytes,
+              browserWallMs:mean(jobs,'browserWallMs'),
+              renderMs:mean(jobs,'renderMs'),
+              videoFrameMs:mean(jobs,'videoFrameMs'),
+              encodedBytes:mean(jobs,'encodedBytes'),
+              quality:q
+            });
+          }
+          fs.writeFileSync(path.join(root,'summary.json'),JSON.stringify({schema:'framewright-style-matrix-v1',rows},null,2));
+          let md='| class | warm c2 videos/h | p50 s | p95 s | peak RSS GiB | browser wall s/video | scene+style render s/video | avg encoded MiB | 1.2M SSIM | 1.8M SSIM |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|\n';
+          for(const r of rows)md+=`| ${r.style} | ${r.videosPerHour.toFixed(1)} | ${(r.p50Ms/1000).toFixed(2)} | ${(r.p95Ms/1000).toFixed(2)} | ${(r.peakRssBytes/1024/1024/1024).toFixed(2)} | ${(r.browserWallMs/1000).toFixed(2)} | ${(r.renderMs/1000).toFixed(2)} | ${(r.encodedBytes/1024/1024).toFixed(2)} | ${r.quality[1200].ssim ?? 'n/a'} | ${r.quality[1800].ssim ?? 'n/a'} |\n`;
+          md+='\nBitrate probe sizes / PSNR:\n';
+          for(const r of rows)md+=`- ${r.style}: 1.2M ${(r.quality[1200].bytes/1024/1024).toFixed(2)} MiB, PSNR ${r.quality[1200].psnr}; 1.8M ${(r.quality[1800].bytes/1024/1024).toFixed(2)} MiB, PSNR ${r.quality[1800].psnr}.\n`;
+          fs.writeFileSync(path.join(root,'summary.md'),md); console.log(md);
+          NODE
+
+      - name: Upload E07 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: e07-style-throughput
+          path: artifacts/e07/
+          if-no-files-found: error
+          retention-days: 14
