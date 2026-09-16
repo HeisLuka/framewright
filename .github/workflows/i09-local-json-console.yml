@@ -1,0 +1,53 @@
+name: I09 Local JSON Operator Console
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/i09-local-video-job-v1.mjs'
+      - 'contracts/check-i09-local-video-console.mjs'
+      - 'contracts/i09-local-render-smoke.mjs'
+      - '.agents/skills/framewright/scripts/build-local-video-template.mjs'
+      - '.agents/skills/framewright/scripts/local-video-console.mjs'
+      - '.agents/skills/framewright/scripts/local-render-worker.mjs'
+      - 'contracts/creative-proposal-v1.mjs'
+      - 'contracts/compile-creative-proposal-v1.mjs'
+      - 'contracts/c19-delivery-package-v1.mjs'
+      - 'contracts/factory-identity-v1.mjs'
+      - 'docs/i09-local-json-console.md'
+      - 'package.json'
+      - '.github/workflows/i09-local-json-console.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install ffmpeg and fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax
+        run: |
+          node --check contracts/i09-local-video-job-v1.mjs
+          node --check contracts/check-i09-local-video-console.mjs
+          node --check contracts/i09-local-render-smoke.mjs
+          node --check .agents/skills/framewright/scripts/build-local-video-template.mjs
+          node --check .agents/skills/framewright/scripts/local-video-console.mjs
+      - name: Existing creative boundary
+        run: node contracts/check-creative-proposal-v1.mjs
+      - name: I09 bridge and queue checks
+        run: node contracts/check-i09-local-video-console.mjs
+      - name: Build current local runtime template
+        run: node .agents/skills/framewright/scripts/build-local-video-template.mjs --out-dir .bench/i09/runtime
+      - name: Full pasted-proposal to MP4 smoke
+        env:
+          CI: '1'
+        run: node contracts/i09-local-render-smoke.mjs
