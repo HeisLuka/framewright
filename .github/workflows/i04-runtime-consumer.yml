@@ -1,0 +1,28 @@
+name: I04 Runtime Consumer
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/runtime-consumer-v1.mjs'
+      - 'contracts/check-i04-runtime-consumer.mjs'
+      - 'contracts/factory-identity-v1.mjs'
+      - 'contracts/audio-identity-v1.mjs'
+      - 'contracts/examples/video-factory-v1.example.json'
+      - '.github/workflows/i04-runtime-consumer.yml'
+  workflow_dispatch:
+
+jobs:
+  runtime-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Verify runtime consumer invariants
+        run: node contracts/check-i04-runtime-consumer.mjs
+      - name: Syntax check
+        run: |
+          node --check contracts/runtime-consumer-v1.mjs
+          node --check contracts/check-i04-runtime-consumer.mjs
