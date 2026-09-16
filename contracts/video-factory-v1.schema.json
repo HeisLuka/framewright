@@ -52,9 +52,7 @@
       "required": ["source", "text"],
       "additionalProperties": false,
       "properties": {
-        "source": {
-          "enum": ["human_verified", "payload_field", "payload_derived"]
-        },
+        "source": { "enum": ["human_verified", "payload_field", "payload_derived"] },
         "text": { "type": "string", "minLength": 1 },
         "source_ref": { "type": "string", "minLength": 1 }
       }
@@ -94,27 +92,11 @@
     },
     "CreativeSpec": {
       "type": "object",
-      "required": [
-        "schema",
-        "creative_id",
-        "book_id",
-        "payload_sha256",
-        "template",
-        "visual_system",
-        "structural_variant",
-        "hook",
-        "motion",
-        "art_direction",
-        "seed",
-        "assets"
-      ],
+      "required": ["schema", "creative_id", "book_id", "payload_sha256", "template", "visual_system", "structural_variant", "hook", "motion", "art_direction", "seed", "assets"],
       "additionalProperties": false,
       "properties": {
         "schema": { "const": "newboo-creative-spec-v1" },
-        "creative_id": {
-          "type": "string",
-          "pattern": "^nvc1_[a-f0-9]{64}$"
-        },
+        "creative_id": { "type": "string", "pattern": "^nvc1_[a-f0-9]{64}$" },
         "book_id": { "type": "string", "minLength": 1 },
         "payload_sha256": { "$ref": "#/$defs/Sha256" },
         "template": { "$ref": "#/$defs/TemplateRef" },
@@ -124,11 +106,7 @@
         "motion": { "$ref": "#/$defs/MotionSpec" },
         "art_direction": { "$ref": "#/$defs/ArtDirectionSpec" },
         "seed": { "type": "integer", "minimum": 0 },
-        "assets": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/AssetRef" },
-          "minItems": 1
-        }
+        "assets": { "type": "array", "items": { "$ref": "#/$defs/AssetRef" }, "minItems": 1 }
       }
     },
     "DeliveryProfile": {
@@ -146,13 +124,7 @@
     },
     "RuntimeProfile": {
       "type": "object",
-      "required": [
-        "class",
-        "scene_contract_version",
-        "environment_id",
-        "renderer",
-        "encoder"
-      ],
+      "required": ["class", "scene_contract_version", "environment_id", "renderer", "encoder"],
       "additionalProperties": false,
       "properties": {
         "class": { "enum": ["FAST", "SPECIAL"] },
@@ -172,10 +144,7 @@
           }
         },
         "muxer": { "$ref": "#/$defs/VersionedId" },
-        "post_pipeline": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/VersionedId" }
-        }
+        "post_pipeline": { "type": "array", "items": { "$ref": "#/$defs/VersionedId" } }
       }
     },
     "ArtifactPolicy": {
@@ -187,34 +156,86 @@
         "canonical_key": { "const": "render_spec_id" }
       }
     },
+    "AudioTimingSpec": {
+      "type": "object",
+      "required": ["trim_start_ms", "duration_ms", "final_mux_duration_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "trim_start_ms": { "type": "integer", "minimum": 0 },
+        "duration_ms": { "type": "integer", "minimum": 1 },
+        "final_mux_duration_ms": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "AudioMixSpec": {
+      "type": "object",
+      "required": ["gain_db", "fades"],
+      "additionalProperties": false,
+      "properties": {
+        "gain_db": { "type": "number" },
+        "fades": {}
+      }
+    },
+    "AudioCodecSpec": {
+      "type": "object",
+      "required": ["name", "bitrate_bps", "container", "policy"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "bitrate_bps": { "type": "integer", "minimum": 1 },
+        "container": { "type": "string", "minLength": 1 },
+        "policy": { "type": "string", "minLength": 1 }
+      }
+    },
+    "AudioSpec": {
+      "type": "object",
+      "required": ["schema", "audio_spec_id", "version", "source_sha256", "timing", "mix", "codec"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "framewright-audio-spec-v1" },
+        "audio_spec_id": { "type": "string", "pattern": "^fwa1_[a-f0-9]{64}$" },
+        "version": { "const": 1 },
+        "source_sha256": { "$ref": "#/$defs/Sha256" },
+        "timing": { "$ref": "#/$defs/AudioTimingSpec" },
+        "mix": { "$ref": "#/$defs/AudioMixSpec" },
+        "codec": { "$ref": "#/$defs/AudioCodecSpec" }
+      }
+    },
+    "CanonicalAudioArtifact": {
+      "type": "object",
+      "required": ["schema", "audio_spec_id", "sha256", "bytes", "media_type", "provenance"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "framewright-canonical-audio-v1" },
+        "audio_spec_id": { "type": "string", "pattern": "^fwa1_[a-f0-9]{64}$" },
+        "sha256": { "$ref": "#/$defs/Sha256" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "media_type": { "type": "string", "minLength": 1 },
+        "storage_uri": { "type": "string", "minLength": 1 },
+        "provenance": { "type": "object", "minProperties": 1 }
+      }
+    },
+    "RenderAudio": {
+      "type": "object",
+      "required": ["spec"],
+      "additionalProperties": false,
+      "properties": {
+        "spec": { "$ref": "#/$defs/AudioSpec" },
+        "artifact": { "$ref": "#/$defs/CanonicalAudioArtifact" }
+      }
+    },
     "RenderSpec": {
       "type": "object",
-      "required": [
-        "schema",
-        "render_spec_id",
-        "creative_id",
-        "delivery",
-        "runtime",
-        "assets",
-        "artifact_policy"
-      ],
+      "required": ["schema", "render_spec_id", "creative_id", "duration_ms", "delivery", "runtime", "assets", "artifact_policy"],
       "additionalProperties": false,
       "properties": {
         "schema": { "const": "newboo-render-spec-v1" },
-        "render_spec_id": {
-          "type": "string",
-          "pattern": "^nvr1_[a-f0-9]{64}$"
-        },
-        "creative_id": {
-          "type": "string",
-          "pattern": "^nvc1_[a-f0-9]{64}$"
-        },
+        "render_spec_id": { "type": "string", "pattern": "^nvr1_[a-f0-9]{64}$" },
+        "creative_id": { "type": "string", "pattern": "^nvc1_[a-f0-9]{64}$" },
+        "duration_ms": { "type": "integer", "minimum": 1 },
         "delivery": { "$ref": "#/$defs/DeliveryProfile" },
         "runtime": { "$ref": "#/$defs/RuntimeProfile" },
-        "assets": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/AssetRef" }
-        },
+        "assets": { "type": "array", "items": { "$ref": "#/$defs/AssetRef" } },
+        "audio": { "$ref": "#/$defs/RenderAudio" },
         "artifact_policy": { "$ref": "#/$defs/ArtifactPolicy" }
       }
     },
@@ -234,10 +255,7 @@
       "additionalProperties": false,
       "properties": {
         "schema": { "const": "newboo-render-artifact-v1" },
-        "render_spec_id": {
-          "type": "string",
-          "pattern": "^nvr1_[a-f0-9]{64}$"
-        },
+        "render_spec_id": { "type": "string", "pattern": "^nvr1_[a-f0-9]{64}$" },
         "output": {
           "type": "object",
           "required": ["sha256", "bytes", "mime_type", "duration_ms", "frame_count"],
@@ -257,10 +275,7 @@
           "additionalProperties": false,
           "properties": {
             "status": { "enum": ["pass", "warn", "fail"] },
-            "checks": {
-              "type": "array",
-              "items": { "$ref": "#/$defs/QaCheck" }
-            }
+            "checks": { "type": "array", "items": { "$ref": "#/$defs/QaCheck" } }
           }
         },
         "metrics": { "type": "object" },
