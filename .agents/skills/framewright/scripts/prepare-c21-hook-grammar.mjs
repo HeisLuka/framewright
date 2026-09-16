@@ -22,7 +22,6 @@ function __c21Bg(g,S,style){
   return paperBg(g,S.seed,'hook');
 }
 function __c21Header(g,style){if(typeof __profileHeader==='function')return __profileHeader(g,style);}
-function __c21Reveal(S){return easeIO(span(S.t,.58,.70));}
 function __c21Words(text){return String(text).trim().split(/\s+/).filter(Boolean);}
 function __c21ProgressiveHook(text,t){
   const words=__c21Words(text);if(!words.length)return '';
@@ -31,16 +30,11 @@ function __c21ProgressiveHook(text,t){
   return words.slice(0,n).join(' ')+(n<words.length?'…':'');
 }
 function __c21OpeningOverlay(g,S,style){
-  if(ACTIVE_OPENING_GRAMMAR==='hook-led'||S.t>.70)return;
-  const reveal=__c21Reveal(S);
+  // Deliberate editorial cut at 60% of the 3s hook plate (~1.8s). We explicitly avoid
+  // alpha crossfades or spatial wipes between different text hierarchies: both create
+  // transient double/sliced copy. After the cut the renderer is the untouched baseline.
+  if(ACTIVE_OPENING_GRAMMAR==='hook-led'||S.t>=.60)return;
   g.save();
-  // The baseline hook is already drawn underneath. Reveal it with a geometric wipe instead of
-  // alpha-fading two text hierarchies through each other; this keeps the transition readable.
-  if(reveal>0){
-    const w=g.canvas.width,h=g.canvas.height,x=Math.max(0,Math.min(w,Math.round(reveal*w)));
-    if(x>=w){g.restore();return;}
-    g.beginPath();g.rect(x,0,w-x,h);g.clip();
-  }
   __c21Bg(g,S,style);__c21Header(g,style);
   const top=SAFE.y+(PROFILE==='vertical'?145:120),cx=SAFE.x+SAFE.w/2;
   if(ACTIVE_OPENING_GRAMMAR==='cover-led'){
