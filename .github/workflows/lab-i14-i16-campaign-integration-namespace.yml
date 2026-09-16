@@ -1,0 +1,57 @@
+name: Lab I14-I16 Campaign Integration Namespace
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - '.agents/skills/framewright/scripts/i08-publication-attribution-roundtrip*.mjs'
+      - '.agents/skills/framewright/scripts/i09-blocked-publication-scheduler*.mjs'
+      - '.agents/skills/framewright/scripts/i10-general-publication-attribution*.mjs'
+      - '.agents/skills/framewright/scripts/i14-publication-attribution-roundtrip*.mjs'
+      - '.agents/skills/framewright/scripts/i15-blocked-publication-scheduler*.mjs'
+      - '.agents/skills/framewright/scripts/i16-general-publication-attribution*.mjs'
+      - 'docs/i14-publication-attribution-roundtrip.md'
+      - 'docs/i15-blocked-publication-scheduler.md'
+      - 'docs/i16-general-publication-attribution.md'
+      - 'docs/integration-namespace-repair-2026-09-17.md'
+      - '.github/workflows/lab-i14-i16-campaign-integration-namespace.yml'
+  workflow_dispatch:
+
+jobs:
+  namespace-compatibility:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Syntax check canonical aliases
+        run: |
+          node --check .agents/skills/framewright/scripts/i14-publication-attribution-roundtrip.mjs
+          node --check .agents/skills/framewright/scripts/i14-publication-attribution-roundtrip-audit.mjs
+          node --check .agents/skills/framewright/scripts/i15-blocked-publication-scheduler.mjs
+          node --check .agents/skills/framewright/scripts/i15-blocked-publication-scheduler-audit.mjs
+          node --check .agents/skills/framewright/scripts/i16-general-publication-attribution.mjs
+          node --check .agents/skills/framewright/scripts/i16-general-publication-attribution-audit.mjs
+      - name: Re-run I14 historical-equivalent audit
+        run: node .agents/skills/framewright/scripts/i14-publication-attribution-roundtrip-audit.mjs artifacts/i14
+      - name: Re-run I15 historical-equivalent audit
+        run: node .agents/skills/framewright/scripts/i15-blocked-publication-scheduler-audit.mjs artifacts/i15
+      - name: Re-run I16 historical-equivalent audit
+        run: node .agents/skills/framewright/scripts/i16-general-publication-attribution-audit.mjs artifacts/i16
+      - name: Show compatibility summaries
+        run: |
+          cat artifacts/i14/summary.md
+          cat artifacts/i15/summary.md
+          cat artifacts/i16/summary.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i14-i16-campaign-integration-namespace
+          path: |
+            artifacts/i14/
+            artifacts/i15/
+            artifacts/i16/
+          retention-days: 14
