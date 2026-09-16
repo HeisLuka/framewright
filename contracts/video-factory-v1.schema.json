@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://newboo.dev/contracts/video-factory-v1.schema.json",
+  "title": "NEwBOO Video Factory Contract v1",
+  "type": "object",
+  "required": ["schema", "creative", "render"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "newboo-video-factory-bundle-v1" },
+    "creative": { "$ref": "#/$defs/CreativeSpec" },
+    "render": { "$ref": "#/$defs/RenderSpec" },
+    "artifact": { "$ref": "#/$defs/Artifact" }
+  },
+  "$defs": {
+    "Sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "AssetRef": {
+      "type": "object",
+      "required": ["role", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "role": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/Sha256" },
+        "media_type": { "type": "string", "minLength": 1 },
+        "uri": { "type": "string", "minLength": 1 },
+        "metadata": { "type": "object" }
+      }
+    },
+    "VersionedId": {
+      "type": "object",
+      "required": ["id", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "TemplateRef": {
+      "type": "object",
+      "required": ["id", "version", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/Sha256" }
+      }
+    },
+    "HookSpec": {
+      "type": "object",
+      "required": ["source", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "enum": ["human_verified", "payload_field", "payload_derived"]
+        },
+        "text": { "type": "string", "minLength": 1 },
+        "source_ref": { "type": "string", "minLength": 1 }
+      }
+    },
+    "MotionSpec": {
+      "type": "object",
+      "required": ["profile", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "profile": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "beat_map_sha256": { "$ref": "#/$defs/Sha256" }
+      }
+    },
+    "Palette": {
+      "type": "object",
+      "required": ["background", "surface", "ink", "accent", "secondary"],
+      "additionalProperties": false,
+      "properties": {
+        "background": { "type": "string", "pattern": "^#[A-Fa-f0-9]{6}$" },
+        "surface": { "type": "string", "pattern": "^#[A-Fa-f0-9]{6}$" },
+        "ink": { "type": "string", "pattern": "^#[A-Fa-f0-9]{6}$" },
+        "accent": { "type": "string", "pattern": "^#[A-Fa-f0-9]{6}$" },
+        "secondary": { "type": "string", "pattern": "^#[A-Fa-f0-9]{6}$" }
+      }
+    },
+    "ArtDirectionSpec": {
+      "type": "object",
+      "required": ["mode", "algorithm", "palette"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": { "enum": ["template-default", "cover-derived"] },
+        "algorithm": { "type": "string", "minLength": 1 },
+        "source_cover_sha256": { "$ref": "#/$defs/Sha256" },
+        "palette": { "$ref": "#/$defs/Palette" }
+      }
+    },
+    "CreativeSpec": {
+      "type": "object",
+      "required": [
+        "schema",
+        "creative_id",
+        "book_id",
+        "payload_sha256",
+        "template",
+        "visual_system",
+        "structural_variant",
+        "hook",
+        "motion",
+        "art_direction",
+        "seed",
+        "assets"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "newboo-creative-spec-v1" },
+        "creative_id": {
+          "type": "string",
+          "pattern": "^nvc1_[a-f0-9]{64}$"
+        },
+        "book_id": { "type": "string", "minLength": 1 },
+        "payload_sha256": { "$ref": "#/$defs/Sha256" },
+        "template": { "$ref": "#/$defs/TemplateRef" },
+        "visual_system": { "$ref": "#/$defs/VersionedId" },
+        "structural_variant": { "type": "string", "minLength": 1 },
+        "hook": { "$ref": "#/$defs/HookSpec" },
+        "motion": { "$ref": "#/$defs/MotionSpec" },
+        "art_direction": { "$ref": "#/$defs/ArtDirectionSpec" },
+        "seed": { "type": "integer", "minimum": 0 },
+        "assets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AssetRef" },
+          "minItems": 1
+        }
+      }
+    },
+    "DeliveryProfile": {
+      "type": "object",
+      "required": ["id", "width", "height", "fps", "duration_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "fps": { "type": "number", "exclusiveMinimum": 0 },
+        "duration_ms": { "type": "integer", "minimum": 1 },
+        "safe_area_profile": { "type": "string", "minLength": 1 }
+      }
+    },
+    "RuntimeProfile": {
+      "type": "object",
+      "required": [
+        "class",
+        "scene_contract_version",
+        "environment_id",
+        "renderer",
+        "encoder"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "class": { "enum": ["FAST", "SPECIAL"] },
+        "scene_contract_version": { "type": "string", "minLength": 1 },
+        "environment_id": { "type": "string", "minLength": 1 },
+        "renderer": { "$ref": "#/$defs/VersionedId" },
+        "encoder": {
+          "type": "object",
+          "required": ["video_codec"],
+          "additionalProperties": true,
+          "properties": {
+            "video_codec": { "type": "string", "minLength": 1 },
+            "bitrate_bps": { "type": "integer", "minimum": 1 },
+            "crf": { "type": "number" },
+            "preset": { "type": "string" },
+            "pixel_format": { "type": "string" }
+          }
+        },
+        "muxer": { "$ref": "#/$defs/VersionedId" },
+        "post_pipeline": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/VersionedId" }
+        }
+      }
+    },
+    "ArtifactPolicy": {
+      "type": "object",
+      "required": ["reuse", "canonical_key"],
+      "additionalProperties": false,
+      "properties": {
+        "reuse": { "enum": ["prefer-existing", "force-render"] },
+        "canonical_key": { "const": "render_spec_id" }
+      }
+    },
+    "RenderSpec": {
+      "type": "object",
+      "required": [
+        "schema",
+        "render_spec_id",
+        "creative_id",
+        "delivery",
+        "runtime",
+        "assets",
+        "artifact_policy"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "newboo-render-spec-v1" },
+        "render_spec_id": {
+          "type": "string",
+          "pattern": "^nvr1_[a-f0-9]{64}$"
+        },
+        "creative_id": {
+          "type": "string",
+          "pattern": "^nvc1_[a-f0-9]{64}$"
+        },
+        "delivery": { "$ref": "#/$defs/DeliveryProfile" },
+        "runtime": { "$ref": "#/$defs/RuntimeProfile" },
+        "assets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/AssetRef" }
+        },
+        "artifact_policy": { "$ref": "#/$defs/ArtifactPolicy" }
+      }
+    },
+    "QaCheck": {
+      "type": "object",
+      "required": ["id", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["pass", "warn", "fail"] },
+        "details": {}
+      }
+    },
+    "Artifact": {
+      "type": "object",
+      "required": ["schema", "render_spec_id", "output", "qa", "invocation"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "newboo-render-artifact-v1" },
+        "render_spec_id": {
+          "type": "string",
+          "pattern": "^nvr1_[a-f0-9]{64}$"
+        },
+        "output": {
+          "type": "object",
+          "required": ["sha256", "bytes", "mime_type", "duration_ms", "frame_count"],
+          "additionalProperties": false,
+          "properties": {
+            "sha256": { "$ref": "#/$defs/Sha256" },
+            "bytes": { "type": "integer", "minimum": 1 },
+            "mime_type": { "const": "video/mp4" },
+            "duration_ms": { "type": "number", "exclusiveMinimum": 0 },
+            "frame_count": { "type": "integer", "minimum": 1 },
+            "storage_uri": { "type": "string", "minLength": 1 }
+          }
+        },
+        "qa": {
+          "type": "object",
+          "required": ["status", "checks"],
+          "additionalProperties": false,
+          "properties": {
+            "status": { "enum": ["pass", "warn", "fail"] },
+            "checks": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/QaCheck" }
+            }
+          }
+        },
+        "metrics": { "type": "object" },
+        "invocation": {
+          "type": "object",
+          "required": ["cache_hit", "attempts"],
+          "additionalProperties": false,
+          "properties": {
+            "cache_hit": { "type": "boolean" },
+            "attempts": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    }
+  }
+}
