@@ -54,9 +54,10 @@
   },
   "render": {
     "schema": "newboo-render-spec-v1",
-    "render_spec_id": "nvr1_c008fd2e5f871ded5fc2c4d3a89e751242fa98a1f9c03702bd84028f37153cfb",
+    "render_spec_id": "nvr1_2cfe500839f91c0a95645d5bafd6e53fe1ee2c8d4d3cee36abb6f5b76245ccdc",
     "creative_id": "nvc1_acda813a67f904ee65b73fa06c3aebae3588c04a9b94b252d3f9b738bcaca42e",
     "duration_ms": 12000,
+    "frame_count": 360,
     "delivery": {
       "id": "vertical-1080x1920-v1",
       "width": 1080,
@@ -117,14 +118,14 @@
   },
   "artifact": {
     "schema": "newboo-render-artifact-v1",
-    "render_spec_id": "nvr1_c008fd2e5f871ded5fc2c4d3a89e751242fa98a1f9c03702bd84028f37153cfb",
+    "render_spec_id": "nvr1_2cfe500839f91c0a95645d5bafd6e53fe1ee2c8d4d3cee36abb6f5b76245ccdc",
     "output": {
       "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
       "bytes": 1220892,
       "mime_type": "video/mp4",
       "duration_ms": 12006.6,
       "frame_count": 360,
-      "storage_uri": "s3://example-bucket/video/nvr1_c008fd2e5f871ded5fc2c4d3a89e751242fa98a1f9c03702bd84028f37153cfb.mp4"
+      "storage_uri": "s3://example-bucket/video/nvr1_2cfe500839f91c0a95645d5bafd6e53fe1ee2c8d4d3cee36abb6f5b76245ccdc.mp4"
     },
     "qa": {
       "status": "pass",
