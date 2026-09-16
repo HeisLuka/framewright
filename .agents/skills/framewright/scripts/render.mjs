@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Render every frame to PNG using parallel browser tabs.
 //   node render.mjs [dir=frames] [seed=7] [width=1920] [tabs=5]
-// Env: HTML=path/to/index.html, AR=9:16, START=0 END=120 (frame range), RESUME=1 (skip existing files)
+// Env: HTML=path/to/index.html, AR=9:16, START=0 END=120, RESUME=1, FW_QUERY='key=value&...'
 import puppeteer from 'puppeteer';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -11,7 +11,19 @@ const seed = +seedS, width = +widthS, tabs = Math.max(1, +tabsS);
 const html = path.resolve(process.env.HTML || 'index.html');
 if (!fs.existsSync(html)) { console.error(`no such file: ${html} (set HTML=path)`); process.exit(1); }
 fs.mkdirSync(dir, { recursive: true });
-const url = 'file://' + html + `?f=0&w=320&s=${seed}` + (process.env.AR ? `&ar=${process.env.AR}` : '');
+
+function buildUrl() {
+  const url = new URL('file://' + html);
+  url.searchParams.set('f', '0');
+  url.searchParams.set('w', '320');
+  url.searchParams.set('s', String(seed));
+  if (process.env.AR) url.searchParams.set('ar', process.env.AR);
+  for (const [key, value] of new URLSearchParams(process.env.FW_QUERY || '')) {
+    url.searchParams.set(key, value);
+  }
+  return url.href;
+}
+const url = buildUrl();
 
 const b = await puppeteer.launch({ headless: true, protocolTimeout: 600000, args: ['--allow-file-access-from-files'] });
 const p0 = await b.newPage();
