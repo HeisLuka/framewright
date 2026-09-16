@@ -1,0 +1,110 @@
+name: I02 Final FAST Backend Freeze
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/i02-browserless-reference.mjs'
+      - '.agents/skills/framewright/scripts/i02-browser-samples.mjs'
+      - '.agents/skills/framewright/scripts/i02-final-analyze.mjs'
+      - '.agents/skills/framewright/scripts/run-video-factory.mjs'
+      - '.agents/skills/framewright/scripts/render-factory-fast.mjs'
+      - 'contracts/make-i03-factory-fixture.mjs'
+      - 'contracts/c19-delivery-package-v1.mjs'
+      - 'examples/book-ad-v0/**'
+      - '.github/workflows/i02-final-backend-freeze.yml'
+  workflow_dispatch:
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install pinned comparison dependencies
+        run: |
+          npm install --no-audit --no-fund
+          npm install --no-save @napi-rs/canvas@1.0.9
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/i02-browserless-reference.mjs
+          node --check .agents/skills/framewright/scripts/i02-browser-samples.mjs
+          node --check .agents/skills/framewright/scripts/i02-final-analyze.mjs
+      - name: Build exact I03 physical workload
+        run: |
+          mkdir -p .bench/i02/chromium-cache
+          node contracts/make-i03-factory-fixture.mjs .bench/i02/request.json
+      - name: Execute current canonical Chromium/WebCodecs FAST path
+        env:
+          CI: '1'
+        run: |
+          /usr/bin/time -v -o .bench/i02/chromium-time.txt \
+            node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/i02/request.json \
+            --out-dir .bench/i02/chromium \
+            --artifact-dir .bench/i02/chromium-cache
+      - name: Capture exact browser Canvas semantic samples
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+          SAMPLES_DIR: .bench/i02/browser-samples
+          SAMPLE_FRAMES: '0,89,90,239,240,359'
+        run: node .agents/skills/framewright/scripts/i02-browser-samples.mjs
+      - name: Execute browserless reference on same scene bytes
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+          OUT: .bench/i02/browserless.mp4
+          REPORT: .bench/i02/browserless.json
+          SAMPLES_DIR: .bench/i02/node-samples
+          WIDTH: '1080'
+          HEIGHT: '1920'
+          FPS: '30'
+          TOTAL_FRAMES: '360'
+          BITRATE: '3000000'
+          X264_PRESET: veryfast
+          SAMPLE_FRAMES: '0,89,90,239,240,359'
+        run: |
+          /usr/bin/time -v -o .bench/i02/browserless-time.txt \
+            node .agents/skills/framewright/scripts/i02-browserless-reference.mjs
+      - name: Enforce semantic sample parity before economics
+        env:
+          BROWSER_SAMPLES: .bench/i02/browser-samples
+          NODE_SAMPLES: .bench/i02/node-samples
+          BROWSERLESS_REPORT: .bench/i02/browserless.json
+          CHROMIUM_RECEIPT: .bench/i02/chromium/receipts
+          CHROMIUM_VIDEO_DIR: .bench/i02/chromium/video
+          BROWSERLESS_VIDEO: .bench/i02/browserless.mp4
+          REPORT: .bench/i02/final-report.json
+          SAMPLE_FRAMES: '0,89,90,239,240,359'
+          MIN_SAMPLE_SSIM: '0.97'
+          MIN_SAMPLE_PSNR: '30'
+        run: node .agents/skills/framewright/scripts/i02-final-analyze.mjs
+      - name: Print compact comparison
+        if: always()
+        run: |
+          test -f .bench/i02/final-report.json && node - <<'NODE'
+          const r=require('./.bench/i02/final-report.json');
+          console.log(JSON.stringify({
+            parity:r.sample_parity,
+            chromium:{inner_total_run_ms:r.chromium.inner_total_run_ms,bytes:r.chromium.bytes},
+            browserless:{timing:r.browserless.timing,resources:r.browserless.resources,bytes:r.browserless.output?.bytes},
+            decoded_video_agreement:r.decoded_video_agreement,
+            interpretation:r.interpretation,
+          },null,2));
+          NODE
+          echo '--- Chromium /usr/bin/time ---'
+          cat .bench/i02/chromium-time.txt || true
+          echo '--- Browserless /usr/bin/time ---'
+          cat .bench/i02/browserless-time.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i02-final-backend-freeze
+          path: .bench/i02/
+          retention-days: 14
