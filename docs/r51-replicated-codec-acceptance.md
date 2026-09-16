@@ -47,13 +47,24 @@ For each of 10 fixtures:
 - `dSSIM` and `dPSNR` versus x264;
 - for every rejected ROI, a persisted five-panel contact: `Canvas | x264 | WC#1 | WC#2 | WC#3`.
 
-## Promotion gate
+## Canonical result
 
-The candidate acceptance rule is promoted only if:
+Canonical run: `35160802719`. Artifact: `10472868408`. Artifact digest: `sha256:48944755851cebd6d358e6289038c1fbd00dbc0eafd3d1621a335116a185aa43`.
 
-1. every calibration fixture passes;
-2. all four held-out fixtures pass (100% held-out acceptance);
-3. every ROI stays inside the candidate band on all three repeats;
-4. rejected or near-boundary contacts do not expose a gross semantic/readability defect hidden by the scalar rule.
+The predeclared candidate is **rejected** (`promote=false`).
 
-If any gate fails, R51 does not invent a replacement threshold. Production remains on the current runtime policy while codec acceptance stays unresolved.
+- Held-out validation is clean: `salt`, `winter-map`, `quotes`, and `zero-hour` all pass, so held-out acceptance is **4/4**.
+- Five of six calibration fixtures pass: `river-station`, `letters`, `city-seven`, `long-title`, and `night-archive`.
+- `observatory / swiss` fails repeatably on CTA regions.
+
+`observatory / cta_title` fails all three repeats because PSNR is roughly `-3.33 dB` versus x264 even though SSIM is **better** by about `+0.0016`. `observatory / cta_button` also fails all three repeats: SSIM is better by roughly `+0.0021…+0.0026`, while PSNR is about `-1.00…-1.14 dB`.
+
+Persisted five-panel rejection contacts (`Canvas | x264 | WC#1 | WC#2 | WC#3`) show aligned CTA typography/layout and no gross semantic/readability defect in these sampled regions. The rejection is therefore a stable disagreement between low-level scalar reconstruction metrics, not an obvious visual failure.
+
+## Decision
+
+Do **not** promote the R43 `dSSIM AND dPSNR` band into the production codec acceptance contract. It is substantially more repeatable than the old exact-SSIM domination gate and it generalizes to all four held-out fixtures, but it produces a stable false-reject on `observatory` CTA content under the predeclared rule.
+
+Do not relax either threshold after seeing this failure, do not switch to SSIM-only because that would conveniently pass `observatory`, and do not change production bitrate from this task.
+
+The next acceptance work should target the actual defect class the factory cares about — semantic typography/structure preservation — using a predeclared structure-aware signal plus replicated encoding, while keeping lossless Canvas and x264 as references rather than scalar winners.
