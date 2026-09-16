@@ -16,7 +16,8 @@ const payloadArgs=process.env.PAYLOADS?.split(',').filter(Boolean) || [
   'examples/book-ad-v0/payload.latin.json'
 ];
 if(!fs.existsSync(source)) throw new Error(`missing template: ${source}`);
-fs.rmSync(outDir,{recursive:true,force:true}); fs.mkdirSync(outDir,{recursive:true});
+fs.mkdirSync(outDir,{recursive:true});
+for(const name of fs.readdirSync(outDir)) fs.rmSync(path.join(outDir,name),{recursive:true,force:true});
 
 const marker='const PLATES=[];';
 const original=fs.readFileSync(source,'utf8');
