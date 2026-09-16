@@ -17,11 +17,18 @@ const catalog=JSON.parse(read(packageDir,'candidate-catalog.json'));
 const dedupe=JSON.parse(read(packageDir,'dedupe-report.json'));
 const diversity=JSON.parse(fs.readFileSync(diversityPath,'utf8'));
 if(campaign.schema!=='framewright-selected-campaign-manifest-v1')fail(`unexpected campaign schema ${campaign.schema}`);
+if(!campaign.identityContract?.creativeId?.includes('storage path'))fail('final campaign manifest is missing the creative identity contract');
+if(!campaign.identityContract?.renderId)fail('final campaign manifest is missing render identity contract');
+if(!campaign.renderer?.environment?.platform||!campaign.renderer?.environment?.arch)fail('render provenance must include platform/arch');
+if(!campaign.renderer?.environment?.nodeAbi||!campaign.renderer?.environment?.napi)fail('render provenance must include Node ABI/N-API versions');
 if(campaign.counts.books!==10||campaign.counts.creatives!==30)fail(`expected 10 books / 30 selected, got ${campaign.counts.books}/${campaign.counts.creatives}`);
 if(catalog.counts.candidates!==40)fail(`expected 40 candidates, got ${catalog.counts.candidates}`);
 if(catalog.counts.selected!==30)fail(`expected 30 catalog selections, got ${catalog.counts.selected}`);
 if(dedupe.exactSpecGroups.length)fail(`exact creative-spec duplicates: ${JSON.stringify(dedupe.exactSpecGroups)}`);
 if(dedupe.exactOutputGroups.length)fail(`exact MP4 duplicates: ${JSON.stringify(dedupe.exactOutputGroups)}`);
+for(const c of catalog.creatives){
+  if(!c.identity?.coverSha256)fail(`${c.bookId}/${c.variant}: missing content-addressed cover hash`);
+}
 const creativeIds=new Set(),renderIds=new Set(),outputs=new Set();
 const divByBook=new Map(diversity.books.map(x=>[x.bookId,x]));
 for(const book of campaign.books){
@@ -50,4 +57,4 @@ if(recorded!==shaFile(path.join(packageDir,'campaign-manifest.json')))fail('camp
 const catalogSelected=catalog.creatives.filter(x=>x.selection.status==='selected');
 if(catalogSelected.length!==30)fail(`catalog selected count ${catalogSelected.length}`);
 if(catalog.creatives.filter(x=>x.selection.status==='reserve').length+catalog.creatives.filter(x=>x.selection.status==='suppressed').length!==10)fail('candidate pool accounting mismatch');
-console.log(JSON.stringify({ok:true,books:campaign.counts.books,candidates:catalog.counts.candidates,selected:campaign.counts.creatives,reserve:catalog.counts.reserve,suppressed:catalog.counts.suppressed,nearDuplicateThreshold:campaign.selectionPolicy.nearDuplicateThreshold,uniqueCreativeIds:creativeIds.size,uniqueRenderIds:renderIds.size,packageSha256:recorded},null,2));
+console.log(JSON.stringify({ok:true,books:campaign.counts.books,candidates:catalog.counts.candidates,selected:campaign.counts.creatives,reserve:catalog.counts.reserve,suppressed:catalog.counts.suppressed,nearDuplicateThreshold:campaign.selectionPolicy.nearDuplicateThreshold,platform:campaign.renderer.environment.platform,arch:campaign.renderer.environment.arch,uniqueCreativeIds:creativeIds.size,uniqueRenderIds:renderIds.size,packageSha256:recorded},null,2));
