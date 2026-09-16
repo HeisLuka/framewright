@@ -9,10 +9,14 @@ let html=fs.readFileSync(input,'utf8');
 const policy=JSON.parse(fs.readFileSync(policyPath,'utf8'));
 if(!policy?.profiles?.generic)throw new Error('C26 platform policy missing generic profile');
 
+const centerMarker='const LW=DIMS.w,LH=DIMS.h,CX=LW/2;';
+if(!html.includes(centerMarker))throw new Error('C26 responsive CX marker missing');
+html=html.replace(centerMarker,'const LW=DIMS.w,LH=DIMS.h;');
+
 const safeMarker="const SAFE=PROFILE==='vertical'?{x:76,y:288,w:928,h:1248}:PROFILE==='square'?{x:64,y:62,w:952,h:956}:{x:110,y:70,w:1700,h:940};";
 if(!html.includes(safeMarker))throw new Error('C26 responsive SAFE marker missing');
 const profilesJson=JSON.stringify(policy.profiles);
-const safeReplacement=`const C26_PLATFORM_UI_VERSION=${JSON.stringify(policy.version)};\nconst C26_PLATFORM_UI_PROFILES=${profilesJson};\nconst __c26Requested=String((window.FRAMEWRIGHT_PAYLOAD&&window.FRAMEWRIGHT_PAYLOAD.platform_profile)||'generic').toLowerCase();\nconst C26_PLATFORM_PROFILE=Object.prototype.hasOwnProperty.call(C26_PLATFORM_UI_PROFILES,__c26Requested)?__c26Requested:'generic';\nconst C26_PLATFORM_UI=C26_PLATFORM_UI_PROFILES[C26_PLATFORM_PROFILE];\nconst SAFE=PROFILE==='vertical'?{...C26_PLATFORM_UI.safeRect}:PROFILE==='square'?{x:64,y:62,w:952,h:956}:{x:110,y:70,w:1700,h:940};`;
+const safeReplacement=`const C26_PLATFORM_UI_VERSION=${JSON.stringify(policy.version)};\nconst C26_PLATFORM_UI_PROFILES=${profilesJson};\nconst __c26Requested=String((window.FRAMEWRIGHT_PAYLOAD&&window.FRAMEWRIGHT_PAYLOAD.platform_profile)||'generic').toLowerCase();\nconst C26_PLATFORM_PROFILE=Object.prototype.hasOwnProperty.call(C26_PLATFORM_UI_PROFILES,__c26Requested)?__c26Requested:'generic';\nconst C26_PLATFORM_UI=C26_PLATFORM_UI_PROFILES[C26_PLATFORM_PROFILE];\nconst SAFE=PROFILE==='vertical'?{...C26_PLATFORM_UI.safeRect}:PROFILE==='square'?{x:64,y:62,w:952,h:956}:{x:110,y:70,w:1700,h:940};\nconst CX=PROFILE==='vertical'?(SAFE.x+SAFE.w/2):LW/2;`;
 html=html.replace(safeMarker,safeReplacement);
 
 const payloadMarker="const P=normalizePayload(window.FRAMEWRIGHT_PAYLOAD||DEFAULT_PAYLOAD);";
@@ -22,7 +26,19 @@ html=html.replace(payloadMarker,payloadMarker+"\nP.platform_profile=C26_PLATFORM
 const debugMarker='function safeDebug(g){';
 if(!html.includes(debugMarker))throw new Error('C26 safeDebug marker missing');
 const instrumentation=String.raw`
-const __c26DrawCover=drawCover;
+const __c26TextBlock=textBlock,__c26Label=label,__c26DrawCover=drawCover;
+function __c26SafeTextOptions(o={}){
+  if(PROFILE!=='vertical'||!Number.isFinite(o.maxW))return o;
+  const n={...o},x=Number.isFinite(n.x)?n.x:SAFE.x,align=n.align||'left',left=SAFE.x,right=SAFE.x+SAFE.w;
+  let allowed=n.maxW;
+  if(align==='center')allowed=2*Math.max(1,Math.min(x-left,right-x));
+  else if(align==='right')allowed=Math.max(1,x-left);
+  else allowed=Math.max(1,right-x);
+  n.maxW=Math.min(n.maxW,allowed);
+  return n;
+}
+textBlock=function(g,text,o={}){return __c26TextBlock(g,text,__c26SafeTextOptions(o));};
+label=function(g,text,x,y,o={}){const n=__c26SafeTextOptions({...o,x});delete n.x;return __c26Label(g,text,x,y,n);};
 let __c26Capture=false,__c26CoverEvents=[];
 function __c26RotatedCoverBox(x,y,w,h,r=0){
   const c=Math.abs(Math.cos(r)),s=Math.abs(Math.sin(r)),bw=w*c+h*s,bh=w*s+h*c;
