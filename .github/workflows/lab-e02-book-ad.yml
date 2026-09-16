@@ -1,0 +1,101 @@
+name: Lab E02 Book Ad
+
+on:
+  push:
+    branches:
+      - lab/e02-book-ad-v0
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Environment
+        run: |
+          node --version
+          npm --version
+          ffmpeg -version | head -1
+          ffprobe -version | head -1
+          node -e "const p=require('puppeteer'); console.log('puppeteer',require('puppeteer/package.json').version); console.log('chrome',p.executablePath())"
+
+      - name: Syntax checks
+        run: |
+          node --check .agents/skills/framewright/scripts/profile-render.mjs
+          node --check .agents/skills/framewright/scripts/render-payload.mjs
+          node --check .agents/skills/framewright/scripts/benchmark.mjs
+          node -e "JSON.parse(require('fs').readFileSync('examples/book-ad-v0/payload.example.json','utf8')); JSON.parse(require('fs').readFileSync('examples/book-ad-v0/payload.long.json','utf8')); JSON.parse(require('fs').readFileSync('examples/book-ad-v0/payload.latin.json','utf8')); console.log('payload JSON ok')"
+
+      - name: Stage profile matrix
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+        run: |
+          mkdir -p artifacts
+          for width in 720 1080; do
+            for tabs in 1 5; do
+              echo "=== ${width}px / ${tabs} tabs ==="
+              rm -rf frames-matrix
+              PROFILE_OUT="artifacts/profile-${width}-${tabs}.json" node .agents/skills/framewright/scripts/profile-render.mjs frames-matrix 7 "$width" "$tabs"
+            done
+          done
+          rm -rf frames-matrix
+
+      - name: Canonical end-to-end benchmark
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+          FRAMES_DIR: frames-canonical
+          VIDEO_OUT: artifacts/book-ad-v0.mp4
+          RENDER_PROFILE_OUT: artifacts/render-canonical.json
+          KEEP_FRAMES: '1'
+        run: |
+          node .agents/skills/framewright/scripts/benchmark.mjs artifacts/benchmark-canonical.json 7 1080 5
+          ffmpeg -hide_banner -loglevel error -y -framerate 30 -pattern_type glob -i 'frames-canonical/f*.png' -vf "select='not(mod(n,30))',scale=270:-1,tile=4x3" -frames:v 1 artifacts/contact-sheet.png
+          rm -rf frames-canonical
+
+      - name: Long-copy smoke render
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.long.json
+          START: '0'
+          END: '360'
+        run: |
+          rm -rf frames-long
+          node .agents/skills/framewright/scripts/render-payload.mjs frames-long 11 360 2
+          ffmpeg -hide_banner -loglevel error -y -framerate 30 -pattern_type glob -i 'frames-long/f*.png' -vf "select='not(mod(n,30))',scale=180:-1,tile=4x3" -frames:v 1 artifacts/contact-long.png
+          rm -rf frames-long
+
+      - name: Summarize profiles
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const names=['720-1','720-5','1080-1','1080-5'];
+          const rows=names.map(n=>{
+            const p=JSON.parse(fs.readFileSync(`artifacts/profile-${n}.json`,'utf8'));
+            const s=p.summary.stages;
+            return {case:n,fps:p.summary.fps,scene_ms:s.sceneEngineMs.mean,post_ms:s.postMs.mean,png_ms:s.pngEncodeMs.mean,cdp_ms:s.cdpTransferMs.mean,decode_ms:s.base64DecodeMs.mean,write_ms:s.diskWriteMs.mean,png_mb:+(p.summary.pngBytes/1024/1024).toFixed(2)};
+          });
+          fs.writeFileSync('artifacts/summary.json',JSON.stringify(rows,null,2));
+          let md='## E02 Book Ad v0 benchmark\n\n| case | fps | scene ms | post ms | PNG ms | CDP ms | decode ms | write ms | PNG MB |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|\n';
+          for(const r of rows)md+=`| ${r.case} | ${r.fps} | ${r.scene_ms} | ${r.post_ms} | ${r.png_ms} | ${r.cdp_ms} | ${r.decode_ms} | ${r.write_ms} | ${r.png_mb} |\n`;
+          fs.writeFileSync('artifacts/summary.md',md); console.log(md);
+          NODE
+
+      - name: Upload lab artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: e02-book-ad-v0
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
