@@ -32,8 +32,10 @@ function reverseKeys(value){
 }
 async function expectError(ingress,code,needle=null,options={}){
   let error=null;
+  const resolver=Object.prototype.hasOwnProperty.call(options,'loadContextPack')?options.loadContextPack:(()=>pack);
+  const approvalResolver=Object.prototype.hasOwnProperty.call(options,'loadTrustedApproval')?options.loadTrustedApproval:null;
   try{
-    await processCreativeIngress({ingress,loadContextPack:options.loadContextPack||(()=>pack),loadTrustedApproval:options.loadTrustedApproval||null});
+    await processCreativeIngress({ingress,loadContextPack:resolver,loadTrustedApproval:approvalResolver});
   }catch(caught){error=caught;}
   assert.ok(error instanceof CreativeIngressError,`expected CreativeIngressError for ${code}, got ${error}`);
   assert.equal(error.report.code,code,JSON.stringify(error.report));
