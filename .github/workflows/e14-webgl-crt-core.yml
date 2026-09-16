@@ -1,0 +1,59 @@
+name: E14 WebGL CRT core
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/scripts/webgl-crt-core-browser.js"
+      - ".agents/skills/framewright/scripts/bench-webgl-crt-core.mjs"
+      - ".agents/skills/framewright/scripts/crt-core-reference.mjs"
+      - ".github/workflows/e14-webgl-crt-core.yml"
+  workflow_dispatch:
+
+jobs:
+  webgl-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - name: Syntax checks
+        run: |
+          node --check .agents/skills/framewright/scripts/webgl-crt-core-browser.js
+          node --check .agents/skills/framewright/scripts/bench-webgl-crt-core.mjs
+      - name: Run WebGL CRT benchmark
+        env:
+          AR: "9:16"
+          ROUNDS: "2"
+          PARITY_WIDTH: "96"
+        run: >-
+          node .agents/skills/framewright/scripts/bench-webgl-crt-core.mjs
+          artifacts/e14-webgl-crt-core.json 720 90 7
+      - name: Summarize E14
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const m = JSON.parse(fs.readFileSync('artifacts/e14-webgl-crt-core.json', 'utf8'));
+          const summary = {
+            renderer: m.webgl.renderer,
+            vendor: m.webgl.vendor,
+            legacyFps: m.performance.legacy.framesPerSecond,
+            compositionFps: m.performance.composition.framesPerSecond,
+            webglCoreFps: m.performance.webgl.framesPerSecond,
+            webglVsLegacy: m.performance.webgl.framesPerSecond / m.performance.legacy.framesPerSecond,
+            webglVsComposition: m.performance.webgl.framesPerSecond / m.performance.composition.framesPerSecond,
+            parity: m.parity.aggregate,
+          };
+          console.log(JSON.stringify(summary, null, 2));
+          if (!(m.performance.webgl.framesPerSecond > 0)) throw new Error('WebGL benchmark produced no throughput');
+          if (!(m.parity.frames.length >= 8)) throw new Error('insufficient parity probes');
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e14-webgl-crt-core
+          path: artifacts/e14-webgl-crt-core.json
