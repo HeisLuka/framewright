@@ -1,0 +1,18 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+
+const wavPath=path.resolve(process.argv[2]||'artifacts/c23/track.wav');
+const mapPath=path.resolve(process.argv[3]||'artifacts/c23/onsets.json');
+const SR=44100,DUR=12,BPM=100,BEAT=60/BPM,OFFSET=.15,N=Math.round(SR*DUR);
+const L=new Float32Array(N),R=new Float32Array(N);
+let seed=230917;const rnd=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+function addPulse(t,accent=false){const s0=Math.round(t*SR),len=Math.round(.24*SR);for(let i=0;i<len&&s0+i<N;i++){const x=i/SR,env=Math.exp(-x/(accent?.075:.055));const kick=Math.sin(2*Math.PI*(accent?86:116)*x)*env*(accent?.62:.42);const click=(rnd()*2-1)*Math.exp(-x/.009)*(accent?.22:.14);L[s0+i]+=kick+click;R[s0+i]+=kick+click;}}
+const expected=[];for(let i=0,t=OFFSET;t<DUR-.2;i++,t=OFFSET+i*BEAT){expected.push(+t.toFixed(6));addPulse(t,i%4===0);}
+const freqs=[110,164.81,220];for(let i=0;i<N;i++){const t=i/SR,fade=Math.min(1,t/.35,(DUR-t)/.35),mod=.55+.45*Math.sin(2*Math.PI*t/4.8);let v=0;for(const f of freqs)v+=Math.sin(2*Math.PI*f*t);v=v/freqs.length*.055*fade*(.8+.2*mod);L[i]+=v;R[i]+=v*.98;}
+let peak=0;for(let i=0;i<N;i++)peak=Math.max(peak,Math.abs(L[i]),Math.abs(R[i]));const gain=peak?0.86/peak:1;
+fs.mkdirSync(path.dirname(wavPath),{recursive:true});const buf=Buffer.alloc(44+N*4);buf.write('RIFF',0);buf.writeUInt32LE(36+N*4,4);buf.write('WAVE',8);buf.write('fmt ',12);buf.writeUInt32LE(16,16);buf.writeUInt16LE(1,20);buf.writeUInt16LE(2,22);buf.writeUInt32LE(SR,24);buf.writeUInt32LE(SR*4,28);buf.writeUInt16LE(4,32);buf.writeUInt16LE(16,34);buf.write('data',36);buf.writeUInt32LE(N*4,40);for(let i=0;i<N;i++){buf.writeInt16LE(Math.round(Math.max(-1,Math.min(1,L[i]*gain))*32767),44+i*4);buf.writeInt16LE(Math.round(Math.max(-1,Math.min(1,R[i]*gain))*32767),46+i*4);}fs.writeFileSync(wavPath,buf);
+function detect(wav){const frames=(wav.length-44)/4,win=441,energies=[];for(let s=0;s+win<=frames;s+=win){let sum=0;for(let j=0;j<win;j++){const off=44+(s+j)*4,l=wav.readInt16LE(off)/32768,r=wav.readInt16LE(off+2)/32768,m=(l+r)*.5;sum+=m*m;}energies.push(Math.sqrt(sum/win));}const flux=[];for(let i=0;i<energies.length;i++){let base=0,n=0;for(let k=Math.max(0,i-8);k<i;k++){base+=energies[k];n++;}base/=Math.max(1,n);flux.push(Math.max(0,energies[i]-base));}const max=Math.max(...flux),threshold=max*.18,out=[];let last=-999;for(let i=1;i<flux.length-1;i++){const t=i*.01;if(flux[i]<threshold||flux[i]<flux[i-1]||flux[i]<flux[i+1]||t-last<.30)continue;out.push(+t.toFixed(3));last=t;}return{max,threshold,onsets:out};}
+const d=detect(buf),detected=d.onsets.filter(t=>t>=.05&&t<=DUR-.05);const nearest=(t,xs)=>xs.reduce((best,x)=>Math.abs(x-t)<Math.abs(best-t)?x:best,xs[0]);const errs=expected.map(t=>Math.abs(nearest(t,detected)-t));const meanErr=errs.reduce((a,b)=>a+b,0)/errs.length,maxErr=Math.max(...errs);
+if(detected.length<expected.length-1)throw new Error(`onset detector found ${detected.length}, expected about ${expected.length}`);if(meanErr>.03||maxErr>.06)throw new Error(`onset detector drift mean=${meanErr} max=${maxErr}`);
+const report={schema:'framewright-c23-onsets-v1',sampleRate:SR,duration:DUR,bpm:BPM,beatSeconds:BEAT,expected,detected,detector:{windowMs:10,thresholdFraction:.18,refractoryMs:300,meanExpectedErrorSeconds:+meanErr.toFixed(6),maxExpectedErrorSeconds:+maxErr.toFixed(6)}};fs.mkdirSync(path.dirname(mapPath),{recursive:true});fs.writeFileSync(mapPath,JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify({wav:wavPath,onsets:detected.length,meanExpectedErrorSeconds:report.detector.meanExpectedErrorSeconds,maxExpectedErrorSeconds:report.detector.maxExpectedErrorSeconds,detected},null,2));
