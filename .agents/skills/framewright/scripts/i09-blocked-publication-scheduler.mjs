@@ -26,7 +26,7 @@ function normalizeOptionalTime(value,label){
 
 function normalizeTreatments(treatments){
   if(!Array.isArray(treatments)||treatments.length<2)throw new Error('treatments must contain at least two items');
-  const treatmentIds=new Set(),creativeIds=new Set();
+  const treatmentIds=new Set(),creativeIds=new Set(),renderSpecIds=new Set();
   const rows=treatments.map((raw,i)=>{
     const treatment=object(raw,`treatments[${i}]`);
     const treatment_id=text(treatment.treatment_id,`treatments[${i}].treatment_id`);
@@ -41,7 +41,8 @@ function normalizeTreatments(treatments){
       const platform=text(spec.platform,`treatment ${treatment_id}.render_specs[${j}].platform`);
       const render_spec_id=text(spec.render_spec_id,`treatment ${treatment_id}.render_specs[${j}].render_spec_id`);
       if(platforms.has(platform))throw new Error(`treatment ${treatment_id} has duplicate render spec platform ${platform}`);
-      platforms.add(platform);
+      if(renderSpecIds.has(render_spec_id))throw new Error(`render_spec_id ${render_spec_id} is reused across treatments/profiles`);
+      platforms.add(platform);renderSpecIds.add(render_spec_id);
       return {platform,render_spec_id};
     }).sort((a,b)=>a.platform.localeCompare(b.platform));
     return {treatment_id,creative_id,axes:sortValue(treatment.axes||{}),render_specs};
