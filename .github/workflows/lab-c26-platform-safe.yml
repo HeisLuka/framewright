@@ -1,0 +1,77 @@
+name: Lab C26 Platform Safe Zones
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs'
+      - '.agents/skills/framewright/scripts/make-c26-platform-safe-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/c26-platform-safe-audit.mjs'
+      - '.agents/skills/framewright/scripts/c26-summarize.mjs'
+      - '.agents/skills/framewright/scripts/c26-review-sheets.mjs'
+      - 'examples/book-ad-systems/platform-ui-profiles.v1.json'
+      - 'docs/c26-platform-safe-zones.md'
+      - '.github/workflows/lab-c26-platform-safe.yml'
+  workflow_dispatch:
+
+jobs:
+  platform-safe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install pinned renderer dependencies
+        run: npm install --no-save @napi-rs/canvas@1.0.9
+      - name: Install FFmpeg + pinned fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax and policy check
+        run: |
+          node --check .agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs
+          node --check .agents/skills/framewright/scripts/make-c26-platform-safe-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/c26-platform-safe-audit.mjs
+          node --check .agents/skills/framewright/scripts/c26-summarize.mjs
+          node --check .agents/skills/framewright/scripts/c26-review-sheets.mjs
+          node -e "const p=require('./examples/book-ad-systems/platform-ui-profiles.v1.json'); if(!p.version||!p.profiles?.youtube_shorts||!p.profiles?.instagram_reels||!p.profiles?.tiktok) process.exit(1)"
+      - name: Prepare current creative stack and C26 fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-c26.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-c26.html examples/book-ad-systems/index-c22-c26.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-c22-c26.html examples/book-ad-systems/index-e17-c26.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-c26.html examples/book-ad-systems/index-e17-e14-c26.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-c26.html examples/book-ad-systems/index-e18-c26.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-c26.html examples/book-ad-systems/index-c20-c26.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-c26.html examples/book-ad-systems/index-c21-c26.html
+          node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c21-c26.html examples/book-ad-systems/index-c23-c26.html
+          node .agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs examples/book-ad-systems/index-c23-c26.html examples/book-ad-systems/index-c24-c26.html
+          node .agents/skills/framewright/scripts/prepare-c25-typography-axis.mjs examples/book-ad-systems/index-c24-c26.html examples/book-ad-systems/index-c25-c26.html
+          node .agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs examples/book-ad-systems/index-c25-c26.html examples/book-ad-systems/index-c26.html examples/book-ad-systems/platform-ui-profiles.v1.json
+          node .agents/skills/framewright/scripts/make-c26-platform-safe-fixtures.mjs examples/book-ad-systems/generated-c26
+      - name: Audit critical content against safe zones before rendering
+        env:
+          HTML: examples/book-ad-systems/index-c26.html
+          MANIFEST: examples/book-ad-systems/generated-c26/manifest.json
+          POLICY: examples/book-ad-systems/platform-ui-profiles.v1.json
+          AUDIT_REPORT: artifacts/c26/safe-zone-audit.json
+        run: node .agents/skills/framewright/scripts/c26-platform-safe-audit.mjs
+      - name: Render 24 generic/platform-safe videos
+        env:
+          HTML: examples/book-ad-systems/index-c26.html
+          MANIFEST: examples/book-ad-systems/generated-c26/manifest.json
+          OUT_DIR: artifacts/c26/videos
+          REPORT: artifacts/c26/batch.json
+          PRESET: veryfast
+          CRF: '22'
+        run: node .agents/skills/framewright/scripts/node-canvas-profile-batch.mjs
+      - name: Enforce safe-zone layout and cost gates
+        run: node .agents/skills/framewright/scripts/c26-summarize.mjs artifacts/c26/batch.json examples/book-ad-systems/generated-c26/manifest.json artifacts/c26/safe-zone-audit.json artifacts/c26/summary.json
+      - name: Build platform UI overlay review sheets
+        run: node .agents/skills/framewright/scripts/c26-review-sheets.mjs artifacts/c26/batch.json examples/book-ad-systems/generated-c26/manifest.json examples/book-ad-systems/platform-ui-profiles.v1.json artifacts/c26/review
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c26-platform-safe
+          path: artifacts/c26/
+          retention-days: 14
