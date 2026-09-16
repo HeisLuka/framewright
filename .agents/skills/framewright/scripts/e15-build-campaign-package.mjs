@@ -44,7 +44,7 @@ const batchById=new Map(batch.results.map(x=>[x.id,x]));
 const routeByBook=new Map(routes.books.map(x=>[x.bookId,x]));
 const diversityByBook=new Map(diversity.books.map(x=>[x.bookId,x]));
 const fontPaths=['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf','/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'];
-const environment={node:process.version,canvas:'@napi-rs/canvas@1.0.9',ffmpeg:ffmpegVersion(),fonts:fontPaths.map(file=>({file:path.basename(file),sha256:fs.existsSync(file)?shaFile(file):null}))};
+const environment={platform:process.platform,arch:process.arch,node:process.version,nodeAbi:process.versions.modules,napi:process.versions.napi,canvas:'@napi-rs/canvas@1.0.9',ffmpeg:ffmpegVersion(),fonts:fontPaths.map(file=>({file:path.basename(file),sha256:fs.existsSync(file)?shaFile(file):null}))};
 const templateSha256=shaFile(templatePath),rendererSha256=shaFile(rendererPath);
 const renderProfile={id:'framewright-standard-1080x1920-x264-v1',width:batch.width,height:batch.height,fps:30,frames:360,preset:batch.preset,crf:batch.crf,pixelFormat:'yuv420p'};
 const renderEnvironmentHash=shaText({environment,rendererSha256,renderProfile});
@@ -55,7 +55,9 @@ for(const entry of manifest.items){
   const batchRow=batchById.get(entry.id);if(!batchRow)throw new Error(`missing rendered output for ${entry.id}`);
   const video=path.resolve(batchRow.output);if(!fs.existsSync(video))throw new Error(`missing video ${video}`);
   const cover=resolveCover(payload),coverSha256=cover&&fs.existsSync(cover)?shaFile(cover):null;
-  const payloadSemantic={...payload};delete payloadSemantic.route_reason;delete payloadSemantic.creative_rank;
+  if(!coverSha256)throw new Error(`${entry.id}: cover asset must be staged locally so creative identity is content-addressed`);
+  // Storage location is not creative semantics. The staged cover bytes are represented by coverSha256 below.
+  const payloadSemantic={...payload};delete payloadSemantic.route_reason;delete payloadSemantic.creative_rank;delete payloadSemantic.cover_url;
   const payloadSha256=shaText(payloadSemantic);
   const creativeSpec={schema:'framewright-creative-spec-v1',bookId:entry.bookId,visualSystem:entry.style,variant:entry.variant,seed:entry.seed,motionDensity:payload.motion_density||'active',payloadSha256,coverSha256,templateSha256};
   const creativeSpecSha256=shaText(creativeSpec),creativeId=`fwc1-${sanitize(entry.bookId)}-${creativeSpecSha256.slice(0,16)}`;
@@ -115,9 +117,10 @@ for(const c of candidates)c.selection=selectedIds.has(c.creativeId)?{status:'sel
 
 const exactSpecGroups=Object.values(Object.groupBy?Object.groupBy(candidates,x=>x.identity.creativeSpecSha256):candidates.reduce((m,x)=>((m[x.identity.creativeSpecSha256]??=[]).push(x),m),{})).filter(xs=>xs.length>1).map(xs=>xs.map(x=>x.creativeId));
 const exactOutputGroups=Object.values(Object.groupBy?Object.groupBy(candidates,x=>x.output.sha256):candidates.reduce((m,x)=>((m[x.output.sha256]??=[]).push(x),m),{})).filter(xs=>xs.length>1).map(xs=>xs.map(x=>x.creativeId));
+const identityContract={creativeId:'semantic creative spec hash; independent of encoder implementation and asset storage path',renderId:'creative spec + renderer/environment/profile hash; environment includes platform and architecture',outputSha256:'exact MP4 bytes'};
 const packageBase={
   schema:'framewright-campaign-package-v1',
-  identityContract:{creativeId:'semantic creative spec hash; independent of encoder implementation',renderId:'creative spec + renderer/environment/profile hash',outputSha256:'exact MP4 bytes'},
+  identityContract,
   template:{path:path.relative(process.cwd(),templatePath),sha256:templateSha256,contract:'book-ad-systems-e14-v2'},
   renderer:{path:path.relative(process.cwd(),rendererPath),sha256:rendererSha256,environment,renderEnvironmentHash,profile:renderProfile},
   selectionPolicy:{id:'hook-anchor-greedy-maximin-v1',targetPerBook:3,nearDuplicateFingerprint:'sequence-ahash8x8-1fps-v1',nearDuplicateThreshold:NEAR_DUP_THRESHOLD,notes:'synthetic diversity selects a bounded test set; it does not predict campaign performance'},
@@ -132,8 +135,8 @@ fs.rmSync(outDir,{recursive:true,force:true});fs.mkdirSync(path.join(outDir,'sel
 const catalogPath=path.join(outDir,'candidate-catalog.json'),manifestOut=path.join(outDir,'campaign-manifest.json'),dedupePath=path.join(outDir,'dedupe-report.json');
 fs.writeFileSync(catalogPath,JSON.stringify(packageBase,null,2)+'\n');
 const selectedCreatives=packageBase.creatives.filter(x=>x.selection.status==='selected').map(c=>{const book=books.find(b=>b.bookId===c.bookId),sel=book.selected.find(x=>x.creativeId===c.creativeId);const ext='.mp4',file=`${c.creativeId}--${c.renderId}${ext}`;fs.copyFileSync(path.resolve(c.output.source),path.join(outDir,'selected',file));return {...c,selection:{...sel,status:'selected'},output:{...c.output,file:`selected/${file}`}};});
-const campaignManifest={schema:'framewright-selected-campaign-manifest-v1',packageContract:packageBase.schema,selectionPolicy:packageBase.selectionPolicy,template:packageBase.template,renderer:packageBase.renderer,counts:{books:books.length,creatives:selectedCreatives.length},books:books.map(b=>({...b,reserve:undefined})),creatives:selectedCreatives};
+const campaignManifest={schema:'framewright-selected-campaign-manifest-v1',packageContract:packageBase.schema,identityContract:packageBase.identityContract,sourceSchemas:packageBase.sourceSchemas,selectionPolicy:packageBase.selectionPolicy,template:packageBase.template,renderer:packageBase.renderer,counts:{books:books.length,creatives:selectedCreatives.length},books:books.map(b=>({...b,reserve:undefined})),creatives:selectedCreatives};
 fs.writeFileSync(manifestOut,JSON.stringify(campaignManifest,null,2)+'\n');
 fs.writeFileSync(dedupePath,JSON.stringify({schema:'framewright-dedupe-report-v1',threshold:NEAR_DUP_THRESHOLD,exactSpecGroups,exactOutputGroups,suppressed},null,2)+'\n');
 const packageHash=shaFile(manifestOut);fs.writeFileSync(path.join(outDir,'campaign-manifest.sha256'),`${packageHash}  campaign-manifest.json\n`);
-console.log(JSON.stringify({schema:campaignManifest.schema,books:books.length,candidates:candidates.length,selected:selectedCreatives.length,reserve:packageBase.counts.reserve,suppressed:suppressed.length,packageSha256:packageHash,selectedVariants:Object.fromEntries(books.map(b=>[b.bookId,b.selected.map(x=>x.variant)]))},null,2));
+console.log(JSON.stringify({schema:campaignManifest.schema,books:books.length,candidates:candidates.length,selected:selectedCreatives.length,reserve:packageBase.counts.reserve,suppressed:suppressed.length,platform:environment.platform,arch:environment.arch,packageSha256:packageHash,selectedVariants:Object.fromEntries(books.map(b=>[b.bookId,b.selected.map(x=>x.variant)]))},null,2));
