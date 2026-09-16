@@ -5,6 +5,7 @@ on:
     paths:
       - '.agents/skills/framewright/scripts/r40-explicit-color-conversion.mjs'
       - '.agents/skills/framewright/scripts/r40-bt709-i420-control.mjs'
+      - '.agents/skills/framewright/scripts/r40-browser-conversion-capability.mjs'
       - '.github/workflows/r40-explicit-color-conversion.yml'
       - 'docs/r40-explicit-color-conversion.md'
   workflow_dispatch:
@@ -27,6 +28,11 @@ jobs:
         run: |
           node --check .agents/skills/framewright/scripts/r40-explicit-color-conversion.mjs
           node --check .agents/skills/framewright/scripts/r40-bt709-i420-control.mjs
+          node --check .agents/skills/framewright/scripts/r40-browser-conversion-capability.mjs
+      - name: Probe browser conversion capabilities
+        env:
+          OUT_DIR: artifacts/r40
+        run: node .agents/skills/framewright/scripts/r40-browser-conversion-capability.mjs
       - name: Run explicit conversion probe
         env:
           OUT_DIR: artifacts/r40
@@ -42,23 +48,28 @@ jobs:
           import fs from 'node:fs';
           const r=JSON.parse(fs.readFileSync('artifacts/r40/report.json','utf8'));
           const c=JSON.parse(fs.readFileSync('artifacts/r40/bt709-i420-control.json','utf8'));
+          const p=JSON.parse(fs.readFileSync('artifacts/r40/browser-conversion-capability.json','utf8'));
           if(r.schema!=='nightwill-r40-explicit-color-conversion-v1') throw new Error('wrong main schema');
           if(c.schema!=='nightwill-r40-corrected-bt709-i420-control-v1') throw new Error('wrong control schema');
           if(!r.rows?.['canvas-default']?.supported) throw new Error('default canvas path missing');
           for(const id of ['canvas-bt709-tv','raw-i420-bt709-tv']) if(!r.rows?.[id]) throw new Error(`missing ${id}`);
           if(typeof r.decision?.canvasOverrideSupported!=='boolean') throw new Error('missing decision');
           if(typeof c.decision?.syntheticPass!=='boolean') throw new Error('missing corrected control decision');
+          if(!p?.source) throw new Error('missing browser conversion capability');
+          console.log('browser-capability',JSON.stringify(p,null,2));
           console.log('main',JSON.stringify(r.decision,null,2));
           console.log('corrected-control',JSON.stringify(c.decision,null,2));
           NODE
       - name: Show result
         run: |
+          cat artifacts/r40/browser-conversion-capability.json
           cat artifacts/r40/summary.md
           cat artifacts/r40/bt709-i420-control.json
       - uses: actions/upload-artifact@v4
         with:
           name: r40-explicit-color-conversion
           path: |
+            artifacts/r40/browser-conversion-capability.json
             artifacts/r40/report.json
             artifacts/r40/bt709-i420-control.json
             artifacts/r40/summary.md
