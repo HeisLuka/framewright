@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
+import os from 'node:os';
 import { spawn } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { createCanvas, Image, GlobalFonts } from '@napi-rs/canvas';
@@ -37,7 +38,7 @@ async function makeContext(payload,seed){
   if(!window.__ready) throw new Error('template boot timeout'); if(window.__bootError) throw new Error(window.__bootError);
   vm.runInContext(`
     globalThis.__layoutWarnings=[]; globalThis.__currentFrame=-1;
-    const __fitBlock=fitBlock; fitBlock=function(g,text,o={}){const r=__fitBlock(g,text,o);if(r.overflow)__layoutWarnings.push({type:'block-overflow',frame:__currentFrame,text:String(text).slice(0,160),maxW:o.maxW||900});return r;};
+    const __fitBlock=fitBlock; fitBlock=function(g,text,o={}){const r=__fitBlock(g,text,o);font(g,r.size,o.weight||700);const maxW=o.maxW||900;const widest=Math.max(0,...r.lines.map(line=>g.measureText(line).width));if(r.overflow||widest>maxW+.5)__layoutWarnings.push({type:r.overflow?'block-overflow':'block-width-overflow',frame:__currentFrame,text:String(text).slice(0,160),maxW,measured:widest});return r;};
     const __fitSingleSize=fitSingleSize; fitSingleSize=function(g,text,maxW,start=92,min=18,weight=700){const s=__fitSingleSize(g,text,maxW,start,min,weight);font(g,s,weight);const measured=g.measureText(text).width;if(measured>maxW+.5)__layoutWarnings.push({type:'label-overflow',frame:__currentFrame,text:String(text).slice(0,160),maxW,measured});return s;};
     globalThis.__renderRaw=(n,w,s)=>{__currentFrame=n;renderFrame(n,w,s,MAIN);return MAIN.getContext('2d').getImageData(0,0,MAIN.width,MAIN.height).data;};
   `,context);
@@ -58,11 +59,11 @@ async function renderOne(entry,index){
   }
   ff.stdin.end(); await new Promise((res,rej)=>{ff.on('error',rej);ff.on('close',code=>code===0?res():rej(new Error(`ffmpeg ${code}: ${ffErr}`)));});
   const totalMs=performance.now()-t0,warnings=uniqueWarnings(context.__layoutWarnings||[]); peakCombinedRss=Math.max(peakCombinedRss,rssBytes(process.pid));
-  return {id,payloadFile:path.relative(process.cwd(),payloadFile),seed,initMs:+initMs.toFixed(3),totalMs:+totalMs.toFixed(3),fps:+(total/(totalMs/1000)).toFixed(3),outputBytes:fs.statSync(out).size,peakCombinedRssBytes:peakCombinedRss,layoutWarnings:warnings,stages:{renderMs:stats(renderMs),writeWaitMs:stats(writeWaitMs)},output:path.relative(process.cwd(),out)};
+  return {id,payloadFile:path.relative(process.cwd(),payloadFile),seed,initMs:+initMs.toFixed(3),totalMs:+totalMs.toFixed(3),fps:+(total/(totalMs/1000)).toFixed(3),outputBytes:fs.statSync(out).size,peakCombinedRssBytes:peakCombinedRss,nodeRssAfterBytes:rssBytes(process.pid),layoutWarnings:warnings,stages:{renderMs:stats(renderMs),writeWaitMs:stats(writeWaitMs)},output:path.relative(process.cwd(),out)};
 }
 
 const batchT0=performance.now(),results=[];let peakCombinedRss=0;
 for(let i=0;i<manifest.items.length;i++){const r=await renderOne(manifest.items[i],i);results.push(r);peakCombinedRss=Math.max(peakCombinedRss,r.peakCombinedRssBytes);console.log(`${i+1}/${manifest.items.length} ${r.id}: ${(r.totalMs/1000).toFixed(2)}s, ${r.fps} fps, warnings=${r.layoutWarnings.length}`);}
-const batchMs=performance.now()-batchT0,videoTimes=results.map(r=>r.totalMs),warningCount=results.reduce((a,r)=>a+r.layoutWarnings.length,0);
-const report={schema:'framewright-e08-node-canvas-batch-v1',renderer:'@napi-rs/canvas',font:'DejaVu Sans pinned',width,height:Math.round(width*16/9),preset,crf,count:results.length,batchMs:+batchMs.toFixed(3),videosPerHour:+(results.length*3600000/batchMs).toFixed(2),perVideoMs:stats(videoTimes),peakCombinedRssBytes:peakCombinedRss,layoutWarningGroups:warningCount,results};
-fs.writeFileSync(reportPath,JSON.stringify(report,null,2)); console.log(JSON.stringify({batchMs:report.batchMs,videosPerHour:report.videosPerHour,perVideoMs:report.perVideoMs,peakCombinedRssMiB:+(peakCombinedRss/1048576).toFixed(1),layoutWarningGroups:warningCount},null,2));
+const batchMs=performance.now()-batchT0,videoTimes=results.map(r=>r.totalMs),warningCount=results.reduce((a,r)=>a+r.layoutWarnings.length,0),cpu=os.cpus();
+const report={schema:'framewright-e08-node-canvas-batch-v2',renderer:'@napi-rs/canvas',font:'DejaVu Sans pinned',host:{platform:process.platform,arch:process.arch,node:process.version,cpus:cpu.length,cpuModel:cpu[0]?.model||null,totalMemoryBytes:os.totalmem()},width,height:Math.round(width*16/9),preset,crf,count:results.length,batchMs:+batchMs.toFixed(3),videosPerHour:+(results.length*3600000/batchMs).toFixed(2),perVideoMs:stats(videoTimes),peakCombinedRssBytes:peakCombinedRss,layoutWarningGroups:warningCount,results};
+fs.writeFileSync(reportPath,JSON.stringify(report,null,2)); console.log(JSON.stringify({host:report.host,batchMs:report.batchMs,videosPerHour:report.videosPerHour,perVideoMs:report.perVideoMs,peakCombinedRssMiB:+(peakCombinedRss/1048576).toFixed(1),layoutWarningGroups:warningCount},null,2));
