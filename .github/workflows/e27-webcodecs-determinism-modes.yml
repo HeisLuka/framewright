@@ -1,0 +1,70 @@
+name: E27 WebCodecs determinism modes
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/scripts/bench-webcodecs-determinism-modes.mjs"
+      - ".github/workflows/e27-webcodecs-determinism-modes.yml"
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - run: node --check .agents/skills/framewright/scripts/bench-webcodecs-determinism-modes.mjs
+      - name: Mode matrix 720
+        env:
+          WEBCODECS_BITRATE: "1000000"
+        run: |
+          mkdir -p artifacts
+          node .agents/skills/framewright/scripts/bench-webcodecs-determinism-modes.mjs artifacts/e27-720.json 720 450 3
+      - name: Mode matrix 1080
+        env:
+          WEBCODECS_BITRATE: "2000000"
+        run: node .agents/skills/framewright/scripts/bench-webcodecs-determinism-modes.mjs artifacts/e27-1080.json 1080 450 3
+      - name: Summary
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const profiles = ['720','1080'].map((size) => JSON.parse(fs.readFileSync(`artifacts/e27-${size}.json`, 'utf8')));
+          const summary = {
+            experiment: 'E27-webcodecs-determinism-modes-summary',
+            profiles: profiles.map((p) => ({
+              width: p.width,
+              height: p.height,
+              bitrate: p.bitrate,
+              modes: p.modes.map((m) => ({
+                label: m.label,
+                supported: m.supported,
+                byteIdentical: m.byteIdentical ?? null,
+                sizeIdentical: m.sizeIdentical ?? null,
+                chunkShapeIdentical: m.chunkShapeIdentical ?? null,
+                deterministic: m.deterministic ?? null,
+                hashes: m.runs?.map((r) => r.sha256) || [],
+                totalBytes: m.runs?.map((r) => r.totalBytes) || [],
+                milliseconds: m.runs?.map((r) => r.milliseconds) || [],
+                normalizedConfig: m.normalizedConfig || null,
+                supportError: m.supportError || null,
+              })),
+              hypothesis: p.hypothesis,
+              caveat: p.caveat,
+            })),
+          };
+          fs.writeFileSync('artifacts/e27-summary.json', JSON.stringify(summary, null, 2) + '\n');
+          console.log(JSON.stringify(summary, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e27-webcodecs-determinism-modes
+          path: |
+            artifacts/e27-720.json
+            artifacts/e27-1080.json
+            artifacts/e27-summary.json
