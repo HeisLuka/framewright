@@ -1,0 +1,55 @@
+name: E21 WebCodecs YUV copy
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/scripts/bench-webcodecs-yuv.mjs"
+      - ".github/workflows/e21-webcodecs-yuv.yml"
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - run: node --check .agents/skills/framewright/scripts/bench-webcodecs-yuv.mjs
+      - name: WebCodecs YUV 720
+        run: |
+          mkdir -p artifacts
+          node .agents/skills/framewright/scripts/bench-webcodecs-yuv.mjs artifacts/e21-720.json 720 10
+      - name: WebCodecs YUV 1080
+        run: node .agents/skills/framewright/scripts/bench-webcodecs-yuv.mjs artifacts/e21-1080.json 1080 6
+      - name: Summary
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const profiles = ['720','1080'].map((size) => JSON.parse(fs.readFileSync(`artifacts/e21-${size}.json`, 'utf8')));
+          const summary = {
+            experiment: 'E21-webcodecs-yuv-summary',
+            profiles: profiles.map((p) => ({
+              width: p.width,
+              height: p.height,
+              capabilities: p.capabilities,
+              rgba: p.rgba,
+              i420: p.i420,
+              nv12: p.nv12,
+              hypothesis: p.hypothesis,
+            })),
+          };
+          fs.writeFileSync('artifacts/e21-summary.json', JSON.stringify(summary, null, 2) + '\n');
+          console.log(JSON.stringify(summary, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e21-webcodecs-yuv
+          path: |
+            artifacts/e21-720.json
+            artifacts/e21-1080.json
+            artifacts/e21-summary.json
