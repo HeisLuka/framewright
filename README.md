@@ -21,6 +21,27 @@
 
 ---
 
+## NEwBOO Video Factory / Codex lab
+
+This fork also carries the deterministic NEwBOO book-video factory research stack. For local
+Codex work, use `lab/framewright-research` and start with
+[`docs/codex-local-lab.md`](docs/codex-local-lab.md).
+
+```text
+ContextPack / CopyLanguage
+  -> C35 CreativeIngress
+  -> C27 NarrativePlan
+  -> C19 CreativeSpec / RenderSpec
+  -> I07 local queue
+  -> I03 / FAST
+  -> MP4 + QA + provenance
+```
+
+The model may be creative while proposing candidates or reusable primitives; authoritative
+facts, trust state, canonical identities, and physical execution stay behind deterministic
+contracts. The original Framewright one-off workflow documented below remains supported for
+standalone handcrafted procedural videos.
+
 <p align="center">
   <img src="examples/ris-tv/preview.webp" alt="Preview of the RIS TV example: TV powers on, test card, countdown, teletext, oscilloscope" width="720" />
 </p>
