@@ -1,10 +1,12 @@
-# R47 — 1k+ state-recycle freeze soak
+# R48 — 1080-job state-recycle lifecycle freeze soak
+
+> Reproducibility note: the branch, workflow, scripts, schemas, and artifact paths retain their original `r47-*` names because this experiment was created before canonical R47 was assigned to the catalog bitrate-floor work. The canonical research number for this lifecycle experiment is R48.
 
 ## Question
 
-R34 found material process-tree RSS drift in a 180-job mixed-catalog warm soak. R37 then showed that a state-triggered recycle policy could recover memory headroom without material throughput or tail-latency damage. R37 explicitly left one final lifecycle question open: does the same policy stay correct and bounded over a 1k+ heterogeneous run rather than one short deep pass?
+R34 found process-tree RSS movement in a mixed-catalog warm soak. R37 then motivated a bounded state-triggered recycle candidate. R48 asks one final lifecycle question: does that exact policy stay correct and bounded over a 1k+ heterogeneous run rather than a short deep pass?
 
-R47 is that freeze validation. It is not another recycle-threshold tuning experiment and it does not compare fixed-N restart policies.
+R48 is freeze validation, not another recycle-threshold tuning experiment and not a comparison against fixed-N restart policies.
 
 ## Exact lifecycle contract
 
@@ -21,10 +23,10 @@ Workload:
 - state-fingerprint parity on every job;
 - temporary video outputs cleaned after validation.
 
-Lifecycle policy is frozen from R37:
+Lifecycle policy frozen before evidence:
 
 - idle barrier every 6 completed jobs;
-- first 36 jobs are learn-only;
+- first 36 jobs learn-only;
 - learned baseline = median recursive process-tree RSS at the six learn barriers;
 - arm when idle RSS is at least `1.25x` baseline for 3 consecutive barriers;
 - recycle only at the drained idle barrier;
@@ -48,10 +50,53 @@ The candidate lifecycle freezes only when every gate passes:
 
 A negative gate is valid evidence. CI success means the experiment completed and produced a complete report; it does not mean the freeze decision passed.
 
-## Interpretation
+## Canonical evidence
 
-If all gates pass, stop spending software-runtime research cycles on warm-pool lifecycle and treat this policy as the frozen candidate until real-host hardware/provider evidence forces a change.
+Actions run: `35160295836`  
+Artifact: `10473447451`  
+Artifact digest: `sha256:9416480818c4bc0c87f60a41c8c2be7c3abb01953290c6d968c1fd493ab668db`
 
-If correctness, memory boundedness, drift, or recovery fails, do not patch thresholds after the fact. Inspect the failing dimension and open a new bounded hypothesis only if the failure exposes a concrete mechanism.
+The corrected run physically executed all **1080 jobs / 30 catalog cycles** and produced **1080/1080 successful jobs**, with zero state/artifact/runtime failures.
 
-R47 does not answer Intel hardware economics, provider pricing, creative quality, or cross-machine byte reproducibility.
+Observed whole-scenario behavior:
+
+- throughput: **2235.55 videos/h**;
+- production-equivalent p50/p95: **3374.21 / 3754.59 ms**;
+- first stable p50/p95: **3377.76 / 3699.82 ms**;
+- last stable p50/p95: **3352.41 / 3710.34 ms**;
+- latency growth: **-0.8% p50 / +0.3% p95**;
+- process-tree RSS post-warmup slope: **-0.180 MiB/job**;
+- first-to-last process-tree RSS median: **+6.4%**;
+- navigation p50 share: **1.5%**.
+
+The frozen state-recycle policy fired **9 recycles**. Recycle behavior itself was cheap and safe:
+
+- recycle pause share: **0.21%** of scenario wall;
+- recycle pause p50/p95: **337.2 / 661.2 ms**;
+- p95 first post-recycle job: **2706.4 ms** versus overall **3751.4 ms**;
+- early -> late p95: **3758.6 -> 3750.6 ms (-0.2%)**;
+- early -> late throughput: **2229.2 -> 2258.1 videos/h** (no degradation).
+
+But the predeclared bounded-idle-RSS gate failed:
+
+- learned baseline: **1761.9 MiB**;
+- idle RSS p95: **139.6%** of baseline, above the **135%** limit;
+- idle RSS max: **150.8%**, above the **150%** limit;
+- late idle median: **106.6%**, comfortably below the **130%** limit.
+
+All other freeze gates passed: accounting, correctness, barrier completeness, trigger consistency, latency drift, throughput drift, recycle overhead, and recovery tail.
+
+## Decision
+
+**DO NOT FREEZE the state-based recycle lifecycle candidate.** The failure is specifically the predeclared `idleRssGate`; thresholds are not changed after seeing the result.
+
+This does **not** mean the warm Chromium pool is unstable. The full 1080-job run is actually strong evidence for the simpler production policy: correctness stayed perfect, latency and throughput stayed flat, late memory was bounded, and the post-warmup RSS slope was slightly negative. The recycle policy reacted to transient high-RSS barriers but did not establish that recycling is necessary for the current software runtime.
+
+Production/research conclusion:
+
+- keep the simpler persistent Chromium **c2 + full navigation** lifecycle;
+- do **not** add adaptive or fixed-N recycle to the current software STANDARD;
+- stop spending software-runtime research cycles on lifecycle/recycle unless a future real-host/provider soak reproduces sustained memory growth or correctness drift;
+- R41 real Intel hardware/provider economics remains the external runtime direction that can legitimately reopen lifecycle assumptions.
+
+R48 does not change codec quality policy, Intel hardware economics, provider pricing, creative quality, or cross-machine byte reproducibility.
