@@ -7,6 +7,7 @@ on:
       - '.agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs'
       - '.agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs'
       - '.agents/skills/framewright/scripts/e18-review-sheets.mjs'
+      - '.agents/skills/framewright/scripts/node-canvas-profile-batch.mjs'
       - '.github/workflows/lab-e18-responsive-variants.yml'
   workflow_dispatch:
 
