@@ -1,0 +1,132 @@
+name: Lab I05 Ownership Evidence v2
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/i05-compiler-ownership-scout.mjs'
+      - '.agents/skills/framewright/scripts/i05-c27-c26-parity.mjs'
+      - '.agents/skills/framewright/scripts/i05-c27-delivery-matrix.mjs'
+      - '.agents/skills/framewright/scripts/prepare-i05-static-text-plan.mjs'
+      - '.agents/skills/framewright/scripts/i05-static-text-plan-parity.mjs'
+      - '.github/workflows/lab-i05-ownership-evidence-v2.yml'
+      - 'docs/i05-ownership-evidence-v2.md'
+  workflow_dispatch:
+
+jobs:
+  ownership:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/i05-compiler-ownership-scout.mjs
+      - name: Run ownership scout
+        run: |
+          node .agents/skills/framewright/scripts/i05-compiler-ownership-scout.mjs \
+            examples/book-ad-systems/platform-ui-profiles.v1.json \
+            artifacts/i05/compiler-ownership.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i05-ownership-v2
+          path: artifacts/i05/
+          retention-days: 14
+
+  translation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install pinned renderer dependencies
+        run: npm install --no-save @napi-rs/canvas@1.0.9
+      - name: Install pinned fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y fonts-dejavu-core
+      - name: Syntax check current canonical C27 and I05 oracles
+        run: |
+          node --check .agents/skills/framewright/scripts/c27-narrative-plan.mjs
+          node --check .agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs
+          node --check .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/i05-c27-c26-parity.mjs
+          node --check .agents/skills/framewright/scripts/i05-c27-delivery-matrix.mjs
+          node --check .agents/skills/framewright/scripts/prepare-i05-static-text-plan.mjs
+          node --check .agents/skills/framewright/scripts/i05-static-text-plan-parity.mjs
+      - name: Prepare current C26 baseline
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-i05.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-i05.html examples/book-ad-systems/index-c22-i05.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-c22-i05.html examples/book-ad-systems/index-e17-i05.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-i05.html examples/book-ad-systems/index-e17-e14-i05.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-i05.html examples/book-ad-systems/index-e18-i05.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-i05.html examples/book-ad-systems/index-c20-i05.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-i05.html examples/book-ad-systems/index-c21-i05.html
+          node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c21-i05.html examples/book-ad-systems/index-c23-i05.html
+          node .agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs examples/book-ad-systems/index-c23-i05.html examples/book-ad-systems/index-c24-i05.html
+          node .agents/skills/framewright/scripts/prepare-c25-typography-axis.mjs examples/book-ad-systems/index-c24-i05.html examples/book-ad-systems/index-c25-i05.html
+          node .agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs examples/book-ad-systems/index-c25-i05.html examples/book-ad-systems/index-c26-i05.html examples/book-ad-systems/platform-ui-profiles.v1.json
+          node .agents/skills/framewright/scripts/make-c26-platform-safe-fixtures.mjs examples/book-ad-systems/generated-c26-i05
+      - name: Apply current canonical C27 NarrativePlan adapter
+        run: node .agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs examples/book-ad-systems/index-c26-i05.html examples/book-ad-systems/index-c27-i05.html
+      - name: Validate C27 to C26 semantic translation
+        env:
+          C26_HTML: examples/book-ad-systems/index-c26-i05.html
+          C27_HTML: examples/book-ad-systems/index-c27-i05.html
+          MANIFEST: examples/book-ad-systems/generated-c26-i05/manifest.json
+          C27_PLAN_MODULE: .agents/skills/framewright/scripts/c27-narrative-plan.mjs
+          PARITY_REPORT: artifacts/i05/c27-c26-parity.json
+          PARITY_WIDTH: '540'
+        run: node .agents/skills/framewright/scripts/i05-c27-c26-parity.mjs
+      - name: Generate current canonical C27 verified fixtures
+        run: node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs /tmp/c27-fixtures
+      - name: Prepare static text lowering
+        run: node .agents/skills/framewright/scripts/prepare-i05-static-text-plan.mjs examples/book-ad-systems/index-c27-i05.html examples/book-ad-systems/index-i05-static-text.html
+      - name: Run unchanged static text promotion gate
+        id: static_gate
+        continue-on-error: true
+        env:
+          BASELINE_HTML: examples/book-ad-systems/index-c27-i05.html
+          COMPILED_HTML: examples/book-ad-systems/index-i05-static-text.html
+          C27_FIXTURES: /tmp/c27-fixtures
+          STATIC_TEXT_REPORT: artifacts/i05/static-text-plan-parity.json
+          STATIC_TEXT_WIDTH: '540'
+        run: node .agents/skills/framewright/scripts/i05-static-text-plan-parity.mjs
+      - name: Classify static text result without moving its gate
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const r=require('./artifacts/i05/static-text-plan-parity.json');
+          const nonPromotion=(r.errors||[]).filter(e=>!/^.+: measureText reduction .+ < 25%$/.test(e));
+          const correctness = r.pixelParity?.firstPassRatio===1 && r.pixelParity?.replayRatio===1 && r.semanticParity?.ratio===1 && (r.diagnostics||[]).every(x=>x.orderIndependent) && nonPromotion.length===0;
+          if(!correctness){
+            console.error(JSON.stringify({correctness,nonPromotion,pixelParity:r.pixelParity,semanticParity:r.semanticParity,diagnostics:r.diagnostics},null,2));
+            process.exit(1);
+          }
+          const promotionPassed=(r.errors||[]).length===0;
+          const decision={schema:'framewright-i05-static-text-decision-v1',correctnessPassed:true,promotionPassed,promotionThreshold:'measureText reduction >=25% in every visual system',promotionErrors:r.errors||[],diagnostics:(r.diagnostics||[]).map(x=>({style:x.style,measureTextReduction:x.measureTextReduction,baselineWallMs:x.baseline.wallMs,compiledWallMs:x.compiledForward.wallMs}))};
+          fs.writeFileSync('artifacts/i05/static-text-decision.json',JSON.stringify(decision,null,2)+'\n');
+          console.log(JSON.stringify(decision,null,2));
+          NODE
+      - name: Cross current C27 through all visual systems and platform profiles
+        env:
+          C27_HTML: examples/book-ad-systems/index-c27-i05.html
+          C27_FIXTURES: /tmp/c27-fixtures
+          DELIVERY_REPORT: artifacts/i05/c27-delivery-matrix.json
+          MATRIX_WIDTH: '540'
+        run: node .agents/skills/framewright/scripts/i05-c27-delivery-matrix.mjs
+      - name: Print compact evidence
+        run: |
+          node -e "const r=require('./artifacts/i05/c27-c26-parity.json'); console.log(JSON.stringify({scenes:r.scenes,checkpoints:r.checkpointCount,revealStartDriftFrames:r.revealStartDriftFrames,bookSettledPreserved:r.bookSettledPreserved,safeViolations:r.safeViolations,translationGatePassed:r.translationGatePassed,errors:r.errors.length},null,2))"
+          node -e "const r=require('./artifacts/i05/static-text-decision.json'); console.log(JSON.stringify(r,null,2))"
+          node -e "const r=require('./artifacts/i05/c27-delivery-matrix.json'); console.log(JSON.stringify({sourcePlan:r.sourcePlan,scenes:r.scenes,coverage:r.coverage,sampledFrames:r.sampledFrames,totalEvents:r.totalEvents,safeViolations:r.safeViolations,passed:r.passed,errors:r.errors.length},null,2))"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i05-translation-v2
+          path: artifacts/i05/
+          retention-days: 14
