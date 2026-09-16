@@ -5,6 +5,7 @@ on:
     branches: [lab/framewright-research]
     paths:
       - '.agents/skills/framewright/scripts/r30-warm-concurrency-scout.mjs'
+      - '.agents/skills/framewright/scripts/r30-live-rss-soak.mjs'
       - '.github/workflows/r30-warm-concurrency-scout.yml'
       - 'docs/r30-warm-concurrency-scout.md'
   workflow_dispatch:
@@ -12,7 +13,7 @@ on:
 jobs:
   warm-concurrency-scout:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,7 +27,9 @@ jobs:
           sudo apt-get install -y ffmpeg fonts-dejavu-core
 
       - name: Syntax check
-        run: node --check .agents/skills/framewright/scripts/r30-warm-concurrency-scout.mjs
+        run: |
+          node --check .agents/skills/framewright/scripts/r30-warm-concurrency-scout.mjs
+          node --check .agents/skills/framewright/scripts/r30-live-rss-soak.mjs
 
       - name: Prepare exact C18 production-shaped scene
         run: |
@@ -64,7 +67,7 @@ jobs:
           CONCURRENCIES: '1,2,3,4'
         run: node .agents/skills/framewright/scripts/r30-warm-concurrency-scout.mjs
 
-      - name: Validate result
+      - name: Validate throughput result
         run: |
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
@@ -78,11 +81,39 @@ jobs:
           console.log(JSON.stringify(r.decision,null,2));
           NODE
 
+      - name: Run corrected live-browser RSS soak
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r30.html
+          MANIFEST: examples/book-ad-systems/generated-r30/manifest.json
+          OUT_DIR: artifacts/r30
+          RSS_REPORT: artifacts/r30/live-rss-soak.json
+          RSS_SUMMARY: artifacts/r30/live-rss-soak.md
+          BOOK_ID: river-station
+          VARIANT: hook-first
+          PROFILE: vertical
+          BITRATE: '2000000'
+          WEBCODECS_QUEUE: '8'
+          RSS_SOAK_JOBS: '24'
+        run: node .agents/skills/framewright/scripts/r30-live-rss-soak.mjs
+
+      - name: Validate live RSS soak
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r30/live-rss-soak.json','utf8'));
+          if(r.fresh.failures || r.reuse.failures) throw new Error('live RSS soak had job failures');
+          if(!r.gate.freshPass) throw new Error(`fresh-page tail RSS slope failed: ${r.fresh.rssTailSlopeBytesPerJob}`);
+          console.log(JSON.stringify(r.gate,null,2));
+          NODE
+
       - name: Show result
         if: always()
         run: |
-          test -f artifacts/r30/summary.md && cat artifacts/r30/summary.md || true
+          for f in artifacts/r30/summary.md artifacts/r30/live-rss-soak.md; do
+            test -f "$f" && { echo; cat "$f"; } || true
+          done
           test -f artifacts/r30/report.json && node -e "const r=require('./artifacts/r30/report.json'); console.log(JSON.stringify(r.decision,null,2));" || true
+          test -f artifacts/r30/live-rss-soak.json && node -e "const r=require('./artifacts/r30/live-rss-soak.json'); console.log(JSON.stringify(r.gate,null,2));" || true
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -91,6 +122,8 @@ jobs:
           path: |
             artifacts/r30/report.json
             artifacts/r30/summary.md
+            artifacts/r30/live-rss-soak.json
+            artifacts/r30/live-rss-soak.md
             artifacts/r30/track.m4a
             artifacts/r30/*-0.mp4
             artifacts/r30/*-0.h264
