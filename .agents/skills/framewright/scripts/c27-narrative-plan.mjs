@@ -29,6 +29,18 @@ function assertContextAtomSource(source){
   if(!Array.isArray(source.source_fact_ids)||!source.source_fact_ids.length||source.source_fact_ids.some(x=>typeof x!=='string'||!x.trim()))throw new Error('context_atom source requires non-empty source_fact_ids');
 }
 
+function assertExternalLlmCopySource(source){
+  if(typeof source.text!=='string'||!source.text.trim())throw new Error('external_llm_copy source requires text');
+  if(typeof source.context_pack_id!=='string'||!source.context_pack_id.trim())throw new Error('external_llm_copy source requires context_pack_id');
+  if(typeof source.context_hash!=='string'||!/^[a-f0-9]{64}$/.test(source.context_hash))throw new Error('external_llm_copy source requires lowercase context_hash sha256');
+  if(typeof source.draft_id!=='string'||!/^nbd1_[a-f0-9]{64}$/.test(source.draft_id))throw new Error('external_llm_copy source requires canonical draft_id');
+  if(!['hook','tension','payoff'].includes(source.role))throw new Error('external_llm_copy source requires hook/tension/payoff role');
+  if(!Array.isArray(source.supporting_fact_ids)||!source.supporting_fact_ids.length||source.supporting_fact_ids.some(x=>typeof x!=='string'||!x.trim()))throw new Error('external_llm_copy source requires non-empty supporting_fact_ids');
+  if(new Set(source.supporting_fact_ids).size!==source.supporting_fact_ids.length)throw new Error('external_llm_copy supporting_fact_ids must be unique');
+  if(typeof source.copy_sha256!=='string'||!/^[a-f0-9]{64}$/.test(source.copy_sha256))throw new Error('external_llm_copy source requires lowercase copy_sha256');
+  if(sha256(source.text)!==source.copy_sha256)throw new Error('external_llm_copy copy_sha256 drift');
+}
+
 export function resolveCopySource(source,book){
   if(!source||typeof source!=='object')throw new Error('copy source must be an object');
   if(source.kind==='human_verified'){
@@ -38,6 +50,10 @@ export function resolveCopySource(source,book){
   }
   if(source.kind==='context_atom'){
     assertContextAtomSource(source);
+    return source.text;
+  }
+  if(source.kind==='external_llm_copy'){
+    assertExternalLlmCopySource(source);
     return source.text;
   }
   if(source.kind!=='book_payload_field')throw new Error(`unsupported copy source kind: ${source.kind}`);
@@ -185,8 +201,9 @@ export function assertNarrativePlan(plan){
       if(!atom?.source)throw new Error(`copy provenance missing for role ${r.role}`);
       if(atom.source.kind==='human_verified'&&!atom.source.verification_id)throw new Error('human_verified atom missing verification_id');
       if(atom.source.kind==='context_atom')assertContextAtomSource(atom.source);
+      if(atom.source.kind==='external_llm_copy')assertExternalLlmCopySource(atom.source);
       if(atom.source.kind==='book_payload_field'&&!atom.source.field)throw new Error('book_payload_field atom missing field');
-      if(!['human_verified','context_atom','book_payload_field','reserved_affordance'].includes(atom.source.kind))throw new Error(`untrusted source kind ${atom.source.kind}`);
+      if(!['human_verified','context_atom','external_llm_copy','book_payload_field','reserved_affordance'].includes(atom.source.kind))throw new Error(`untrusted source kind ${atom.source.kind}`);
     }
     cursor=r.end_frame;
   }
