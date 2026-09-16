@@ -1,3 +1,64 @@
+# NEwBOO Video Factory / Codex lab
+
+This repository now has two valid agent workflows. Route by task before touching code.
+
+## 1. NEwBOO factory / Codex lab
+
+Use this path by default when the task mentions NEwBOO, books, ContextPack, CreativeIngress,
+C35, campaigns, the video factory, the local render worker, creative optimization, catalog
+experiments, or reusable creative primitives.
+
+Do **not** start this kind of work by scaffolding a root `index.html`, running the legacy
+interactive brief, or creating a one-off Framewright video.
+
+The canonical production-shaped chain is:
+
+```text
+authoritative ContextPack / CopyLanguage
+  -> C35 CreativeIngress
+  -> C27 NarrativePlan
+  -> C19 campaign request / CreativeSpec / RenderSpec
+  -> I07 local queue
+  -> I03 / FAST physical renderer
+  -> MP4 + QA + provenance
+```
+
+Read `docs/codex-local-lab.md` before the first NEwBOO creative task.
+
+### Codex lab rules
+
+- Treat publication truth and provenance as authority boundaries. Never invent facts, turn
+  intent/click/save evidence into completed reading, or weaken a trust gate to make an idea
+  renderable.
+- Do not bypass C35/C19/I07/I03 for a production-shaped result. If an experiment needs a new
+  capability, change the reusable capability and then come back through the canonical chain.
+- Never merge or push experimental work directly into `lab/framewright-research`. Work in a
+  local branch/worktree and leave reviewable evidence.
+- `NORMAL` mode changes CreativeIngress choices, parameters, and existing primitives.
+- `EXPERIMENT` mode may change reusable renderer/compiler/scene/preset/choreography code, but
+  must preserve a baseline, candidate output, QA/provenance, measurements where relevant,
+  and a concise explanation of the reusable capability being proposed.
+- Promote reusable capabilities, not a book-specific one-off HTML fork.
+- Render permission is not publication trust, and publication trust is not final external
+  platform authorization.
+- Verify creative changes from rendered output. A green schema/compiler test is not visual
+  evidence.
+
+Useful factory entrypoints:
+
+```bash
+npm run check:creative-ingress
+npm run factory:run -- --request <campaign.json> --out-dir <dir> --artifact-dir <cache>
+npm run local:enqueue -- --request <campaign.json> --workspace .
+npm run local:worker -- --workspace . --once
+npm run check:i07
+```
+
+## 2. Legacy one-off Framewright workflow
+
+Use the workflow below for a standalone handcrafted procedural video that is not a NEwBOO
+factory/catalog task.
+
 # framewright
 
 This repository is two things at once: a template project for a short procedural video and
