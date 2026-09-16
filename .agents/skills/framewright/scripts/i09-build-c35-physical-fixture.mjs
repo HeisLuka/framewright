@@ -141,12 +141,21 @@ for(const [mode,ingress] of Object.entries(ingresses)){
 }
 
 const deliveryProfile={
-  profile_id:'youtube_short',
-  aspect_ratio:'9:16',
-  width:1080,height:1920,fps:30,
-  codec:'h264',webcodecs_codec:'avc1.420028',bitrate:3000000,latency_mode:'realtime',pixel_format:'yuv420p',audio_codec:'aac',audio_bitrate:'192k',faststart:true,
+  id:'youtube_short',
+  width:1080,
+  height:1920,
+  fps:30,
+  safe_area_profile:'youtube-shorts-c26-v1',
   platform_ui_profile:'youtube_shorts',
-  safe_zones:{top_reserved:150,bottom_reserved:420,left_reserved:48,right_reserved:160},
+  platform_ui_version:'c26-ui-safe-v1-2026-09-17',
+};
+const runtime={
+  class:'FAST',
+  scene_contract_version:'canvas-scene-v1',
+  environment_id:'video-worker-chromium-v1',
+  renderer:{id:'webcodecs-h264',version:'r39-standard-v1'},
+  encoder:{video_codec:'avc1.420028',bitrate_bps:3000000,pixel_format:'yuv420p'},
+  muxer:{id:'ffmpeg-stream-copy-aac',version:'6.1.1'},
 };
 
 const selected=[];
@@ -187,28 +196,36 @@ for(const [index,item] of results.entries()){
     book_id:base.book_id,
     template:{id:'book-ad-systems-c27',version:'i09-v1',sha256:htmlSha},
     payload_sha256:payloadSha,
+    visual_system:{id:result.program.presentation.visual_system,version:'c35-v1'},
+    structural_variant:'hook-first',
     hook:{text:hookText,provenance},
     cta:{text:base.cta,provenance:{kind:'server_context',context_pack_id:pack.context_pack_id,context_hash:pack.context_hash,cta_id:'cta_open'}},
-    timeline:{fps:30,duration_ms:9000,frame_count:270,seed:result.program.presentation.seed},
-    dimensions:{width:1080,height:1920,aspect_ratio:'9:16'},
+    seed:result.program.presentation.seed,
     assets:[{role:'cover',sha256:coverSha}],
-    delivery_profiles:['youtube_short'],
   };
+  const selectionId=`i11-${String(index+1).padStart(2,'0')}-${mode}`;
   selected.push({
-    rank:index+1,score:100-index,
-    source:{
-      creative,
-      execution:{
-        html:stablePath(htmlPath),
-        payload:stablePath(payloadPath),
-        template_id:'book-ad-systems-c27',
-        template_version:'i09-v1',
-      },
+    selection_id:selectionId,
+    creative,
+    timeline:{
+      source:`c35:${plan.narrative_plan_id}`,
+      policy_version:'i11-c35-9s-30fps-v1',
+      duration_ms:9000,
+      frame_count:270,
+    },
+    requested_delivery_profile_ids:['youtube_short'],
+    render_assets:[],
+    execution:{
+      html:stablePath(htmlPath),
+      payload:stablePath(payloadPath),
+      template_id:'book-ad-systems-c27',
+      template_version:'i09-v1',
     },
   });
   await fs.writeFile(path.join(outDir,`ingress-${mode}.json`),`${JSON.stringify(ingress,null,2)}\n`);
   modeReports.push({
     mode,
+    selection_id:selectionId,
     ingress_id:result.ingress_id,
     decision_id:result.decision_id,
     canonical_input:result.canonical_input,
@@ -224,8 +241,10 @@ for(const [index,item] of results.entries()){
 }
 
 const request={
+  schema:'framewright-c19-campaign-request-v1',
   campaign_id:'i09-c35-physical-factory',
-  runtime_mode:'default',
+  compiler_policy_version:'c19-delivery-package-v1',
+  runtime,
   selected,
   reserves:[],
   delivery_profiles:[deliveryProfile],
