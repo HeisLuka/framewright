@@ -1,0 +1,76 @@
+name: Lab E06 Node Canvas
+
+on:
+  push:
+    branches: [lab/e06-node-canvas]
+  pull_request:
+    branches: [lab/e02-book-ad-v0]
+
+jobs:
+  node-canvas:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save @napi-rs/canvas
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/node-canvas-stream.mjs
+      - name: Chromium PNG baseline
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+        run: |
+          rm -rf frames-e06 artifacts/e06
+          mkdir -p artifacts/e06
+          start=$(date +%s%N)
+          node .agents/skills/framewright/scripts/render.mjs frames-e06 7 1080 1
+          mid=$(date +%s%N)
+          ffmpeg -hide_banner -loglevel error -y -framerate 30 -i frames-e06/f%05d.png -c:v libx264 -preset veryfast -crf 22 -maxrate 14M -bufsize 28M -pix_fmt yuv420p -movflags +faststart artifacts/e06/chromium-reference.mp4
+          end=$(date +%s%N)
+          node -e "const fs=require('fs');fs.writeFileSync('artifacts/e06/chromium-times.json',JSON.stringify({renderMs:(${mid}-${start})/1e6,encodeMs:(${end}-${mid})/1e6,totalMs:(${end}-${start})/1e6,tempBytes:+require('child_process').execSync('du -sb frames-e06').toString().split('\\t')[0]},null,2))"
+      - name: Node canvas direct raw stream
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+          REPORT: artifacts/e06/node-canvas.json
+          PRESET: veryfast
+          CRF: 22
+        run: node .agents/skills/framewright/scripts/node-canvas-stream.mjs artifacts/e06/node-canvas.mp4 7 1080
+      - name: Compare decoded outputs
+        run: |
+          ffmpeg -hide_banner -i artifacts/e06/chromium-reference.mp4 -i artifacts/e06/node-canvas.mp4 -lavfi "[0:v]setpts=PTS-STARTPTS[ref];[1:v]setpts=PTS-STARTPTS[test];[ref][test]ssim" -f null - 2> artifacts/e06/ssim.txt
+          ffmpeg -hide_banner -i artifacts/e06/chromium-reference.mp4 -i artifacts/e06/node-canvas.mp4 -lavfi "[0:v]setpts=PTS-STARTPTS[ref];[1:v]setpts=PTS-STARTPTS[test];[ref][test]psnr" -f null - 2> artifacts/e06/psnr.txt
+          grep -E 'All:|average:' artifacts/e06/ssim.txt artifacts/e06/psnr.txt || true
+      - name: Summary
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const c=JSON.parse(fs.readFileSync('artifacts/e06/chromium-times.json','utf8'));
+          const n=JSON.parse(fs.readFileSync('artifacts/e06/node-canvas.json','utf8'));
+          const ssimText=fs.readFileSync('artifacts/e06/ssim.txt','utf8');
+          const psnrText=fs.readFileSync('artifacts/e06/psnr.txt','utf8');
+          const ssim=ssimText.match(/All:([0-9.]+)/)?.[1]||null;
+          const psnr=psnrText.match(/average:([0-9.]+)/)?.[1]||null;
+          const out={chromium:c,nodeCanvas:n,speedup:+(c.totalMs/n.totalMs).toFixed(3),quality:{ssim:ssim?+ssim:null,psnr:psnr?+psnr:null}};
+          fs.writeFileSync('artifacts/e06/summary.json',JSON.stringify(out,null,2));
+          let md='| path | total s | temp MiB | output KiB |\n|---|---:|---:|---:|\n';
+          md+=`| Chromium PNG → disk → x264 | ${(c.totalMs/1000).toFixed(3)} | ${(c.tempBytes/1024/1024).toFixed(2)} | ${(fs.statSync('artifacts/e06/chromium-reference.mp4').size/1024).toFixed(1)} |\n`;
+          md+=`| Node @napi-rs/canvas → raw stdin → x264 | ${(n.totalMs/1000).toFixed(3)} | 0 | ${(n.outputBytes/1024).toFixed(1)} |\n\nSpeedup end-to-end: **${out.speedup}×**. SSIM: **${out.quality.ssim}**. PSNR: **${out.quality.psnr}**.\n`;
+          fs.writeFileSync('artifacts/e06/summary.md',md);console.log(md);
+          NODE
+          rm -rf frames-e06
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e06-node-canvas
+          path: artifacts/e06/
+          retention-days: 14
