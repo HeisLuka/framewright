@@ -40,7 +40,7 @@ const peakAbsoluteReduction=controlPeak-recyclePeak;
 const throughputLoss=1-(recycle.result.observedVideosPerHour/control.result.observedVideosPerHour);
 const p95Regression=pct(recycle.result.p95ProductionWallMs,control.result.p95ProductionWallMs);
 const correctnessPass=control.result.failedJobs===0&&recycle.result.failedJobs===0&&control.decision?.corruptOutputCount===0&&recycle.decision?.corruptOutputCount===0;
-const controlReproducedDrift=controlDrift>=0.25 || control.decision?.triggers?.memoryDrift===true;
+const controlReproducedDrift=controlDrift>=0.25;
 const recycleCount=(recycle.result.recycleEvents||[]).length;
 const triggerFired=recycleCount>0;
 const materialMemoryWin=lateReduction>=0.15||peakReduction>=0.15||peakAbsoluteReduction>=384*1048576;
