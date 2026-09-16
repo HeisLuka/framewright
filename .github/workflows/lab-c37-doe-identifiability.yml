@@ -1,0 +1,36 @@
+name: Lab C37 DOE Identifiability
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - '.agents/skills/framewright/scripts/c37-doe-identifiability.mjs'
+      - '.agents/skills/framewright/scripts/c37-doe-identifiability-audit.mjs'
+      - 'docs/c37-doe-identifiability-scout.md'
+      - '.github/workflows/lab-c37-doe-identifiability.yml'
+  workflow_dispatch:
+
+jobs:
+  doe-identifiability:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Syntax check C37
+        run: |
+          node --check .agents/skills/framewright/scripts/c37-doe-identifiability.mjs
+          node --check .agents/skills/framewright/scripts/c37-doe-identifiability-audit.mjs
+      - name: Audit C-H14 identifiability and exact designs
+        run: node .agents/skills/framewright/scripts/c37-doe-identifiability-audit.mjs artifacts/c37
+      - name: Show C37 summary
+        run: cat artifacts/c37/summary.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c37-doe-identifiability
+          path: artifacts/c37/
+          retention-days: 14
