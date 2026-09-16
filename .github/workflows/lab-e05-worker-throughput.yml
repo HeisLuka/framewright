@@ -1,0 +1,87 @@
+name: Lab E05 Worker Throughput
+
+on:
+  push:
+    branches:
+      - lab/e05-worker-throughput
+  workflow_dispatch:
+
+jobs:
+  throughput:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: Syntax checks
+        run: |
+          node --check .agents/skills/framewright/scripts/worker-bench-util.mjs
+          node --check .agents/skills/framewright/scripts/benchmark-cold-worker.mjs
+          node --check .agents/skills/framewright/scripts/benchmark-warm-worker.mjs
+          node --check .agents/skills/framewright/scripts/render-webcodecs.mjs
+
+      - name: Cold worker matrix
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+        run: |
+          mkdir -p artifacts
+          for c in 1 2 4; do
+            echo "=== cold concurrency ${c} ==="
+            node .agents/skills/framewright/scripts/benchmark-cold-worker.mjs "artifacts/cold-c${c}.json" 12 "$c" 1080 1200000
+          done
+
+      - name: Warm worker matrix
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+        run: |
+          for c in 1 2 4; do
+            echo "=== warm concurrency ${c} ==="
+            node .agents/skills/framewright/scripts/benchmark-warm-worker.mjs "artifacts/warm-c${c}.json" 12 "$c" 1080 1200000
+          done
+
+      - name: Summarize throughput
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const rows=[];
+          for(const mode of ['cold','warm'])for(const c of [1,2,4]){
+            const r=JSON.parse(fs.readFileSync(`artifacts/${mode}-c${c}.json`,'utf8'));
+            const b=r.batch;
+            rows.push({
+              mode,concurrency:c,jobs:b.videosSucceeded,
+              batch_ms:b.wallMs,
+              videos_per_hour:mode==='warm'?b.steadyVideosPerHour:b.videosPerHour,
+              amortized_videos_per_hour:mode==='warm'?b.amortizedVideosPerHour:b.videosPerHour,
+              p50_ms:b.latency.p50Ms,p95_ms:b.latency.p95Ms,
+              peak_rss_mb:+(r.memory.peakRssBytes/1024/1024).toFixed(1),
+              mean_rss_mb:+(r.memory.meanRssBytes/1024/1024).toFixed(1),
+              setup_ms:r.setup?.totalMs??null
+            });
+          }
+          fs.writeFileSync('artifacts/e05-summary.json',JSON.stringify(rows,null,2));
+          let md='## E05 worker throughput\n\n| mode | concurrency | videos/hour | amortized videos/hour | p50 ms | p95 ms | peak RSS MB | setup ms |\n|---|---:|---:|---:|---:|---:|---:|---:|\n';
+          for(const r of rows)md+=`| ${r.mode} | ${r.concurrency} | ${r.videos_per_hour} | ${r.amortized_videos_per_hour} | ${r.p50_ms} | ${r.p95_ms} | ${r.peak_rss_mb} | ${r.setup_ms??''} |\n`;
+          fs.writeFileSync('artifacts/e05-summary.md',md);console.log(md);
+          NODE
+
+      - name: Upload E05 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: e05-worker-throughput
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
