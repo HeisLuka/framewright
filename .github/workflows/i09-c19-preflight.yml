@@ -1,0 +1,56 @@
+name: I09 C19 Request Preflight
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/i09-c19-preflight.mjs'
+      - '.agents/skills/framewright/scripts/i09-build-c35-physical-fixture.mjs'
+      - 'contracts/creative-ingress-v1.mjs'
+      - 'contracts/c19-delivery-package-v1.mjs'
+      - '.github/workflows/i09-c19-preflight.yml'
+  workflow_dispatch:
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Prepare the same canonical C27 fixture used by I09
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-for-i09.html examples/book-ad-systems/index-c22-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-c22-for-i09.html examples/book-ad-systems/index-e17-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-i09.html examples/book-ad-systems/index-e17-e14-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-i09.html examples/book-ad-systems/index-e18-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-for-i09.html examples/book-ad-systems/index-c20-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-for-i09.html examples/book-ad-systems/index-c21-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c21-for-i09.html examples/book-ad-systems/index-c23-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs examples/book-ad-systems/index-c23-for-i09.html examples/book-ad-systems/index-c24-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c25-typography-axis.mjs examples/book-ad-systems/index-c24-for-i09.html examples/book-ad-systems/index-c25-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs examples/book-ad-systems/index-c25-for-i09.html examples/book-ad-systems/index-c26-for-i09.html examples/book-ad-systems/platform-ui-profiles.v1.json
+          node .agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs examples/book-ad-systems/index-c26-for-i09.html examples/book-ad-systems/index-c27-i09.html
+          node .agents/skills/framewright/scripts/make-c26-platform-safe-fixtures.mjs examples/book-ad-systems/generated-c26
+      - name: Build the exact I09 C35 request
+        run: |
+          node .agents/skills/framewright/scripts/i09-build-c35-physical-fixture.mjs \
+            examples/book-ad-systems/index-c27-i09.html \
+            examples/book-ad-systems/generated-c26/payload-paper-short-youtube_shorts.json \
+            artifacts/i09/input
+      - name: Compile C19 directly
+        run: node contracts/i09-c19-preflight.mjs artifacts/i09/input/request.json artifacts/i09/c19-preflight.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i09-c19-preflight
+          path: |
+            artifacts/i09/c19-preflight.json
+            artifacts/i09/input/input-report.json
+            artifacts/i09/input/request.json
+          retention-days: 14
