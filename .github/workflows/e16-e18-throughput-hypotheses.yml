@@ -1,0 +1,116 @@
+name: E16-E18 throughput hypotheses
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/scripts/bench-stage-profile.mjs"
+      - ".agents/skills/framewright/scripts/bench-video-throughput.mjs"
+      - ".agents/skills/framewright/scripts/bench-encoder-presets.mjs"
+      - "docs/e16-e18-throughput-hypotheses.md"
+      - ".github/workflows/e16-e18-throughput-hypotheses.yml"
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Syntax and unit tests
+        run: |
+          node --check .agents/skills/framewright/scripts/bench-stage-profile.mjs
+          node --check .agents/skills/framewright/scripts/bench-video-throughput.mjs
+          node --check .agents/skills/framewright/scripts/bench-encoder-presets.mjs
+          npm test
+      - name: E16 stage profile 720
+        env:
+          ROUNDS: "2"
+        run: |
+          mkdir -p artifacts
+          node .agents/skills/framewright/scripts/bench-stage-profile.mjs artifacts/e16-720.json 720 120 20
+      - name: E16 stage profile 1080
+        env:
+          ROUNDS: "2"
+        run: node .agents/skills/framewright/scripts/bench-stage-profile.mjs artifacts/e16-1080.json 1080 60 12
+      - name: E18 x264 preset matrix
+        run: node .agents/skills/framewright/scripts/bench-encoder-presets.mjs artifacts/e18-presets.json 720 450 2
+      - name: E17 throughput matrix slow
+        env:
+          PRESET: slow
+          THROUGHPUT_DIR: .bench/e17-slow
+        run: node .agents/skills/framewright/scripts/bench-video-throughput.mjs artifacts/e17-slow.json 720 450
+      - name: E17 throughput matrix veryfast
+        env:
+          PRESET: veryfast
+          THROUGHPUT_DIR: .bench/e17-veryfast
+        run: node .agents/skills/framewright/scripts/bench-video-throughput.mjs artifacts/e17-veryfast.json 720 450
+      - name: Summarize hypotheses
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const read = (name) => JSON.parse(fs.readFileSync(`artifacts/${name}`, 'utf8'));
+          const e16_720 = read('e16-720.json');
+          const e16_1080 = read('e16-1080.json');
+          const e17Slow = read('e17-slow.json');
+          const e17Veryfast = read('e17-veryfast.json');
+          const e18 = read('e18-presets.json');
+          const slow = e18.results.find((item) => item.preset === 'slow');
+          const veryfast = e18.results.find((item) => item.preset === 'veryfast');
+          if (!slow || !veryfast) throw new Error('missing slow/veryfast preset result');
+          const stage = (profile) => ({
+            width: profile.width,
+            height: profile.height,
+            browserLaunchMs: profile.lifecycle.browserLaunchMilliseconds,
+            coldPageReadyMs: profile.lifecycle.coldPageReadyMilliseconds,
+            warmPageReadyMs: profile.lifecycle.warmPageReadyMilliseconds,
+            compositionMsPerFrame: profile.browserStages.compositionMillisecondsPerFrame,
+            readbackIncrementMsPerFrame: profile.browserStages.estimatedReadbackIncrementMillisecondsPerFrame,
+            staticReadbackMsPerFrame: profile.browserStages.staticReadbackMillisecondsPerFrame,
+            uploadRoundTripMsPerFrame: profile.browserStages.localhostUploadRoundTripMillisecondsPerFrame,
+            renderReadbackUploadMsPerFrame: profile.browserStages.renderReadbackUploadMillisecondsPerFrame,
+          });
+          const summary = {
+            experiment: 'E16-E18-throughput-summary',
+            e16: {
+              profiles: [stage(e16_720), stage(e16_1080)],
+              lifecycleShareOfSlow720Wall: (
+                e16_720.lifecycle.browserLaunchMilliseconds + e16_720.lifecycle.coldPageReadyMilliseconds
+              ) / Math.max(slow.wallSeconds * 1000, 1e-9),
+              note: 'Stage microbenchmarks overlap in production and are not additive.',
+            },
+            e17: {
+              slow: e17Slow.best,
+              veryfast: e17Veryfast.best,
+              confirmedAt15PercentSlow: e17Slow.best.throughputVsOneVideoFourTabs >= 1.15,
+              confirmedAt15PercentVeryfast: e17Veryfast.best.throughputVsOneVideoFourTabs >= 1.15,
+            },
+            e18: {
+              slowWallSeconds: slow.wallSeconds,
+              veryfastWallSeconds: veryfast.wallSeconds,
+              veryfastSpeedupVsSlow: slow.wallSeconds / Math.max(veryfast.wallSeconds, 1e-9),
+              veryfastOutputSizeVsSlow: veryfast.outputBytes / Math.max(slow.outputBytes, 1),
+              materialAt15Percent: slow.wallSeconds / Math.max(veryfast.wallSeconds, 1e-9) >= 1.15,
+              qualityGateStillRequired: true,
+            },
+          };
+          fs.writeFileSync('artifacts/e16-e18-summary.json', JSON.stringify(summary, null, 2) + '\n');
+          console.log(JSON.stringify(summary, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e16-e18-throughput-hypotheses
+          path: |
+            artifacts/e16-720.json
+            artifacts/e16-1080.json
+            artifacts/e17-slow.json
+            artifacts/e17-veryfast.json
+            artifacts/e18-presets.json
+            artifacts/e16-e18-summary.json
