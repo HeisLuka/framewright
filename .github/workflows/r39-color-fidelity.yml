@@ -1,0 +1,83 @@
+name: R39 Color Fidelity Contract Scout
+
+on:
+  push:
+    branches: [lab/r39-color-fidelity]
+    paths:
+      - '.agents/skills/framewright/scripts/r39-color-fidelity.mjs'
+      - '.github/workflows/r39-color-fidelity.yml'
+      - 'docs/r39-color-fidelity.md'
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r39-color-fidelity.mjs'
+      - '.github/workflows/r39-color-fidelity.yml'
+      - 'docs/r39-color-fidelity.md'
+  workflow_dispatch:
+
+jobs:
+  color-fidelity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r39-color-fidelity.mjs
+      - name: Prepare exact C18 fixture
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r39.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r39.html examples/book-ad-systems/index-e17-for-r39.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r39.html examples/book-ad-systems/index-e17-e14-for-r39.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r39.html examples/book-ad-systems/index-e18-for-r39.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r39
+      - name: Run color fidelity contract scout
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r39.html
+          MANIFEST: examples/book-ad-systems/generated-r39/manifest.json
+          OUT_DIR: artifacts/r39
+          REPORT: artifacts/r39/report.json
+        run: node .agents/skills/framewright/scripts/r39-color-fidelity.mjs
+      - name: Validate report completeness
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r39/report.json','utf8'));
+          if(r.schema!=='framewright-r39-color-fidelity-v1') throw new Error('wrong schema');
+          for(const section of ['synthetic','book']) {
+            if(!r[section]?.rawProbe) throw new Error(`missing ${section} raw probe`);
+            for(const p of ['current','bt709-tv','bt709-pc','bt601-tv']) if(!r[section]?.policies?.[p]) throw new Error(`missing ${section}/${p}`);
+          }
+          for(const [p,v] of Object.entries(r.synthetic.policies)) {
+            const s=v.summary;
+            for(const k of ['meanAbsChannelError','maxAbsChannelError','neutralMaxCast','blackMean','whiteMean']) if(!Number.isFinite(s[k])) throw new Error(`${p}: invalid ${k}`);
+            if(typeof s.pass!=='boolean') throw new Error(`${p}: missing synth gate`);
+          }
+          for(const [p,v] of Object.entries(r.book.policies)) {
+            for(const k of ['ssimMean','ssimWorst','psnrMean','psnrWorst']) if(!Number.isFinite(v.summary[k])) throw new Error(`${p}: invalid ${k}`);
+          }
+          if(typeof r.decision?.currentMetadataAmbiguous!=='boolean'||typeof r.decision?.explicit709Valid!=='boolean') throw new Error('missing decision booleans');
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - name: Show result
+        if: always()
+        run: test -f artifacts/r39/summary.md && cat artifacts/r39/summary.md || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r39-color-fidelity
+          path: |
+            artifacts/r39/report.json
+            artifacts/r39/summary.md
+            artifacts/r39/synthetic-reference.png
+            artifacts/r39/*.mp4
+            artifacts/r39/book-refs/*.png
+            artifacts/r39/book-decoded/*.png
+          retention-days: 14
