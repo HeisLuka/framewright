@@ -88,13 +88,13 @@ export function buildCreativePortfolio({book,evidence,angles}){
         angle_type:angle.type,
         angle_label:angle.label||angle.id,
         hook_candidate_id:variant.id,
-        evidence_ids,
+        evidence_ids:evidenceIds,
         spoiler_level:Math.max(...evidenceIds.map(id=>Number(map.get(id).spoiler_level??0)),0),
         planner_angle:{
           id:conceptId,
           type:angle.type,
           label:angle.label||angle.id,
-          source:{kind:'book_evidence',evidence_ids,hook_candidate_id:variant.id},
+          source:{kind:'book_evidence',evidence_ids:evidenceIds,hook_candidate_id:variant.id},
           hook,
           ...(tension?{tension}:{}),
           ...(payoff?{payoff}:{})
