@@ -33,17 +33,25 @@ An exploratory pass allowed the different grammars to receive slightly different
 
 We removed the confound instead of accepting the number: every grammar now uses the exact same baseline hook background/motif for the same book/seed. Only foreground hierarchy and timing differ.
 
-### 2. Cross-fading two text hierarchies looked dirty
+### 2. Alpha crossfade was rejected
 
-The first clean causal version faded the alternate opening out while the baseline hook underneath faded through it. Static metrics passed, but manual review showed a risk of text-on-text overlap during the transition.
+A clean causal version faded the alternate opening out while the baseline hook underneath faded through it. Numeric gates passed, but manual review showed transient text-on-text ghosting.
 
-The final implementation uses a geometric wipe to reveal the already-rendered baseline instead. This keeps the transition readable and preserves exact convergence semantics.
+### 3. Spatial wipe was also rejected
+
+The next attempt used a geometric wipe. That removed alpha ghosting but created a different structural problem: during the wipe, one side of the frame could contain one text hierarchy while the other side already contained another. For copy-heavy book ads this produced sliced mixed-copy transition frames.
+
+The final implementation avoids both effects. The alternate hierarchy remains intact until `S.t = 0.60` of the 3-second hook plate (about **1.8 seconds**), then performs a deliberate **one-frame editorial cut** to the untouched baseline hook. No crossfade and no spatial wipe remain in the canonical implementation.
 
 ## Final canonical run
 
-GitHub Actions run: `35135829034`.
+GitHub Actions run: `35136282583` — SUCCESS.
 
-Artifact: `10463515194` (`c21-opening-grammar`).
+Artifact: `10463910393` (`c21-opening-grammar`).
+
+Artifact digest: `0ba2d6157ddfe1af7ff0bc7fad804b1417e1c8b7863c643cdb2ce683f96ad5d1`.
+
+The run exercised head `bd37c7715e13105799008112ee653b7bfdb9516a`, which contains the final editorial-cut behavior later included in the merged C21 branch.
 
 Workload:
 
@@ -65,14 +73,16 @@ Results:
 - minimum opening difference across books: **0.037693**
 - maximum difference at 2.4s convergence: **0**
 
-So the experiment achieved both requirements simultaneously: the openings are measurably different, and the rest of the creative is exactly rejoined.
+The experiment therefore satisfies both causal requirements: the openings are materially different, and the rest of the creative is exactly rejoined.
 
 ### Full-render QA
 
 - outputs: **40/40**
 - layout warning groups: **0**
-- sequential throughput on this runner: **758.1 videos/hour**
-- peak Node + FFmpeg RSS: **781.6 MiB**
+- sequential throughput on this runner: **557.43 videos/hour**
+- peak Node + FFmpeg RSS: **778.2 MiB**
+
+The throughput number is runner-specific and not used as a backend-selection result.
 
 ### Runtime cost vs `hook-led`
 
@@ -80,36 +90,39 @@ Across the three alternate grammars:
 
 | metric | ratio |
 |---|---:|
-| mean | 1.0293 |
-| p50 | 1.0299 |
-| p95 | 1.0707 |
-| max | 1.0924 |
+| mean | 1.0288 |
+| p50 | 1.0290 |
+| p95 | 1.0725 |
+| max | 1.1038 |
 
-Mean runtime regression is therefore about **+2.9%**; p95 about **+7.1%** on this runner.
+Mean runtime regression is therefore about **+2.9%**; p95 about **+7.3%** on this runner.
 
 By grammar:
 
 | grammar | mean cost ratio | p95 cost ratio | mean MP4 byte ratio |
 |---|---:|---:|---:|
-| cover-led | 1.0348 | 1.0489 | 1.1294 |
-| title-led | 1.0120 | 1.0296 | 0.8777 |
-| progressive-hook | 1.0410 | 1.0731 | 0.9803 |
+| cover-led | 1.0456 | 1.0595 | 1.1697 |
+| title-led | 1.0084 | 1.0290 | 0.9049 |
+| progressive-hook | 1.0323 | 1.0725 | 0.9774 |
 
-The alternate openings are therefore cheap enough to be treated as a creative axis rather than a renderer cost class.
+The alternate openings are cheap enough to be treated as a creative axis rather than a separate renderer cost class.
 
-## Manual review
+## Final manual review
 
-Review sheets show all four grammars at `0.45 / 1.05 / 1.65 / 2.4s` for all ten books.
+The canonical review sheets show all four grammars at `0.45 / 1.05 / 1.65 / 2.4s` for all ten books.
 
-The useful qualitative findings are not a universal ranking:
+All ten final sheets were reviewed after run `35136282583`.
 
-- `cover-led` is consistently and obviously different from the baseline and gives the cover a strong identity-first role.
-- `title-led` works especially naturally when the title itself has visual or semantic weight. On very short titles such as `Соль`, the intended minimalism can produce a lower-energy opener; that is a creative tradeoff, not a layout failure.
-- `progressive-hook` remains readable and creates a distinct rhythm, but it is the most experimental grammar. Early ellipsis/truncation can feel mechanical on some copy, so it should remain a candidate to test rather than a default assumption.
-- the final wipe transition removes the previous text-on-text overlap problem.
-- all reviewed variants visibly become the same baseline scene at 2.4 seconds, matching the exact audit result.
+Key findings:
 
-No reviewed sheet showed clipping or an opening-specific readability failure.
+- `cover-led` is clearly distinct from baseline and gives the book object an identity-first opening without changing later scene semantics.
+- `title-led` works naturally when the title carries visual or semantic weight. Very short titles such as `Соль` intentionally produce a quieter, lower-energy opener; that is a creative tradeoff rather than a layout failure.
+- `progressive-hook` is readable and rhythmically distinct, but it remains the most experimental grammar. Early ellipsis/truncation can feel mechanical on some copy, so it should remain a testable candidate rather than a default assumption.
+- at `1.65s`, every alternate hierarchy is still visually whole; there are no sliced mixed-copy transition frames.
+- at `2.4s`, every variant is visibly the same baseline scene, matching the exact convergence audit.
+- no reviewed sheet showed clipping, alpha ghosting, half-copy wipes or opening-specific readability failure.
+
+The final editorial cut is intentionally simple. For these copy-heavy ads it is cleaner than a transition effect that temporarily displays two semantic hierarchies at once.
 
 ## Decision
 
@@ -117,7 +130,7 @@ No reviewed sheet showed clipping or an opening-specific readability failure.
 
 The factory now has a no-AI opening axis that changes *how verified information is presented*, without inventing new information and without silently changing the rest of the ad.
 
-The semantic contract should treat opening grammar as part of the verified `hook` / opening presentation semantics inside `CreativeSpec`. Runtime consumes the resulting scene semantics; it does not choose the grammar.
+The semantic contract should treat opening grammar as part of the verified `hook` / opening-presentation semantics inside `CreativeSpec`. Runtime consumes the resulting scene semantics; it does not choose the grammar.
 
 C21 does **not** establish which grammar produces the best CTR/CPA. Synthetic distance, layout QA and manual review only prove that the variants are valid, meaningfully different and cheap enough to test. Campaign outcomes must update future routing/selection weights.
 
