@@ -32,29 +32,14 @@
     },
     "seed": 7,
     "assets": [
-      {
-        "role": "cover",
-        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
-        "media_type": "image/jpeg",
-        "uri": "s3://example-bucket/covers/city-seven.jpg"
-      },
-      {
-        "role": "font_regular",
-        "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
-        "media_type": "font/ttf",
-        "uri": "asset://dejavu-sans-regular"
-      },
-      {
-        "role": "font_bold",
-        "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
-        "media_type": "font/ttf",
-        "uri": "asset://dejavu-sans-bold"
-      }
+      { "role": "cover", "sha256": "2222222222222222222222222222222222222222222222222222222222222222", "media_type": "image/jpeg", "uri": "s3://example-bucket/covers/city-seven.jpg" },
+      { "role": "font_regular", "sha256": "3333333333333333333333333333333333333333333333333333333333333333", "media_type": "font/ttf", "uri": "asset://dejavu-sans-regular" },
+      { "role": "font_bold", "sha256": "4444444444444444444444444444444444444444444444444444444444444444", "media_type": "font/ttf", "uri": "asset://dejavu-sans-bold" }
     ]
   },
   "render": {
     "schema": "newboo-render-spec-v1",
-    "render_spec_id": "nvr1_2cfe500839f91c0a95645d5bafd6e53fe1ee2c8d4d3cee36abb6f5b76245ccdc",
+    "render_spec_id": "nvr1_a5e663b762f51bb8f10f62884e7de984c46bbcdc289f11954eb7b2e3dd3165a8",
     "creative_id": "nvc1_acda813a67f904ee65b73fa06c3aebae3588c04a9b94b252d3f9b738bcaca42e",
     "duration_ms": 12000,
     "frame_count": 360,
@@ -70,10 +55,10 @@
       "class": "FAST",
       "scene_contract_version": "canvas-scene-v1",
       "environment_id": "video-worker-chromium-v1",
-      "renderer": { "id": "webcodecs-h264", "version": "v1" },
+      "renderer": { "id": "webcodecs-h264", "version": "r35-standard-v1" },
       "encoder": {
-        "video_codec": "avc1.42001f",
-        "bitrate_bps": 2000000,
+        "video_codec": "avc1.420028",
+        "bitrate_bps": 3000000,
         "pixel_format": "yuv420p"
       },
       "muxer": { "id": "ffmpeg-stream-copy-aac", "version": "6.1.1" }
@@ -85,18 +70,9 @@
         "audio_spec_id": "fwa1_8034471da9ff0768c6fcbbe4c50d7f599162a8a449ea67069c28245abf86b1ae",
         "version": 1,
         "source_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
-        "timing": {
-          "trim_start_ms": 0,
-          "duration_ms": 12000,
-          "final_mux_duration_ms": 12000
-        },
+        "timing": { "trim_start_ms": 0, "duration_ms": 12000, "final_mux_duration_ms": 12000 },
         "mix": { "gain_db": 0, "fades": null },
-        "codec": {
-          "name": "aac",
-          "bitrate_bps": 192000,
-          "container": "m4a",
-          "policy": "aac-lc-ffmpeg-192k-v2-explicit-duration"
-        }
+        "codec": { "name": "aac", "bitrate_bps": 192000, "container": "m4a", "policy": "aac-lc-ffmpeg-192k-v2-explicit-duration" }
       },
       "artifact": {
         "schema": "framewright-canonical-audio-v1",
@@ -105,27 +81,21 @@
         "bytes": 192000,
         "media_type": "audio/mp4",
         "storage_uri": "s3://example-bucket/audio/fwa1_8034471da9ff0768c6fcbbe4c50d7f599162a8a449ea67069c28245abf86b1ae.m4a",
-        "provenance": {
-          "encoder": "ffmpeg-6.1.1",
-          "policy": "aac-lc-ffmpeg-192k-v2-explicit-duration"
-        }
+        "provenance": { "encoder": "ffmpeg-6.1.1", "policy": "aac-lc-ffmpeg-192k-v2-explicit-duration" }
       }
     },
-    "artifact_policy": {
-      "reuse": "prefer-existing",
-      "canonical_key": "render_spec_id"
-    }
+    "artifact_policy": { "reuse": "prefer-existing", "canonical_key": "render_spec_id" }
   },
   "artifact": {
     "schema": "newboo-render-artifact-v1",
-    "render_spec_id": "nvr1_2cfe500839f91c0a95645d5bafd6e53fe1ee2c8d4d3cee36abb6f5b76245ccdc",
+    "render_spec_id": "nvr1_a5e663b762f51bb8f10f62884e7de984c46bbcdc289f11954eb7b2e3dd3165a8",
     "output": {
       "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
       "bytes": 1220892,
       "mime_type": "video/mp4",
       "duration_ms": 12006.6,
       "frame_count": 360,
-      "storage_uri": "s3://example-bucket/video/nvr1_2cfe500839f91c0a95645d5bafd6e53fe1ee2c8d4d3cee36abb6f5b76245ccdc.mp4"
+      "storage_uri": "s3://example-bucket/video/nvr1_a5e663b762f51bb8f10f62884e7de984c46bbcdc289f11954eb7b2e3dd3165a8.mp4"
     },
     "qa": {
       "status": "pass",
