@@ -1,0 +1,88 @@
+name: I04 Factory FAST Executor
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/render-factory-fast.mjs'
+      - '.agents/skills/framewright/scripts/render-webcodecs.mjs'
+      - 'contracts/runtime-consumer-v1.mjs'
+      - 'contracts/factory-identity-v1.mjs'
+      - 'contracts/examples/video-factory-v1.example.json'
+      - 'examples/book-ad-v0/**'
+      - '.github/workflows/i04-factory-fast-executor.yml'
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - run: npm install --no-audit --no-fund
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Build silent canonical fixture bundle
+        run: |
+          mkdir -p .bench/i04/artifacts
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import { computeRenderSpecId } from './contracts/factory-identity-v1.mjs';
+          const bundle = JSON.parse(fs.readFileSync('./contracts/examples/video-factory-v1.example.json','utf8'));
+          delete bundle.render.audio;
+          bundle.render.render_spec_id = '';
+          bundle.render.render_spec_id = computeRenderSpecId(bundle.render);
+          fs.writeFileSync('.bench/i04/bundle.json', JSON.stringify(bundle, null, 2) + '\n');
+          NODE
+      - name: Plan-only contract smoke
+        run: |
+          node .agents/skills/framewright/scripts/render-factory-fast.mjs \
+            --bundle .bench/i04/bundle.json --plan-only > .bench/i04/plan.json
+      - name: First canonical RenderSpec execution
+        env:
+          CI: '1'
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+        run: |
+          node .agents/skills/framewright/scripts/render-factory-fast.mjs \
+            --bundle .bench/i04/bundle.json \
+            --out .bench/i04/first.mp4 \
+            --artifact-dir .bench/i04/artifacts \
+            --receipt-out .bench/i04/first.json
+      - name: Repeat through render_spec_id artifact cache
+        env:
+          CI: '1'
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+        run: |
+          node .agents/skills/framewright/scripts/render-factory-fast.mjs \
+            --bundle .bench/i04/bundle.json \
+            --out .bench/i04/second.mp4 \
+            --artifact-dir .bench/i04/artifacts \
+            --receipt-out .bench/i04/second.json
+      - name: Verify canonical runtime receipt
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const bundle=JSON.parse(fs.readFileSync('.bench/i04/bundle.json','utf8'));
+          const a=JSON.parse(fs.readFileSync('.bench/i04/first.json','utf8'));
+          const b=JSON.parse(fs.readFileSync('.bench/i04/second.json','utf8'));
+          assert.equal(a.render_spec_id,bundle.render.render_spec_id);
+          assert.equal(a.output.frame_count,bundle.render.frame_count);
+          assert.equal(a.qa.status,'pass');
+          assert.equal(a.invocation.cache_hit,false);
+          assert.equal(b.invocation.cache_hit,true);
+          assert.equal(b.output.sha256,a.output.sha256);
+          assert.equal(a.qa.checks.find(x=>x.id==='audio-stream').details.present,false);
+          console.log(JSON.stringify({renderSpecId:a.render_spec_id,frames:a.output.frame_count,cacheHit:b.invocation.cache_hit,sha256:a.output.sha256},null,2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: i04-factory-fast-executor
+          path: .bench/i04
