@@ -12,7 +12,7 @@ This branch is the persistent integration point for the Framewright research wor
 
 ## Canonical chain
 
-The useful canonical research path is now E01-E12:
+The useful canonical research path is now E01-E13:
 
 1. E01 stage profiler.
 2. E02 payload-driven Book Ad v0 workload.
@@ -26,6 +26,7 @@ The useful canonical research path is now E01-E12:
 10. E10 4-vCPU concurrency matrix.
 11. E11 three production-oriented visual systems across ten stress books.
 12. E12 cheap element-level motion grammar and pacing.
+13. E13 deterministic creative router and ranked candidate generation.
 
 The old stacked PRs for completed stages are archival and do not need to remain open.
 
@@ -38,19 +39,21 @@ The old stacked PRs for completed stages are archival and do not need to remain 
 - E10: on a 4-CPU / 4 GiB constrained worker, c1=`642.50/h`, c2=`744.64/h`, c4=`771.15/h`. c4 is only `1.20x` c1 and has 30% parallel efficiency. Peak full process-tree RSS at c4 is `2626.8 MiB`. Result: `LAB-E10-CONCURRENCY-RESULTS.md`.
 - E11: all 30 videos (3 systems x 10 books) passed layout QA. Swiss=`629.48/h`, Newspaper=`741.87/h`, Paper=`627.12/h`; the visual systems are materially different while remaining in the same cheap browserless cost class. Result: `LAB-E11-VISUAL-SYSTEMS-RESULTS.md`.
 - E12: 60 interleaved baseline/active videos proved that cheap element-level motion barely changes render cost. Active throughput ratios were Swiss=`0.992x`, Newspaper=`0.977x`, Paper=`0.988x`; hold-window activity increased `12.03x`, `1.843x`, `2.975x` respectively, with zero layout warnings. Result: `LAB-E12-MOTION-GRAMMAR-RESULTS.md`.
+- E13: 10 books x 3 ranked systems = 30 videos, zero layout warnings. Every primary route strictly outranked secondary; mean pairwise candidate-frame difference=`0.111669`, minimum per-book pairwise difference=`0.075348` against a `0.03` floor. Manual review confirms primary/secondary/exploration are real composition alternatives, not palette swaps. The router is an auditable initial prior, not a claim about CTR/CPA. Result: `LAB-E13-CREATIVE-ROUTER-RESULTS.md`.
 
 ## Current experiment
 
-PR #21 / E12 (`lab/e12-motion-grammar`) is complete after canonical run `35110611620` and is ready to consolidate into `lab/framewright-research`.
+PR #22 / E13 (`lab/e13-creative-router`) is complete after canonical run `35113724843` and is ready to consolidate into `lab/framewright-research`.
 
-Product conclusion from E12:
+Product conclusion from E13:
 
-- motion density can be increased materially using only cheap element-level transforms/reveals;
-- CPU cost is effectively unchanged; the main tax is modest MP4 size growth;
-- Swiss, Newspaper and Paper can each carry their own motion language without full-frame pixel effects;
-- renderer optimization is no longer the useful next question for STANDARD ads.
+- deterministic metadata/rules are sufficient to create a useful candidate set without AI in the render path;
+- route reasons stay inspectable and versionable;
+- all three candidates per book remain visually distinct and pass layout QA;
+- the ranking weights are only starting priors and must eventually be informed by real campaign outcomes;
+- the useful next question is within-system creative variation, not more renderer or routing micro-tuning.
 
-After E12 merge, the next experiment should move to deterministic creative routing and useful variant generation: which visual system and motion grammar fits which book/category/hook, and how many genuinely different candidates can be produced per book without AI in the render path.
+After E13 merge, E14 should build a deterministic variant factory for the routed primary system: structurally different ad sequences (for example hook-first, cover-first, title-first and pacing/emphasis variants) from the same BookPayload, with diversity, layout and cost gates.
 
 ## Current architectural direction
 
