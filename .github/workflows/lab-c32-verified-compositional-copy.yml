@@ -1,0 +1,30 @@
+name: lab-c32-verified-compositional-copy
+
+on:
+  pull_request:
+    paths:
+      - 'contracts/compositional-copy-v1.mjs'
+      - 'contracts/copy-language-v1.schema.json'
+      - 'contracts/composed-creative-proposal-v1.schema.json'
+      - 'contracts/check-compositional-copy-v1.mjs'
+      - 'contracts/examples/copy-language-v1.example.json'
+      - 'contracts/examples/composed-creative-proposal-v1.example.json'
+      - 'docs/c32-verified-compositional-copy.md'
+      - '.github/workflows/lab-c32-verified-compositional-copy.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse JSON contracts
+        run: |
+          node -e "JSON.parse(require('fs').readFileSync('contracts/copy-language-v1.schema.json','utf8')); JSON.parse(require('fs').readFileSync('contracts/composed-creative-proposal-v1.schema.json','utf8')); JSON.parse(require('fs').readFileSync('contracts/examples/copy-language-v1.example.json','utf8')); JSON.parse(require('fs').readFileSync('contracts/examples/composed-creative-proposal-v1.example.json','utf8'));"
+      - name: Run C31 regression gate
+        run: node contracts/check-creative-proposal-v1.mjs
+      - name: Run C32 compositional copy gate
+        run: node contracts/check-compositional-copy-v1.mjs
