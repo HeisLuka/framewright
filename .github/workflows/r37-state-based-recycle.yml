@@ -1,0 +1,130 @@
+name: R37 State Based Warm Pool Recycle
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r37-build-state-recycle-scout.mjs'
+      - '.agents/skills/framewright/scripts/r37-compare-state-recycle.mjs'
+      - '.agents/skills/framewright/scripts/r34-mixed-catalog-soak.mjs'
+      - '.github/workflows/r37-state-based-recycle.yml'
+      - 'docs/r37-state-based-recycle.md'
+  workflow_dispatch:
+
+jobs:
+  state-recycle-deep-pass:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check source tools
+        run: |
+          node --check .agents/skills/framewright/scripts/r34-mixed-catalog-soak.mjs
+          node --check .agents/skills/framewright/scripts/r37-build-state-recycle-scout.mjs
+          node --check .agents/skills/framewright/scripts/r37-compare-state-recycle.mjs
+      - name: Prepare exact C18 catalog fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r37.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r37.html examples/book-ad-systems/index-e17-for-r37.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r37.html examples/book-ad-systems/index-e17-e14-for-r37.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r37.html examples/book-ad-systems/index-e18-for-r37.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r37
+      - name: Build canonical AAC fixture once
+        run: |
+          mkdir -p artifacts/r37/control artifacts/r37/recycle
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i 'sine=frequency=110:sample_rate=48000:duration=12' \
+            -filter:a 'volume=0.06' -t 12 -c:a aac -b:a 192k \
+            -movflags +faststart artifacts/r37/track.m4a
+      - name: Build R37 worker from canonical R34 harness
+        run: |
+          node .agents/skills/framewright/scripts/r37-build-state-recycle-scout.mjs \
+            .agents/skills/framewright/scripts/r34-mixed-catalog-soak.mjs \
+            artifacts/r37/r37-worker.mjs
+          node --check artifacts/r37/r37-worker.mjs
+      - name: Run matched no-recycle control
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r37.html
+          MANIFEST: examples/book-ad-systems/generated-r37/manifest.json
+          OUT_DIR: artifacts/r37/control
+          AUDIO: artifacts/r37/track.m4a
+          REPORT: artifacts/r37/control/report.json
+          JOBS: '180'
+          BITRATE: '3000000'
+          WINDOW_SIZE: '36'
+          WARMUP_JOBS: '36'
+          RECYCLE_MODE: control
+          BATCH_SIZE: '6'
+          LEARN_JOBS: '36'
+          RSS_THRESHOLD_MULTIPLIER: '1.25'
+          RSS_STREAK: '3'
+          IDLE_SETTLE_MS: '100'
+        run: node artifacts/r37/r37-worker.mjs
+      - name: Run matched state-triggered recycle
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r37.html
+          MANIFEST: examples/book-ad-systems/generated-r37/manifest.json
+          OUT_DIR: artifacts/r37/recycle
+          AUDIO: artifacts/r37/track.m4a
+          REPORT: artifacts/r37/recycle/report.json
+          JOBS: '180'
+          BITRATE: '3000000'
+          WINDOW_SIZE: '36'
+          WARMUP_JOBS: '36'
+          RECYCLE_MODE: recycle
+          BATCH_SIZE: '6'
+          LEARN_JOBS: '36'
+          RSS_THRESHOLD_MULTIPLIER: '1.25'
+          RSS_STREAK: '3'
+          IDLE_SETTLE_MS: '100'
+        run: node artifacts/r37/r37-worker.mjs
+      - name: Compare against predeclared gates
+        run: |
+          node .agents/skills/framewright/scripts/r37-compare-state-recycle.mjs \
+            artifacts/r37/control/report.json \
+            artifacts/r37/recycle/report.json \
+            artifacts/r37/report.json \
+            artifacts/r37/summary.md
+      - name: Validate report completeness
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r37/report.json','utf8'));
+          if(r.schema!=='framewright-r37-state-recycle-v1') throw new Error('wrong R37 schema');
+          const keys=['controlReproducedDrift','triggerFired','materialMemoryWin','correctnessPass','throughputGate','p95Gate','promote'];
+          for(const k of keys) if(typeof r.gates?.[k]!=='boolean') throw new Error(`missing gate ${k}`);
+          for(const side of ['control','recycle']) {
+            const s=JSON.parse(fs.readFileSync(`artifacts/r37/${side}/report.json`,'utf8'));
+            if(s.schema!=='framewright-r37-state-recycle-scenario-v1') throw new Error(`${side}: wrong scenario schema`);
+            if(s.config.jobsRequested!==180||s.result.barrierSamples?.length!==30) throw new Error(`${side}: incomplete canonical soak`);
+            if((s.result.successfulJobs+s.result.failedJobs)!==180) throw new Error(`${side}: incomplete accounting`);
+          }
+          console.log(JSON.stringify(r,null,2));
+          NODE
+      - name: Show result
+        if: always()
+        run: |
+          test -f artifacts/r37/summary.md && cat artifacts/r37/summary.md || true
+          test -f artifacts/r37/control/summary.md && cat artifacts/r37/control/summary.md || true
+          test -f artifacts/r37/recycle/summary.md && cat artifacts/r37/recycle/summary.md || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r37-state-based-recycle
+          path: |
+            artifacts/r37/report.json
+            artifacts/r37/summary.md
+            artifacts/r37/control/report.json
+            artifacts/r37/control/summary.md
+            artifacts/r37/recycle/report.json
+            artifacts/r37/recycle/summary.md
+            artifacts/r37/track.m4a
+          retention-days: 14
