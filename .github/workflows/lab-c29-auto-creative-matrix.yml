@@ -1,0 +1,92 @@
+name: Lab C29 Auto Creative Matrix
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - '.agents/skills/framewright/scripts/c29-*.mjs'
+      - '.agents/skills/framewright/scripts/make-c29-*.mjs'
+      - '.agents/skills/framewright/scripts/c27-auto-creative.mjs'
+      - '.agents/skills/framewright/scripts/c27-creative-portfolio.mjs'
+      - '.agents/skills/framewright/scripts/c27-narrative-plan.mjs'
+      - 'docs/c29-auto-creative-matrix.md'
+      - '.github/workflows/lab-c29-auto-creative-matrix.yml'
+  workflow_dispatch:
+
+jobs:
+  auto-creative-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Syntax check C29
+        run: |
+          node --check .agents/skills/framewright/scripts/make-c29-auto-creative-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/c29-auto-creative-audit.mjs
+          node --check .agents/skills/framewright/scripts/c29-auto-render-audit.mjs
+          node --check .agents/skills/framewright/scripts/c29-auto-summarize.mjs
+          node --check .agents/skills/framewright/scripts/c29-auto-review-sheets.mjs
+      - name: Build automatic angle x hook x reveal matrix
+        run: node .agents/skills/framewright/scripts/make-c29-auto-creative-fixtures.mjs examples/book-ad-systems/generated-c29-auto
+      - name: Audit semantic matrix before render
+        run: node .agents/skills/framewright/scripts/c29-auto-creative-audit.mjs examples/book-ad-systems/generated-c29-auto artifacts/c29/semantic-audit.json
+      - name: Install pinned renderer dependency
+        run: npm install --no-save @napi-rs/canvas@1.0.9
+      - name: Install FFmpeg and pinned fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Prepare current C20-C27 renderer stack
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-c29.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-c29.html examples/book-ad-systems/index-c22-c29.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-c22-c29.html examples/book-ad-systems/index-e17-c29.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-c29.html examples/book-ad-systems/index-e17-e14-c29.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-c29.html examples/book-ad-systems/index-e18-c29.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-c29.html examples/book-ad-systems/index-c20-c29.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-c29.html examples/book-ad-systems/index-c21-c29.html
+          node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c21-c29.html examples/book-ad-systems/index-c23-c29.html
+          node .agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs examples/book-ad-systems/index-c23-c29.html examples/book-ad-systems/index-c24-c29.html
+          node .agents/skills/framewright/scripts/prepare-c25-typography-axis.mjs examples/book-ad-systems/index-c24-c29.html examples/book-ad-systems/index-c25-c29.html
+          node .agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs examples/book-ad-systems/index-c25-c29.html examples/book-ad-systems/index-c26-c29.html examples/book-ad-systems/platform-ui-profiles.v1.json
+          node .agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs examples/book-ad-systems/index-c26-c29.html examples/book-ad-systems/index-c29.html
+      - name: Audit renderer schedule and safe zones for 18 variants
+        env:
+          HTML: examples/book-ad-systems/index-c29.html
+          MANIFEST: examples/book-ad-systems/generated-c29-auto/manifest.json
+          RENDER_AUDIT: artifacts/c29/render-audit.json
+        run: node .agents/skills/framewright/scripts/c29-auto-render-audit.mjs
+      - name: Render 18 controlled automatic creative videos
+        env:
+          HTML: examples/book-ad-systems/index-c29.html
+          MANIFEST: examples/book-ad-systems/generated-c29-auto/manifest.json
+          OUT_DIR: artifacts/c29/videos
+          REPORT: artifacts/c29/batch.json
+          PRESET: veryfast
+          CRF: '22'
+        run: node .agents/skills/framewright/scripts/node-canvas-profile-batch.mjs
+      - name: Enforce final artifact and diversity gates
+        run: node .agents/skills/framewright/scripts/c29-auto-summarize.mjs artifacts/c29/batch.json artifacts/c29/semantic-audit.json artifacts/c29/render-audit.json examples/book-ad-systems/generated-c29-auto/manifest.json artifacts/c29/summary.json
+      - name: Build human-review angle-hook-reveal matrices
+        run: node .agents/skills/framewright/scripts/c29-auto-review-sheets.mjs artifacts/c29/batch.json examples/book-ad-systems/generated-c29-auto/manifest.json artifacts/c29/review
+      - name: Show C29 summary
+        run: cat artifacts/c29/summary.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c29-auto-creative-matrix
+          path: |
+            artifacts/c29/semantic-audit.json
+            artifacts/c29/render-audit.json
+            artifacts/c29/summary.json
+            artifacts/c29/batch.json
+            artifacts/c29/review/
+            artifacts/c29/videos/
+            examples/book-ad-systems/generated-c29-auto/manifest.json
+            examples/book-ad-systems/generated-c29-auto/source-pack.json
+            examples/book-ad-systems/generated-c29-auto/evidence.json
+            examples/book-ad-systems/generated-c29-auto/angles.json
+            examples/book-ad-systems/generated-c29-auto/portfolio.json
+          retention-days: 14
