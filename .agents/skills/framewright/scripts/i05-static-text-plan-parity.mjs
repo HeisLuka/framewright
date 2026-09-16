@@ -29,13 +29,24 @@ function pixelSha(canvas){const d=canvas.getContext('2d').getImageData(0,0,canva
 function planCore(bundle){return{schema:bundle.schema,version:bundle.version,environment:bundle.environment,plans:bundle.plans};}
 function planDigest(bundle){return sha(planCore(bundle));}
 
+// @napi-rs/canvas exposes measureText as a native prototype method. Replacing an
+// individual context property is silently ineffective, so instrument the prototype
+// once and use a global counter around sequential diagnostic renders.
+let measureCalls=0,measurePrototype=null,nativeMeasureText=null;
+function ensureMeasureInstrumentation(ctx){
+  const proto=Object.getPrototypeOf(ctx);
+  if(measurePrototype){if(proto!==measurePrototype)throw new Error('unexpected multiple CanvasRenderingContext2D prototypes');return;}
+  const native=proto.measureText;
+  if(typeof native!=='function')throw new Error('native measureText method missing');
+  Object.defineProperty(proto,'measureText',{configurable:true,writable:true,value:function(...args){measureCalls++;return native.apply(this,args);}});
+  measurePrototype=proto;nativeMeasureText=native;
+}
+
 async function boot(source,payload,seed,label){
   payload=structuredClone(payload);
   if(payload.cover_url&&!/^[a-z]+:/i.test(payload.cover_url)&&!path.isAbsolute(payload.cover_url))payload.cover_url=path.resolve(templateDir,payload.cover_url);
   const canvas=createCanvas(1080,1920),ctx=canvas.getContext('2d');
-  let measureCalls=0;
-  const nativeMeasure=ctx.measureText.bind(ctx);
-  ctx.measureText=(...args)=>{measureCalls++;return nativeMeasure(...args);};
+  ensureMeasureInstrumentation(ctx);
   const document={createElement(n){if(String(n).toLowerCase()!=='canvas')throw new Error(`unsupported ${n}`);return createCanvas(1,1);},getElementById(id){return id==='c'?canvas:null;}};
   const window={FRAMEWRIGHT_PAYLOAD:payload},location={search:`?f=0&w=1080&s=${seed}&profile=vertical`};
   const sandbox={window,document,Image,URLSearchParams,location,console,performance,setTimeout,clearTimeout,requestAnimationFrame(){return 0;}};sandbox.globalThis=sandbox;window.window=window;window.document=document;window.location=location;
@@ -79,13 +90,12 @@ const diagnostics=[];
 for(const style of styles){
   const payload=payloadFor(style,'generic'),frames=[...Array(plan.total_frames).keys()];
   const base=await boot(baselineSource,payload,plan.seed,`measure-base-${style}`),forward=await boot(compiledSource,payload,plan.seed,`measure-forward-${style}`),reverse=await boot(compiledSource,payload,plan.seed,`measure-reverse-${style}`);
-  base.resetMeasureCalls();forward.resetMeasureCalls();reverse.resetMeasureCalls();
-  let t=performance.now();for(const f of frames)base.window.RISO.frame(f,renderWidth,plan.seed);const baseMs=performance.now()-t,baseMeasures=base.getMeasureCalls();
-  t=performance.now();for(const f of frames)forward.window.RISO.frame(f,renderWidth,plan.seed);const forwardMs=performance.now()-t,forwardMeasures=forward.getMeasureCalls();
-  t=performance.now();for(const f of [...frames].reverse())reverse.window.RISO.frame(f,renderWidth,plan.seed);const reverseMs=performance.now()-t,reverseMeasures=reverse.getMeasureCalls();
+  base.resetMeasureCalls();let t=performance.now();for(const f of frames)base.window.RISO.frame(f,renderWidth,plan.seed);const baseMs=performance.now()-t,baseMeasures=base.getMeasureCalls();
+  forward.resetMeasureCalls();t=performance.now();for(const f of frames)forward.window.RISO.frame(f,renderWidth,plan.seed);const forwardMs=performance.now()-t,forwardMeasures=forward.getMeasureCalls();
+  reverse.resetMeasureCalls();t=performance.now();for(const f of [...frames].reverse())reverse.window.RISO.frame(f,renderWidth,plan.seed);const reverseMs=performance.now()-t,reverseMeasures=reverse.getMeasureCalls();
   const fBundle=forward.window.__I05_STATIC_TEXT_PLAN(),rBundle=reverse.window.__I05_STATIC_TEXT_PLAN(),fDigest=planDigest(fBundle),rDigest=planDigest(rBundle),orderIndependent=fDigest===rDigest;
   if(!orderIndependent)errors.push(`${style}: plan bundle depends on frame traversal order`);
-  const reduction=baseMeasures?1-forwardMeasures/baseMeasures:0;if(reduction<.25)errors.push(`${style}: measureText reduction ${(reduction*100).toFixed(1)}% < 25%`);
+  const reduction=baseMeasures?1-forwardMeasures/baseMeasures:0;if(!baseMeasures)errors.push(`${style}: measureText instrumentation observed zero baseline calls`);else if(reduction<.25)errors.push(`${style}: measureText reduction ${(reduction*100).toFixed(1)}% < 25%`);
   diagnostics.push({style,frames:plan.total_frames,baseline:{measureTextCalls:baseMeasures,wallMs:+baseMs.toFixed(3)},compiledForward:{measureTextCalls:forwardMeasures,wallMs:+forwardMs.toFixed(3),entries:fBundle.stats?.entries??fBundle.plans.length,digest:fDigest},compiledReverse:{measureTextCalls:reverseMeasures,wallMs:+reverseMs.toFixed(3),entries:rBundle.stats?.entries??rBundle.plans.length,digest:rDigest},measureTextReduction:+reduction.toFixed(6),orderIndependent});
 }
 
