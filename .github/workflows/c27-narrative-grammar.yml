@@ -1,0 +1,42 @@
+name: C27 Viral Narrative Grammar
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - '.agents/skills/framewright/scripts/c27-narrative-*.mjs'
+      - '.agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs'
+      - 'docs/c27-viral-narrative-grammar.md'
+      - '.github/workflows/c27-narrative-grammar.yml'
+  workflow_dispatch:
+
+jobs:
+  narrative-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/c27-narrative-plan.mjs
+          node --check .agents/skills/framewright/scripts/c27-narrative-selftest.mjs
+          node --check .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/c27-narrative-audit.mjs
+      - name: Standalone planner self-test
+        run: node .agents/skills/framewright/scripts/c27-narrative-selftest.mjs
+      - name: Build exact E08 narrative matrix
+        run: node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs artifacts/c27/fixtures
+      - name: Audit semantic contract
+        run: node .agents/skills/framewright/scripts/c27-narrative-audit.mjs artifacts/c27/fixtures artifacts/c27/audit.json
+      - name: Show audit
+        run: cat artifacts/c27/audit.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c27-narrative-contract
+          path: |
+            artifacts/c27/audit.json
+            artifacts/c27/fixtures/manifest.json
+          retention-days: 14
