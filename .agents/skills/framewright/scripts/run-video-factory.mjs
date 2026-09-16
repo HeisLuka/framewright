@@ -83,8 +83,14 @@ async function verifyPhysicalBinding(requestRow, compiledCreative, binding) {
   if (String(payload.book_id) !== String(compiledCreative.book_id)) {
     throw new Error(`${requestRow.selection_id}: physical payload book_id does not match CreativeSpec`);
   }
-  if (String(payload.hook) !== String(compiledCreative.hook?.text)) {
-    throw new Error(`${requestRow.selection_id}: physical payload hook does not match CreativeSpec hook`);
+  const narrativeHook = payload.narrative_plan?.roles
+    ?.find(role => role?.role === 'hook')
+    ?.atoms?.[0]?.text;
+  if (narrativeHook != null && String(narrativeHook) !== String(compiledCreative.hook?.text)) {
+    throw new Error(`${requestRow.selection_id}: narrative_plan hook atom does not match CreativeSpec hook`);
+  }
+  if (compiledCreative.hook?.source_ref?.includes(':hook') && narrativeHook == null) {
+    throw new Error(`${requestRow.selection_id}: CreativeSpec hook claims narrative-plan provenance but physical payload has no hook atom`);
   }
   const audioPath = binding.audio ? path.resolve(INVOCATION_CWD, binding.audio) : null;
   if (audioPath && !fs.existsSync(audioPath)) throw new Error(`${requestRow.selection_id}: missing canonical audio ${audioPath}`);
