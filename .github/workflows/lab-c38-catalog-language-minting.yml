@@ -1,0 +1,26 @@
+name: lab-c38-catalog-language-minting
+
+on:
+  push:
+    branches:
+      - lab/c38-catalog-language-minting
+  pull_request:
+    paths:
+      - 'contracts/catalog-language-minting-v1.mjs'
+      - 'contracts/catalog-creative-source-v1.schema.json'
+      - 'contracts/catalog-language-mint-manifest-v1.schema.json'
+      - 'contracts/check-catalog-language-minting-v1.mjs'
+      - 'contracts/examples/catalog-creative-source-v1.example.json'
+      - 'docs/c38-catalog-language-minting.md'
+      - '.github/workflows/lab-c38-catalog-language-minting.yml'
+
+jobs:
+  c38-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run catalog language minting self-test + C32 compatibility gate
+        run: node contracts/check-catalog-language-minting-v1.mjs
