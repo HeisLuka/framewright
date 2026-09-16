@@ -19,11 +19,13 @@ canvas{display:block;margin:0 auto;max-width:100vw;max-height:100vh}
 <body>
 <canvas id="c"></canvas>
 <script type="module">
-import { BOOK } from "./book-data.mjs";
+import { BOOK as DEMO_BOOK } from "./book-data.mjs";
 import {
   createBrowserAssetStore,
   newbooCoverAsset,
+  normalizeAssetDescriptor,
 } from "../../src/assets.mjs";
+import { decodeBookRenderJob } from "../../src/book-render.mjs";
 import {
   compileRenderPlan,
   createMotionRuntime,
@@ -38,6 +40,8 @@ import {
 
 const canvas = document.getElementById("c");
 const query = new URLSearchParams(location.search);
+const renderJob = decodeBookRenderJob(query.get("job"));
+const BOOK = renderJob?.payload || DEMO_BOOK;
 const DEFAULT_WIDTH = Number(query.get("w") || 1080);
 const DEFAULT_SEED = Number(query.get("s") || 7);
 
@@ -55,13 +59,21 @@ await document.fonts.ready;
  * credentials or an expiring signed URL stored in the plan.
  */
 const coverId = query.get("coverId");
-const coverAsset = coverId ? newbooCoverAsset({
-  bookId: query.get("bookId") || BOOK.id,
+const coverUrl = query.get("coverUrl") || BOOK.cover?.publicUrl || "";
+const coverAsset = BOOK.cover?.asset || (coverId ? newbooCoverAsset({
+  bookId: query.get("bookId") || BOOK.storageBookId || BOOK.id,
   coverId,
   target: query.get("coverTarget") || "source",
   etag: query.get("coverEtag") || undefined,
-}) : null;
-const coverUrl = query.get("coverUrl") || "";
+}) : coverUrl ? normalizeAssetDescriptor({
+  id: "book-cover",
+  kind: "image",
+  role: "cover",
+  source: {
+    type: "resolved",
+    key: `book:${BOOK.id}:cover`,
+  },
+}) : null);
 const assetStore = createBrowserAssetStore({
   resolve(descriptor) {
     if (descriptor.id !== "book-cover" || !coverUrl) return null;
@@ -271,7 +283,7 @@ const drawCover = (g, x, y, width, height, progress = 1) => {
   g.restore();
 };
 
-const plan = compileRenderPlan({
+const plan = renderJob?.plan || compileRenderPlan({
   id: "book-ad-v0",
   fps: 30,
   aspect: "9:16",
@@ -325,7 +337,7 @@ const recipes = {
     g.fillRect(90, 220, 110 * headerP, 12);
     g.fillStyle = STYLE.dim;
     g.font = "700 28px Arial, sans-serif";
-    g.fillText("EXCERPT", 90, 290);
+    g.fillText(BOOK.quoteLabel || "EXCERPT", 90, 290);
 
     const coverP = api.windowedProgress(S.progress, 0.08, 0.34, "back");
     drawCover(g, coverObstacle.x, coverObstacle.y, coverObstacle.width, coverObstacle.height, coverP);
