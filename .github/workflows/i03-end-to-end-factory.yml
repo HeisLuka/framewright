@@ -1,0 +1,98 @@
+name: I03 End-to-End Video Factory
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/run-video-factory.mjs'
+      - '.agents/skills/framewright/scripts/render-factory-fast.mjs'
+      - '.agents/skills/framewright/scripts/render-webcodecs.mjs'
+      - 'contracts/make-i03-factory-fixture.mjs'
+      - 'contracts/c19-delivery-package-v1.mjs'
+      - 'contracts/runtime-consumer-v1.mjs'
+      - 'contracts/factory-identity-v1.mjs'
+      - 'examples/book-ad-v0/**'
+      - '.github/workflows/i03-end-to-end-factory.yml'
+  workflow_dispatch:
+
+jobs:
+  e2e:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - run: npm install --no-audit --no-fund
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Syntax check
+        run: |
+          node --check contracts/make-i03-factory-fixture.mjs
+          node --check .agents/skills/framewright/scripts/run-video-factory.mjs
+      - name: Build physically-bound bounded campaign request
+        run: |
+          mkdir -p .bench/i03/cache
+          node contracts/make-i03-factory-fixture.mjs .bench/i03/request.json
+      - name: First end-to-end factory execution
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/i03/request.json \
+            --out-dir .bench/i03/run1 \
+            --artifact-dir .bench/i03/cache
+      - name: Repeat same campaign through canonical artifact cache
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/i03/request.json \
+            --out-dir .bench/i03/run2 \
+            --artifact-dir .bench/i03/cache
+      - name: Verify factory-level invariants
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import crypto from 'node:crypto';
+          const read=p=>fs.readFileSync(p,'utf8');
+          const json=p=>JSON.parse(read(p));
+          const sha=s=>crypto.createHash('sha256').update(s).digest('hex');
+          const pkg1=read('.bench/i03/run1/delivery-package.json');
+          const pkg2=read('.bench/i03/run2/delivery-package.json');
+          const canon1=read('.bench/i03/run1/canonical-artifacts.json');
+          const canon2=read('.bench/i03/run2/canonical-artifacts.json');
+          const run1=json('.bench/i03/run1/run.json');
+          const run2=json('.bench/i03/run2/run.json');
+          const manifest=json('.bench/i03/run1/canonical-artifacts.json');
+          assert.equal(pkg1,pkg2,'delivery package must be byte-identical');
+          assert.equal(canon1,canon2,'canonical artifact manifest must be byte-identical across cached replay');
+          assert.equal(run1.cache_hits,0,'first run must execute renderer');
+          assert.equal(run2.cache_hits,1,'second run must reuse canonical artifact');
+          assert.equal(manifest.selected_creatives,1);
+          assert.equal(manifest.render_specs,1);
+          assert.equal(manifest.reserves,1);
+          assert.equal(manifest.artifacts.length,1);
+          assert.equal(manifest.artifacts[0].qa.status,'pass');
+          assert.equal(manifest.artifacts[0].output.frame_count,360);
+          assert.equal(manifest.artifacts[0].physical_binding.payload_sha256, json('.bench/i03/request.json').selected[0].creative.payload_sha256);
+          console.log(JSON.stringify({
+            deliveryPackageSha256:sha(pkg1),
+            canonicalManifestSha256:sha(canon1),
+            firstRunCacheHits:run1.cache_hits,
+            secondRunCacheHits:run2.cache_hits,
+            artifactSha256:manifest.artifacts[0].output.sha256,
+            frameCount:manifest.artifacts[0].output.frame_count,
+          },null,2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: i03-end-to-end-video-factory
+          path: |
+            .bench/i03/request.json
+            .bench/i03/run1/
+            .bench/i03/run2/
