@@ -1,0 +1,78 @@
+name: R36 Artifact Validation Critical Path
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r36-artifact-validation-scout.mjs'
+      - '.github/workflows/r36-artifact-validation.yml'
+      - 'docs/r36-artifact-validation.md'
+  workflow_dispatch:
+
+jobs:
+  artifact-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r36-artifact-validation-scout.mjs
+      - name: Prepare exact C18 catalog fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r36.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r36.html examples/book-ad-systems/index-e17-for-r36.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r36.html examples/book-ad-systems/index-e17-e14-for-r36.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r36.html examples/book-ad-systems/index-e18-for-r36.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r36
+      - name: Build canonical AAC fixture once
+        run: |
+          mkdir -p artifacts/r36
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i 'sine=frequency=110:sample_rate=48000:duration=12' \
+            -filter:a 'volume=0.06' -t 12 -c:a aac -b:a 192k \
+            -movflags +faststart artifacts/r36/track.m4a
+      - name: Run validation corruption + throughput scout
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r36.html
+          MANIFEST: examples/book-ad-systems/generated-r36/manifest.json
+          OUT_DIR: artifacts/r36
+          AUDIO: artifacts/r36/track.m4a
+          REPORT: artifacts/r36/report.json
+          BITRATE: '3000000'
+        run: node .agents/skills/framewright/scripts/r36-artifact-validation-scout.mjs
+      - name: Validate report completeness
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r36/report.json','utf8'));
+          if(r.schema!=='framewright-r36-artifact-validation-v1') throw new Error('wrong schema');
+          if(r.corruption?.length!==5) throw new Error(`expected 5 corruption cases, got ${r.corruption?.length}`);
+          if(r.throughput?.legacy?.jobs!==72 || r.throughput?.fast?.jobs!==72) throw new Error('expected two balanced 36-job runs per validator');
+          if(r.reference?.browserH264Sha256!==r.reference?.nodeH264Sha256) throw new Error('browser->node H264 identity failed');
+          if(!r.reference?.goodFast?.valid || !r.reference?.goodLegacy?.valid) throw new Error('good reference rejected');
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - name: Show result
+        if: always()
+        run: |
+          test -f artifacts/r36/summary.md && cat artifacts/r36/summary.md || true
+          test -f artifacts/r36/report.json && node -e "const r=require('./artifacts/r36/report.json'); console.log(JSON.stringify({throughput:r.throughput,decision:r.decision},null,2));" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r36-artifact-validation
+          path: |
+            artifacts/r36/report.json
+            artifacts/r36/summary.md
+            artifacts/r36/track.m4a
+            artifacts/r36/r36-reference.mp4
+            artifacts/r36/corruption/*.mp4
+          retention-days: 14
