@@ -6,6 +6,7 @@ on:
     paths:
       - '.agents/skills/framewright/scripts/i02-fast-backend-scout.mjs'
       - '.agents/skills/framewright/scripts/i02-node-webcodecs-scout.mjs'
+      - '.agents/skills/framewright/scripts/i02-node-webcodecs-v2.mjs'
       - '.agents/skills/framewright/scripts/i02-stage-summary.mjs'
       - '.agents/skills/framewright/scripts/i02-quality-calibration.mjs'
       - '.agents/skills/framewright/scripts/i02-consistent-quality-target.mjs'
@@ -35,7 +36,7 @@ jobs:
       - name: Syntax check
         run: |
           node --check .agents/skills/framewright/scripts/i02-fast-backend-scout.mjs
-          node --check .agents/skills/framewright/scripts/i02-node-webcodecs-scout.mjs
+          node --check .agents/skills/framewright/scripts/i02-node-webcodecs-v2.mjs
           node --check .agents/skills/framewright/scripts/i02-stage-summary.mjs
           node --check .agents/skills/framewright/scripts/i02-quality-calibration.mjs
           node --check .agents/skills/framewright/scripts/i02-consistent-quality-target.mjs
@@ -72,7 +73,7 @@ jobs:
           WEBCODECS_QUEUE: '8'
         run: node --input-type=module -e "globalThis.window={RISO:{fps:30}}; await import('./.agents/skills/framewright/scripts/i02-fast-backend-scout.mjs')"
 
-      - name: Run native Node WebCodecs candidate
+      - name: Run corrected native Node WebCodecs candidate
         env:
           HTML: examples/book-ad-systems/index-e18-for-i02.html
           MANIFEST: examples/book-ad-systems/generated-i02/manifest.json
@@ -88,7 +89,7 @@ jobs:
           NATIVE_AUDIO_BITRATE: '192000'
           NATIVE_QUEUE: '8'
           NATIVE_CODEC: avc1.420028
-        run: node .agents/skills/framewright/scripts/i02-node-webcodecs-scout.mjs
+        run: node .agents/skills/framewright/scripts/i02-node-webcodecs-v2.mjs
 
       - name: Analyze stage budget
         env:
