@@ -1,0 +1,10 @@
+#!/usr/bin/env node
+import fsp from 'node:fs/promises';
+import path from 'node:path';
+import http from 'node:http';
+import puppeteer from 'puppeteer';
+
+const outDir=path.resolve(process.env.OUT_DIR||'artifacts/r40');await fsp.mkdir(outDir,{recursive:true});
+const server=http.createServer((req,res)=>{res.writeHead(200,{'Content-Type':'text/html'});res.end('<canvas id=c width=320 height=180></canvas>');});await new Promise((ok,no)=>{server.once('error',no);server.listen(0,'127.0.0.1',ok)});const origin=`http://127.0.0.1:${server.address().port}`;
+let browser;
+try{browser=await puppeteer.launch({headless:true,args:['--no-sandbox','--disable-setuid-sandbox']});const page=await browser.newPage();await page.goto(origin,{waitUntil:'load'});const report=await page.evaluate(async()=>{const c=document.getElementById('c'),x=c.getContext('2d',{willReadFrequently:true});x.fillStyle='rgb(48,92,170)';x.fillRect(0,0,c.width,c.height);const f=new VideoFrame(c,{timestamp:0});const out={source:{format:f.format,colorSpace:f.colorSpace?.toJSON?.()||null},copy:{}};for(const format of ['I420','NV12','RGBA','RGBX']){try{const options={format};const size=f.allocationSize(options),buf=new Uint8Array(size),layout=await f.copyTo(buf,options);out.copy[format]={ok:true,size,layout};}catch(e){out.copy[format]={ok:false,error:String(e?.name||'Error')+': '+String(e?.message||e)};}}try{const rgba=new Uint8Array(c.width*c.height*4);const image=x.getImageData(0,0,c.width,c.height);rgba.set(image.data);const cs={primaries:'bt709',transfer:'bt709',matrix:'rgb',fullRange:true};const raw=new VideoFrame(rgba,{format:'RGBA',codedWidth:c.width,codedHeight:c.height,timestamp:0,colorSpace:cs});out.rawRgba={ok:true,format:raw.format,colorSpace:raw.colorSpace?.toJSON?.()||null};raw.close();}catch(e){out.rawRgba={ok:false,error:String(e?.name||'Error')+': '+String(e?.message||e)};}f.close();return out;});await fsp.writeFile(path.join(outDir,'browser-conversion-capability.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify(report,null,2));}finally{if(browser)await browser.close().catch(()=>{});await new Promise(ok=>server.close(ok));}

@@ -1,0 +1,137 @@
+name: R41 Intel Hardware Economics
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r41-intel-hw-preflight.mjs'
+      - '.agents/skills/framewright/scripts/r41-intel-hw-economics.mjs'
+      - '.github/workflows/r41-intel-hw-economics.yml'
+      - 'docs/r41-intel-hw-economics.md'
+  workflow_dispatch:
+    inputs:
+      provider_monthly_price:
+        description: 'Current quoted monthly host price, excluding VAT'
+        required: true
+        type: string
+      provider_price_currency:
+        description: 'Quote currency'
+        required: true
+        default: 'EUR'
+        type: string
+      chrome_executable:
+        description: 'System Chrome/Chromium executable with VA-API support'
+        required: true
+        default: '/usr/bin/google-chrome'
+        type: string
+      jobs:
+        description: 'Measured heterogeneous jobs per scenario'
+        required: true
+        default: '36'
+        type: string
+      concurrency:
+        description: 'Comma-separated concurrency sweep'
+        required: true
+        default: '1,2,4,6,8'
+        type: string
+
+jobs:
+  harness-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/r41-intel-hw-preflight.mjs
+          node --check .agents/skills/framewright/scripts/r41-intel-hw-economics.mjs
+      - name: Confirm GitHub-hosted runner is not canonical hardware evidence
+        run: |
+          mkdir -p artifacts/r41
+          OUT_DIR=artifacts/r41 node .agents/skills/framewright/scripts/r41-intel-hw-preflight.mjs
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r41/preflight.json','utf8'));
+          if(r.schema!=='framewright-r41-intel-hw-preflight-v1') throw new Error('wrong preflight schema');
+          console.log(JSON.stringify({pass:r.pass,checks:r.checks},null,2));
+          NODE
+
+  intel-hardware-benchmark:
+    if: github.event_name == 'workflow_dispatch'
+    needs: harness-check
+    runs-on: [self-hosted, linux, x64, intel-media]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install benchmark dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg vainfo intel-gpu-tools pciutils fonts-dejavu-core
+      - name: Prepare exact C18 fixture
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r41.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r41.html examples/book-ad-systems/index-e17-for-r41.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r41.html examples/book-ad-systems/index-e17-e14-for-r41.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r41.html examples/book-ad-systems/index-e18-for-r41.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r41
+      - name: Build cached AAC track
+        run: |
+          mkdir -p artifacts/r41
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=48000:cl=stereo -t 12 -c:a aac -b:a 128k artifacts/r41/track.m4a
+      - name: Require Intel media preflight
+        env:
+          OUT_DIR: artifacts/r41
+          PREFLIGHT_REPORT: artifacts/r41/preflight.json
+          R41_REQUIRE_HARDWARE: '1'
+        run: node .agents/skills/framewright/scripts/r41-intel-hw-preflight.mjs
+      - name: Run production-shaped software vs hardware matrix
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r41.html
+          MANIFEST: examples/book-ad-systems/generated-r41/manifest.json
+          OUT_DIR: artifacts/r41
+          REPORT: artifacts/r41/report.json
+          PREFLIGHT_REPORT: artifacts/r41/preflight.json
+          AUDIO: artifacts/r41/track.m4a
+          JOBS: ${{ inputs.jobs }}
+          CONCURRENCY: ${{ inputs.concurrency }}
+          BITRATE: '3000000'
+          WEBCODECS_QUEUE: '8'
+          PROVIDER_MONTHLY_PRICE: ${{ inputs.provider_monthly_price }}
+          PROVIDER_PRICE_CURRENCY: ${{ inputs.provider_price_currency }}
+          CHROME_EXECUTABLE: ${{ inputs.chrome_executable }}
+        run: node .agents/skills/framewright/scripts/r41-intel-hw-economics.mjs
+      - name: Validate report completeness
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r41/report.json','utf8'));
+          if(r.schema!=='framewright-r41-intel-hw-economics-v1') throw new Error('wrong report schema');
+          if(!Array.isArray(r.results)||r.results.length<2) throw new Error('missing scenarios');
+          for(const x of r.results){
+            if(!['software','hardware'].includes(x.backend)) throw new Error(`bad backend ${x.backend}`);
+            if(x.failures.length) throw new Error(`${x.backend} c${x.concurrency} has failures`);
+            if(!(x.videosPerHour>0&&x.cpuMsPerVideo>0)) throw new Error(`${x.backend} c${x.concurrency} invalid metrics`);
+          }
+          if(typeof r.decision?.hardwareActivityProven!=='boolean'||typeof r.decision?.performanceEarned!=='boolean') throw new Error('missing decision');
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - name: Show result
+        if: always()
+        run: test -f artifacts/r41/summary.md && cat artifacts/r41/summary.md || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r41-intel-hw-economics
+          path: |
+            artifacts/r41/preflight.json
+            artifacts/r41/report.json
+            artifacts/r41/summary.md
+            artifacts/r41/gpu-*.json
+            artifacts/r41/sample-*.mp4
+          retention-days: 14
