@@ -3,7 +3,7 @@
 //   node look.mjs shot <frame[,frame...]> [width=1200] [seed=7] [out]      one or more frames as PNG
 //   node look.mjs sheet [n=24] [cellWidth=480] [seed=7] [out]              contact sheet of n evenly spaced frames
 //   node look.mjs info                                                    total frames and plate list as JSON
-// Env: HTML=path/to/index.html (default ./index.html), AR=9:16 (aspect override), OUT_DIR=shots
+// Env: HTML=path/to/index.html, AR=9:16, OUT_DIR=shots, FW_QUERY='key=value&...'
 import puppeteer from 'puppeteer';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -19,8 +19,15 @@ p.on('pageerror', e => console.error('PAGE ERROR', e.message));
 p.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') console.error('CONSOLE', m.text()); });
 
 async function open(seed) {
-  const url = 'file://' + html + `?f=0&w=320&s=${seed}` + (process.env.AR ? `&ar=${process.env.AR}` : '');
-  await p.goto(url, { waitUntil: 'load', timeout: 120000 });
+  const url = new URL('file://' + html);
+  url.searchParams.set('f', '0');
+  url.searchParams.set('w', '320');
+  url.searchParams.set('s', String(seed));
+  if (process.env.AR) url.searchParams.set('ar', process.env.AR);
+  for (const [key, value] of new URLSearchParams(process.env.FW_QUERY || '')) {
+    url.searchParams.set(key, value);
+  }
+  await p.goto(url.href, { waitUntil: 'load', timeout: 120000 });
   await p.waitForFunction('window.__ready===true', { timeout: 120000 });
 }
 function save(dataUrl, out) {
