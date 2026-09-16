@@ -1,0 +1,64 @@
+name: E15 render cost gate
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/scripts/cost-model.mjs"
+      - "test/cost-model.test.mjs"
+      - "docs/e15-cost-gate.md"
+      - ".github/workflows/e15-cost-gate.yml"
+  workflow_dispatch:
+
+jobs:
+  cost-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - name: Build E13c reference metrics
+        run: |
+          mkdir -p artifacts
+          printf '%s\n' '{"framesPerSecond":5.144585274019448}' > artifacts/e15-exact.json
+          printf '%s\n' '{"framesPerSecond":6.350848477008266}' > artifacts/e15-composition.json
+      - name: Run 15-second cost scenario
+        env:
+          HOURLY_USD: "0.07143"
+          VIDEO_SECONDS: "15"
+          OUTPUT_FPS: "30"
+        run: >-
+          node .agents/skills/framewright/scripts/cost-model.mjs
+          exact=artifacts/e15-exact.json
+          composition=artifacts/e15-composition.json
+          > artifacts/e15-cost-gate.json
+      - name: Assert economics
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const result = JSON.parse(fs.readFileSync('artifacts/e15-cost-gate.json', 'utf8'));
+          const exact = result.scenarios.find((item) => item.label === 'exact');
+          const composition = result.scenarios.find((item) => item.label === 'composition');
+          if (!exact || !composition) throw new Error('missing cost scenarios');
+          if (!(exact.costPerVideoUsd > composition.costPerVideoUsd)) {
+            throw new Error('exact CRT should cost more in this scenario');
+          }
+          const delta = exact.incrementalVsCheapestPerHundredThousandUsd;
+          if (!(delta > 32 && delta < 34)) {
+            throw new Error(`unexpected 100k marginal cost: ${delta}`);
+          }
+          console.log(JSON.stringify({
+            exactCostPer100k: exact.costPerHundredThousandUsd,
+            compositionCostPer100k: composition.costPerHundredThousandUsd,
+            marginalExactPer100k: delta,
+          }, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e15-cost-gate
+          path: artifacts/e15-cost-gate.json
