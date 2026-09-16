@@ -1,0 +1,45 @@
+{
+  "schema": "newboo-catalog-creative-source-v1",
+  "source_id": "catalog_book_42_revision_7",
+  "source_hash": "436991a05a5e21c8d16d0c947292dc163bd0a76095c776c581341815d14bcc0c",
+  "revision": 7,
+  "locale": "en-US",
+  "policies": {
+    "structured_spoiler_level": 0,
+    "description_spoiler_level": 1,
+    "release_note_spoiler_level": 0
+  },
+  "book": {
+    "book_id": "42",
+    "title": "Tomorrow Writes Back",
+    "author_name": "A. Example",
+    "subtitle": "Letters From a Future Self",
+    "original_title": "",
+    "language_original": "English",
+    "language_translation": "",
+    "year": 2026,
+    "catalog_section": "Fiction",
+    "alt_titles": ["Letters From Tomorrow"],
+    "genres": ["Psychological thriller", "Science fiction"],
+    "tags": ["time loop", "moral dilemma"],
+    "fandoms": [],
+    "age_rating": "16+",
+    "status_label": "Completed",
+    "total_chapters": 24,
+    "release_note": "Complete edition",
+    "description": "Every evening, a letter arrives from tomorrow. The letters soon begin to contain instructions. Nothing here is rewritten by the compiler."
+  },
+  "verified_artifacts": [
+    {
+      "artifact_id": "approved_premise_1",
+      "artifact_hash": "58a4ae14c71f132e951b4f623fce26a2c6c4a03cc68486cfd86ff342d65e2173",
+      "fact_kind": "premise",
+      "fact_value": "The protagonist receives a message from tomorrow.",
+      "spoiler_level": 0,
+      "composition_groups": ["core_arc"],
+      "forms": [
+        {"surface_type": "clause", "text": "a message arrives from tomorrow"}
+      ]
+    }
+  ]
+}
