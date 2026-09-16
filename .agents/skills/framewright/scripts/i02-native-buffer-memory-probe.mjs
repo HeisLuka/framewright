@@ -8,6 +8,9 @@ import {createCanvas, Image, GlobalFonts} from '@napi-rs/canvas';
 import {VideoFrame} from '@napi-rs/webcodecs';
 
 const mode = process.env.MODE || 'image-data-frame';
+const label = process.env.LABEL || mode;
+const yieldEach = process.env.YIELD_EACH === '1';
+const gcEach = process.env.GC_EACH === '1';
 const allowed = new Set(['render-only','canvas-data-only','image-data-only','canvas-data-frame','image-data-frame']);
 if (!allowed.has(mode)) throw new Error(`unknown MODE=${mode}`);
 const htmlPath = path.resolve(process.env.HTML || 'examples/book-ad-systems/index-e18-for-i02.html');
@@ -33,6 +36,7 @@ function rssBytes() {
   return m ? Number(m[1]) * 1024 : process.memoryUsage().rss;
 }
 const mb = (n) => +(n / 1048576).toFixed(2);
+const yieldTurn = () => new Promise((resolve) => setImmediate(resolve));
 async function nodeContext() {
   const canvas = createCanvas(entry.width, entry.height);
   const document = {
@@ -78,19 +82,23 @@ for (let frame = 0; frame < total; frame += 1) {
     const vf = new VideoFrame(bytes, {format:'RGBA', codedWidth:canvas.width, codedHeight:canvas.height, timestamp:Math.trunc(frame * 1_000_000 / fps), duration:Math.trunc(1_000_000 / fps)});
     vf.close();
   }
+  if (gcEach) global.gc?.();
+  if (yieldEach) await yieldTurn();
   if (frame % 30 === 29 || frame === total - 1) {
     global.gc?.();
+    if (yieldEach) await yieldTurn();
     const rss = rssBytes(); peak = Math.max(peak, rss);
     checkpoints.push({frame, rssMiB:mb(rss)});
   } else peak = Math.max(peak, rssBytes());
 }
 global.gc?.();
+if (yieldEach) await yieldTurn();
 const end = rssBytes(); peak = Math.max(peak, end);
 const startMiB = checkpoints[0].rssMiB, endMiB = mb(end), growth = +(endMiB - startMiB).toFixed(2);
 const result = {
-  schema:'framewright-i02-native-buffer-memory-probe-v1', mode, fixture:entry.id, dimensions:`${entry.width}x${entry.height}`, frames:total, fps,
+  schema:'framewright-i02-native-buffer-memory-probe-v2', mode, label, yieldEach, gcEach, fixture:entry.id, dimensions:`${entry.width}x${entry.height}`, frames:total, fps,
   wallMs:+(performance.now()-t0).toFixed(2), touchedBytes, startRssMiB:startMiB, endRssMiB:endMiB, peakRssMiB:mb(peak),
   growthMiB:growth, growthMiBPerFrame:+(growth/total).toFixed(4), checkpoints,
 };
-await fsp.writeFile(path.join(outDir, `${mode}.json`), `${JSON.stringify(result,null,2)}\n`);
+await fsp.writeFile(path.join(outDir, `${label}.json`), `${JSON.stringify(result,null,2)}\n`);
 console.log(JSON.stringify(result));
