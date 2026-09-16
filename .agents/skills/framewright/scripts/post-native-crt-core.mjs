@@ -9,6 +9,10 @@ if (!fs.existsSync(binary)) {
 }
 
 const poolSize = Math.max(1, Math.min(32, Math.trunc(Number(process.env.CRT_PROCESSES) || 1)));
+let activeClients = 0;
+let maxActiveClients = 0;
+let queuedAcquires = 0;
+let maxQueuedAcquires = 0;
 
 const finite = (value, fallback) => {
   const number = Number(value);
@@ -149,7 +153,14 @@ const acquireWaiters = [];
 const acquire = () => {
   const client = available.shift();
   if (client) return Promise.resolve(client);
-  return new Promise((resolve) => acquireWaiters.push(resolve));
+  queuedAcquires += 1;
+  maxQueuedAcquires = Math.max(maxQueuedAcquires, queuedAcquires);
+  return new Promise((resolve) => {
+    acquireWaiters.push((resolvedClient) => {
+      queuedAcquires -= 1;
+      resolve(resolvedClient);
+    });
+  });
 };
 
 const release = (client) => {
@@ -160,9 +171,12 @@ const release = (client) => {
 
 export const processFrame = async (packet, context) => {
   const client = await acquire();
+  activeClients += 1;
+  maxActiveClients = Math.max(maxActiveClients, activeClients);
   try {
     return await client.process(packet, context);
   } finally {
+    activeClients -= 1;
     release(client);
   }
 };
@@ -171,7 +185,11 @@ export const close = async () => {
   await Promise.all(clients.map((client) => client.close()));
 };
 
-export const backendInfo = Object.freeze({ poolSize });
+export const backendInfo = Object.freeze({
+  poolSize,
+  get maxActiveClients() { return maxActiveClients; },
+  get maxQueuedAcquires() { return maxQueuedAcquires; },
+});
 
 process.once("exit", () => {
   for (const client of clients) client.kill();
