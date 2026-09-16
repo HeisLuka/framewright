@@ -19,7 +19,6 @@ const __i05BlockPlans=new Map(),__i05LabelPlans=new Map(),__i05TrackPlans=new Ma
 const __i05Stats={blockHits:0,blockMisses:0,labelHits:0,labelMisses:0,trackHits:0,trackMisses:0};
 
 function __i05Clone(v){return JSON.parse(JSON.stringify(v));}
-function __i05Finite(v,fallback){return Number.isFinite(v)?v:fallback;}
 function __i05Key(parts){return JSON.stringify(parts);}
 function __i05CaptureActive(){return typeof __c25Capture!=='undefined'&&__c25Capture===true;}
 function __i05AfterC25(o={}){return typeof __c25Opts==='function'?__c25Opts(o):{...o};}
@@ -52,14 +51,18 @@ textBlock=function(g,text,o={}){
   const n=__i05BlockOpts(o),key=__i05BlockKey(text,n),cached=__i05BlockPlans.get(key);
   if(cached){
     __i05Stats.blockHits++;
-    g.font=cached.font;g.textBaseline=cached.textBaseline;g.fillStyle=n.color||P.ink;g.textAlign=n.align||'left';
+    // Do not round-trip Canvas font state through g.font. Re-enter through the
+    // same canonical setter as the baseline; native canvas font getters are not
+    // a portable serialization format for raster-equivalent replay.
+    font(g,cached.size,n.weight||700);
+    g.fillStyle=n.color||P.ink;g.textAlign=n.align||'left';
     let y=n.y||0,x=n.x||0;if(n.centerBlock)y-=((cached.lines.length-1)*cached.lh)/2;
     for(const line of cached.lines){g.fillText(line,x,y);y+=cached.lh;}
     return{size:cached.size,lines:[...cached.lines],lh:cached.lh,height:cached.height,overflow:cached.overflow};
   }
   __i05Stats.blockMisses++;
   const b=__i05TextBlock(g,text,o);
-  __i05BlockPlans.set(key,__i05FreezePlan({kind:'block',key,text:String(text),request:{maxW:n.maxW??900,maxH:Number.isFinite(n.maxH)?n.maxH:null,maxLines:n.maxLines??99,size:n.size??88,min:n.min??24,weight:n.weight??700,lineHeight:n.lineHeight??1.02},size:b.size,lines:[...b.lines],lh:b.lh,height:b.height,overflow:!!b.overflow,font:g.font,textBaseline:g.textBaseline||'alphabetic'}));
+  __i05BlockPlans.set(key,__i05FreezePlan({kind:'block',key,text:String(text),request:{maxW:n.maxW??900,maxH:Number.isFinite(n.maxH)?n.maxH:null,maxLines:n.maxLines??99,size:n.size??88,min:n.min??24,weight:n.weight??700,lineHeight:n.lineHeight??1.02},size:b.size,lines:[...b.lines],lh:b.lh,height:b.height,overflow:!!b.overflow}));
   return b;
 };
 
@@ -68,11 +71,12 @@ label=function(g,text,x,y,o={}){
   const n=__i05LabelOpts(x,o),key=__i05LabelKey(text,n),cached=__i05LabelPlans.get(key);
   if(cached){
     __i05Stats.labelHits++;
-    g.font=cached.font;g.textBaseline=cached.textBaseline;g.fillStyle=n.color||P.ink;g.textAlign=n.align||'left';g.fillText(String(text),x,y);return cached.size;
+    font(g,cached.size,n.weight||700);
+    g.fillStyle=n.color||P.ink;g.textAlign=n.align||'left';g.fillText(String(text),x,y);return cached.size;
   }
   __i05Stats.labelMisses++;
   const size=__i05Label(g,text,x,y,o);
-  __i05LabelPlans.set(key,__i05FreezePlan({kind:'label',key,text:String(text),request:{maxW:n.maxW??null,size:n.size??28,min:n.min??16,weight:n.weight??700},size,font:g.font,textBaseline:g.textBaseline||'alphabetic'}));
+  __i05LabelPlans.set(key,__i05FreezePlan({kind:'label',key,text:String(text),request:{maxW:n.maxW??null,size:n.size??28,min:n.min??16,weight:n.weight??700},size}));
   return size;
 };
 
@@ -81,15 +85,17 @@ track=function(g,text,x,y,spacing,o={}){
   const n=__i05TrackOpts(o),sp=__i05TrackSpacing(spacing),key=__i05TrackKey(text,sp,n),cached=__i05TrackPlans.get(key);
   if(cached){
     __i05Stats.trackHits++;
-    g.font=cached.font;g.textBaseline=cached.textBaseline;g.fillStyle=n.color||P.ink;g.textAlign='left';let px=x,i=0;
+    font(g,n.size||24,n.weight||700);
+    g.fillStyle=n.color||P.ink;g.textAlign='left';let px=x,i=0;
     for(const ch of String(text)){g.fillText(ch,px,y);px+=cached.steps[i++];}
     return cached.width;
   }
   __i05Stats.trackMisses++;
   const width=__i05Track(g,text,x,y,spacing,o),steps=[];
-  // One-time shaping/advance capture. Subsequent frames replay these exact advances.
+  // One-time advance capture. Subsequent frames replay exact measured advances
+  // while still entering font state through the baseline font() helper.
   for(const ch of String(text))steps.push(g.measureText(ch).width+sp);
-  __i05TrackPlans.set(key,__i05FreezePlan({kind:'track',key,text:String(text),request:{size:n.size??24,weight:n.weight??700,spacing:sp},steps,width,font:g.font,textBaseline:g.textBaseline||'alphabetic'}));
+  __i05TrackPlans.set(key,__i05FreezePlan({kind:'track',key,text:String(text),request:{size:n.size??24,weight:n.weight??700,spacing:sp},steps,width}));
   return width;
 };
 
