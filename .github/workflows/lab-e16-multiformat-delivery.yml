@@ -13,20 +13,17 @@ on:
 
 jobs:
   multiformat:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20.20.2'
-          cache: npm
       - name: Install pinned worker dependencies
-        run: npm ci
+        run: npm install --no-save @napi-rs/canvas@1.0.9
       - name: Install FFmpeg + pinned fonts
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu-core
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
       - name: Syntax check
         run: |
           node --check .agents/skills/framewright/scripts/make-e16-source-fixtures.mjs
@@ -56,6 +53,7 @@ jobs:
         run: node .agents/skills/framewright/scripts/e16-review-sheets.mjs artifacts/e16/adaptation.json artifacts/e16/review
       - name: Upload artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: e16-multiformat-delivery
           path: |
