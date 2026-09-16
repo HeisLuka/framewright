@@ -13,16 +13,19 @@ if (!fs.existsSync(html)) { console.error(`no such file: ${html} (set HTML=path)
 fs.mkdirSync(dir, { recursive: true });
 const url = 'file://' + html + `?f=0&w=320&s=${seed}` + (process.env.AR ? `&ar=${process.env.AR}` : '');
 
-const b = await puppeteer.launch({ headless: true, protocolTimeout: 600000, args: ['--allow-file-access-from-files'] });
+const browserArgs = ['--allow-file-access-from-files'];
+if (process.env.CI || process.env.FRAMEWRIGHT_NO_SANDBOX) browserArgs.push('--no-sandbox', '--disable-setuid-sandbox');
+const b = await puppeteer.launch({ headless: true, protocolTimeout: 600000, args: browserArgs });
 const p0 = await b.newPage();
 await p0.goto(url, { waitUntil: 'load', timeout: 120000 });
 await p0.waitForFunction('window.__ready===true', { timeout: 120000 });
 const total = await p0.evaluate(() => window.RISO.total);
+const fps = await p0.evaluate(() => window.RISO.fps || 30);
 const plates = await p0.evaluate(() => window.RISO.plates);
 await p0.close();
 const START = +(process.env.START || 0), END = Math.min(total, +(process.env.END || total));
 const count = END - START;
-console.log(`frames ${total} (${(total / 30).toFixed(1)} s), rendering ${START}..${END - 1}, tabs ${tabs}, width ${width}, seed ${seed}`);
+console.log(`frames ${total} (${(total / fps).toFixed(1)} s), rendering ${START}..${END - 1}, tabs ${tabs}, width ${width}, seed ${seed}`);
 console.log(plates.map(p => `${p.name}:${p.len}`).join('  '));
 
 let next = START, done = 0, failed = 0; const t0 = Date.now();
