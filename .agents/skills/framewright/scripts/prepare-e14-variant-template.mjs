@@ -75,8 +75,8 @@ if(ACTIVE_VARIANT==='cover-first'){
   __variantSemantic('hook',90,0,90,2);
   __variantSemantic('cta',120,2,120,3);
 }else if(ACTIVE_VARIANT==='title-first'){
-  __variantTitlePlate(90,1);
-  __variantSemantic('book',150,1,150,2);
+  __variantTitlePlate(150,1);
+  __variantSemantic('hook',90,0,90,2);
   __variantSemantic('cta',120,2,120,3);
 }else if(ACTIVE_VARIANT==='hook-title'){
   __variantSemantic('hook',90,0,90,1);
