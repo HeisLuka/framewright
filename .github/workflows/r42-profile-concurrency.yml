@@ -1,0 +1,74 @@
+name: R42 Delivery Profile Concurrency Matrix
+
+on:
+  pull_request:
+    paths:
+      - '.agents/skills/framewright/scripts/r42-profile-concurrency.mjs'
+      - '.github/workflows/r42-profile-concurrency.yml'
+      - 'docs/r42-profile-concurrency.md'
+  workflow_dispatch:
+
+jobs:
+  profile-concurrency:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r42-profile-concurrency.mjs
+      - name: Prepare exact C18 responsive fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r42.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r42.html examples/book-ad-systems/index-e17-for-r42.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r42.html examples/book-ad-systems/index-e17-e14-for-r42.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r42.html examples/book-ad-systems/index-e18-for-r42.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r42
+      - name: Build canonical AAC fixture once
+        run: |
+          mkdir -p artifacts/r42
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i 'sine=frequency=110:sample_rate=48000:duration=12' \
+            -filter:a 'volume=0.06' -t 12 -c:a aac -b:a 192k \
+            -movflags +faststart artifacts/r42/track.m4a
+      - name: Run profile concurrency matrix
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r42.html
+          MANIFEST: examples/book-ad-systems/generated-r42/manifest.json
+          OUT_DIR: artifacts/r42
+          AUDIO: artifacts/r42/track.m4a
+          REPORT: artifacts/r42/report.json
+          JOBS: 12
+          CONCURRENCIES: 1,2,3,4
+          BITRATE: 3000000
+        run: node .agents/skills/framewright/scripts/r42-profile-concurrency.mjs
+      - name: Validate matrix
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r42/report.json','utf8'));
+          if(r.schema!=='nightwill-r42-profile-concurrency-v2') throw new Error('wrong schema');
+          if(r.results.length!==12) throw new Error(`expected 12 scenarios, got ${r.results.length}`);
+          for(const x of r.results){
+            if(x.jobs!==12) throw new Error(`incomplete ${x.profile} c${x.concurrency}`);
+            if(x.failures.length || !x.preflightParity) throw new Error(`correctness failed ${x.profile} c${x.concurrency}`);
+          }
+          console.log(JSON.stringify(r.decisions,null,2));
+          NODE
+      - name: Show result
+        run: cat artifacts/r42/summary.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r42-profile-concurrency
+          path: |
+            artifacts/r42/report.json
+            artifacts/r42/summary.md
+            artifacts/r42/track.m4a
+          retention-days: 14
