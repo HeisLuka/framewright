@@ -101,17 +101,17 @@ const h264Path=out.replace(/\.mp4$/i,'')+'.h264';fs.mkdirSync(path.dirname(out),
 const muxT0=performance.now();
 const fps=result.meta.fps;
 const setts=`setts=time_base=1/${fps}:pts=N:dts=N:duration=1`;
-const mux=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-y','-r',String(fps),'-i',h264Path,'-c:v','copy','-bsf:v',setts,'-video_track_timescale',String(Math.round(fps*1000)),'-movflags','+faststart',out],{encoding:'utf8'});
+const mux=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-y','-r',String(fps),'-i',h264Path,'-c:v','copy','-bsf:v',setts,'-video_track_timescale',String(Math.round(fps)),'-movflags','+faststart',out],{encoding:'utf8'});
 const muxMs=performance.now()-muxT0;
 if(mux.status!==0){console.error(mux.stderr||`ffmpeg exit ${mux.status}`);process.exit(mux.status||1);}
 const probe=spawnSync('ffprobe',['-v','error','-show_entries','format=duration,size','-show_entries','stream=codec_name,profile,width,height,nb_frames,avg_frame_rate,r_frame_rate,time_base','-of','json',out],{encoding:'utf8'});
 let ffprobe=null;try{ffprobe=JSON.parse(probe.stdout);}catch{ffprobe={raw:probe.stdout,stderr:probe.stderr};}
 const report={
-  schema:'framewright-webcodecs-render-v2',createdAt:new Date().toISOString(),
+  schema:'framewright-webcodecs-render-v3',createdAt:new Date().toISOString(),
   config:{html,payloadPath,seed,width,bitrate},
   startup:{chromeLaunchMs:+chromeLaunchMs.toFixed(3),pageLoadMs:+pageLoadMs.toFixed(3)},
   browser:result.meta,
-  node:{evaluateWallMs:+evaluateWallMs.toFixed(3),finalCdpTransferApproxMs:+Math.max(0,evaluateWallMs-result.meta.browserWallMs-result.meta.base64Ms).toFixed(3),base64DecodeMs:+base64DecodeMs.toFixed(3),muxMs:+muxMs.toFixed(3),timestampNormalization:'setts 1/fps, pts=dts=N, duration=1'},
+  node:{evaluateWallMs:+evaluateWallMs.toFixed(3),finalCdpTransferApproxMs:+Math.max(0,evaluateWallMs-result.meta.browserWallMs-result.meta.base64Ms).toFixed(3),base64DecodeMs:+base64DecodeMs.toFixed(3),muxMs:+muxMs.toFixed(3),timestampNormalization:`setts time_base=1/${fps}, pts=dts=N, duration=1; MP4 track timescale=${fps}`},
   output:{h264Bytes:h264.byteLength,mp4Bytes:fs.statSync(out).size,ffprobe},
   totalRunMs:+(performance.now()-runT0).toFixed(3)
 };
