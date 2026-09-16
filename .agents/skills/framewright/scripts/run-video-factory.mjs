@@ -7,7 +7,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { compileDeliveryPackage, serializeDeliveryPackage } from '../../../../contracts/c19-delivery-package-v1.mjs';
-import { canonicalJson, sha256Canonical } from '../../../../contracts/factory-identity-v1.mjs';
+import { canonicalJson } from '../../../../contracts/factory-identity-v1.mjs';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, '../../../..');
@@ -70,16 +70,16 @@ async function verifyPhysicalBinding(requestRow, compiledCreative, binding) {
   if (!fs.existsSync(html)) throw new Error(`${requestRow.selection_id}: missing HTML ${html}`);
   if (!fs.existsSync(payloadPath)) throw new Error(`${requestRow.selection_id}: missing payload ${payloadPath}`);
 
-  const payload = JSON.parse(await fsp.readFile(payloadPath, 'utf8'));
-  const payloadSha = sha256Canonical(payload);
+  const payloadSha = await sha256File(payloadPath);
   const templateSha = await sha256File(html);
   if (payloadSha !== compiledCreative.payload_sha256) {
-    throw new Error(`${requestRow.selection_id}: physical payload canonical SHA does not match CreativeSpec payload_sha256`);
+    throw new Error(`${requestRow.selection_id}: physical payload SHA does not match CreativeSpec payload_sha256`);
   }
   if (templateSha !== compiledCreative.template?.sha256) {
     throw new Error(`${requestRow.selection_id}: physical HTML SHA does not match CreativeSpec template.sha256`);
   }
 
+  const payload = JSON.parse(await fsp.readFile(payloadPath, 'utf8'));
   if (String(payload.book_id) !== String(compiledCreative.book_id)) {
     throw new Error(`${requestRow.selection_id}: physical payload book_id does not match CreativeSpec`);
   }
