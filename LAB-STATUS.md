@@ -12,7 +12,7 @@ This branch is the persistent integration point for the Framewright research wor
 
 ## Canonical chain
 
-The useful canonical research path is now E01-E13:
+The useful canonical research path is now E01-E14:
 
 1. E01 stage profiler.
 2. E02 payload-driven Book Ad v0 workload.
@@ -27,6 +27,7 @@ The useful canonical research path is now E01-E13:
 11. E11 three production-oriented visual systems across ten stress books.
 12. E12 cheap element-level motion grammar and pacing.
 13. E13 deterministic creative router and ranked candidate generation.
+14. E14 deterministic within-system structural variant factory.
 
 The old stacked PRs for completed stages are archival and do not need to remain open.
 
@@ -40,20 +41,21 @@ The old stacked PRs for completed stages are archival and do not need to remain 
 - E11: all 30 videos (3 systems x 10 books) passed layout QA. Swiss=`629.48/h`, Newspaper=`741.87/h`, Paper=`627.12/h`; the visual systems are materially different while remaining in the same cheap browserless cost class. Result: `LAB-E11-VISUAL-SYSTEMS-RESULTS.md`.
 - E12: 60 interleaved baseline/active videos proved that cheap element-level motion barely changes render cost. Active throughput ratios were Swiss=`0.992x`, Newspaper=`0.977x`, Paper=`0.988x`; hold-window activity increased `12.03x`, `1.843x`, `2.975x` respectively, with zero layout warnings. Result: `LAB-E12-MOTION-GRAMMAR-RESULTS.md`.
 - E13: 10 books x 3 ranked systems = 30 videos, zero layout warnings. Every primary route strictly outranked secondary; mean pairwise candidate-frame difference=`0.111669`, minimum per-book pairwise difference=`0.075348` against a `0.03` floor. Manual review confirms primary/secondary/exploration are real composition alternatives, not palette swaps. The router is an auditable initial prior, not a claim about CTR/CPA. Result: `LAB-E13-CREATIVE-ROUTER-RESULTS.md`.
+- E14: 10 routed-primary books x 4 same-style/same-seed dramaturgical variants = 40 videos, zero layout warnings. The first version correctly failed the diversity floor (`min=0.012879`), so `title-first` was redesigned rather than lowering the threshold. Canonical v2 passes with mean within-system timeline diff=`0.057161`, minimum=`0.025185` against `0.04 / 0.02` gates. Canonical run `35117790919`: `686.59/h`, p95 `5.718 s`, peak RSS `722.8 MiB` on AMD EPYC 9V74. Result: `LAB-E14-VARIANT-FACTORY-RESULTS.md`.
 
 ## Current experiment
 
-PR #22 / E13 (`lab/e13-creative-router`) is complete after canonical run `35113724843` and is ready to consolidate into `lab/framewright-research`.
+PR #23 / E14 (`lab/e14-variant-factory`) is complete after canonical run `35117790919` and is ready to consolidate into `lab/framewright-research`.
 
-Product conclusion from E13:
+Product conclusion from E14:
 
-- deterministic metadata/rules are sufficient to create a useful candidate set without AI in the render path;
-- route reasons stay inspectable and versionable;
-- all three candidates per book remain visually distinct and pass layout QA;
-- the ranking weights are only starting priors and must eventually be informed by real campaign outcomes;
-- the useful next question is within-system creative variation, not more renderer or routing micro-tuning.
+- four useful structural variants can be created inside one routed visual system without AI, new assets or RNG differences;
+- same-style/same-seed diversity proves that the variation comes from dramaturgy, not random decoration;
+- common CTA convergence near the end is intentional and compatible with meaningful diversity earlier in the video;
+- diversity QA is useful: v1 caught a fake variant whose only meaningful difference was the opening;
+- variant quality/performance must eventually be decided by real campaign outcomes rather than a synthetic diversity score.
 
-After E13 merge, E14 should build a deterministic variant factory for the routed primary system: structurally different ad sequences (for example hook-first, cover-first, title-first and pacing/emphasis variants) from the same BookPayload, with diversity, layout and cost gates.
+After E14 merge, the next product layer should be a campaign-ready creative package: stable creative IDs, provenance, route/variant semantics, payload/template hashes, fingerprints and duplicate suppression. The factory should select a bounded set of creatives rather than emit an uncontrolled Cartesian product.
 
 ## Current architectural direction
 
@@ -65,4 +67,4 @@ Use separate visual cost tiers:
 - RICH: materialized-frame cost must be benchmarked; avoid assuming scene-function timing captures deferred raster work;
 - HERO/CRT: optimize full-frame post with GPU/native/shader techniques only if ad-performance lift justifies the cost.
 
-The product focus is now higher-level creative systems: visual grammar, motion grammar, pacing, category fit, QA, routing and variation. A full Rust/C++ rewrite is not a current default direction. Native/GPU work should target measured heavy post-processing bottlenecks, not the scene DSL.
+The product focus is now higher-level creative systems: visual grammar, motion grammar, pacing, category fit, QA, routing, variation and campaign identity/provenance. A full Rust/C++ rewrite is not a current default direction. Native/GPU work should target measured heavy post-processing bottlenecks, not the scene DSL.
