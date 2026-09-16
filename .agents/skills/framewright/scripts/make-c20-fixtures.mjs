@@ -28,7 +28,14 @@ const crcTable=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n
 function crc32(buf){let c=0xffffffff;for(const b of buf)c=crcTable[(c^b)&255]^(c>>>8);return(c^0xffffffff)>>>0;}
 function chunk(type,data=Buffer.alloc(0)){const tb=Buffer.from(type,'ascii'),len=Buffer.alloc(4),crc=Buffer.alloc(4);len.writeUInt32BE(data.length);crc.writeUInt32BE(crc32(Buffer.concat([tb,data])));return Buffer.concat([len,tb,data,crc]);}
 function rgb(h){h=h.slice(1);return[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
+function hex(c){return'#'+c.map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('');}
 function mix(a,b,t){return a.map((v,i)=>Math.round(v+(b[i]-v)*t));}
+function fixturePalette(base,variant,index){
+  const c=base.map(rgb);if(variant===0)return base;
+  const warm=[255,96+((index*17)%96),48],cool=[48,112+((index*13)%96),255];
+  if(variant===1)return c.map((x,i)=>hex(mix(x,i===2?warm:c[(i+1)%c.length],i===2?.24:.12)));
+  return c.map((x,i)=>hex(mix(x,i===1?cool:c[(i+c.length-1)%c.length],i===1?.22:.16)));
+}
 function makeCover(file,palette,index,variant){
   const W=600,H=900,[c0,c1,c2,c3]=palette.map(rgb),raw=Buffer.alloc((W*3+1)*H);let seed=(index+1)*2654435761+variant*2246822519;
   const rand=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
@@ -55,8 +62,8 @@ function makeCover(file,palette,index,variant){
 const manifest={schema:'framewright-c20-fixtures-v1',fixtureCount:36,items:[]};
 let seq=0;
 for(let p=0;p<basePalettes.length;p++)for(let v=0;v<3;v++){
-  const n=String(++seq).padStart(2,'0'),bookId=`cover-${n}`,style=styles[(seq-1)%3],cover=`cover-${n}.png`,seed=200+seq;
-  makeCover(path.join(outDir,cover),basePalettes[p],p,v);
+  const n=String(++seq).padStart(2,'0'),bookId=`cover-${n}`,style=styles[(seq-1)%3],cover=`cover-${n}.png`,seed=200+seq,palette=fixturePalette(basePalettes[p],v,p);
+  makeCover(path.join(outDir,cover),palette,p,v);
   const common={book_id:bookId,title:`${titles[p]}${v===0?'':v===1?' — второе издание':' / special'}`,author:['Мария Ветрова','Noah Bell','Алексей Северин'][v],hook:hooks[(p+v)%hooks.length],cta:['Открыть книгу','Читать сейчас','Read now'][v],eyebrow:['НОВАЯ ИСТОРИЯ','РЕКОМЕНДАЦИЯ','FEATURED'][v],brand:'NEWBOO',cover_url:`./generated-c20/${cover}`,visual_system:style,creative_variant:'hook-first',delivery_profile:'vertical',...generic};
   for(const mode of ['generic','cover']){
     const payload={...common,art_direction_mode:mode},payloadFile=`payload-${n}-${mode}.json`;fs.writeFileSync(path.join(outDir,payloadFile),JSON.stringify(payload,null,2));
