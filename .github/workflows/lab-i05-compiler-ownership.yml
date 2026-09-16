@@ -1,0 +1,37 @@
+name: Lab I05 Compiler Ownership Scout
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/i05-compiler-ownership-scout.mjs'
+      - 'examples/book-ad-systems/platform-ui-profiles.v1.json'
+      - 'docs/i05-compiler-ownership-scout.md'
+      - '.github/workflows/lab-i05-compiler-ownership.yml'
+  workflow_dispatch:
+
+jobs:
+  ownership:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/i05-compiler-ownership-scout.mjs
+      - name: Run ownership scout
+        run: |
+          node .agents/skills/framewright/scripts/i05-compiler-ownership-scout.mjs \
+            examples/book-ad-systems/platform-ui-profiles.v1.json \
+            artifacts/i05/compiler-ownership.json
+      - name: Print compact result
+        run: |
+          node -e "const r=require('./artifacts/i05/compiler-ownership.json'); console.log(JSON.stringify({counts:r.counts,invariants:r.invariants},null,2))"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i05-compiler-ownership
+          path: artifacts/i05/
+          retention-days: 14
