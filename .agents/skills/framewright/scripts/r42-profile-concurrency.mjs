@@ -58,13 +58,53 @@ async function encode(page,id,e,seed){uploads.delete(id);const r=await page.eval
 async function finish(id,x){const h=path.join(outDir,`${id}.h264`),m=path.join(outDir,`${id}.mp4`);await fsp.writeFile(h,x.h);const t=performance.now();await run('ffmpeg',['-hide_banner','-loglevel','error','-y','-fflags','+genpts','-r',String(x.fps),'-i',h,'-i',audioPath,'-map','0:v:0','-map','1:a:0','-c:v','copy','-c:a','copy','-t',String(x.total/x.fps),'-movflags','+faststart',m]);const muxMs=performance.now()-t;await fsp.rm(h,{force:true});await fsp.rm(m,{force:true});return muxMs;}
 async function buildRefs(){const b=await puppeteer.launch({headless:true,protocolTimeout:600000,args:['--no-sandbox','--disable-setuid-sandbox']});const refs={};try{for(const profile of profiles){refs[profile]=[];for(let i=0;i<3;i++){const e=entries[profile][i],p=await b.newPage();await navigate(p,profile,i,e.seed);refs[profile].push(hashRows(await visualHashes(p,e.seed)));await p.close();}}return refs;}finally{await b.close();}}
 function quantile(xs,p){const a=[...xs].sort((x,y)=>x-y);return a[Math.min(a.length-1,Math.floor((a.length-1)*p))]||0;}
-async function scenario(profile,concurrency,refs){const browser=await puppeteer.launch({headless:true,protocolTimeout:600000,args:['--no-sandbox','--disable-setuid-sandbox']}),rows=[],failures=[];let peak=0;const pages=await Promise.all(Array.from({length:concurrency},()=>browser.newPage()));
-  // warm page objects without encoding; steady-state wall begins after this.
+async function scenario(profile,concurrency,refs){
+  const browser=await puppeteer.launch({headless:true,protocolTimeout:600000,args:['--no-sandbox','--disable-setuid-sandbox']}),rows=[],failures=[];let peak=0;
+  const pages=await Promise.all(Array.from({length:concurrency},()=>browser.newPage()));
+  let preflightParity=true;
+  // Correctness is deliberately outside the timed production workload. Each worker
+  // visits the three heterogeneous fixtures and proves sampled Canvas parity once.
+  for(let w=0;w<pages.length;w++){
+    for(let idx=0;idx<3;idx++){
+      const e=entries[profile][idx];
+      await navigate(pages[w],profile,idx,e.seed);
+      const got=hashRows(await visualHashes(pages[w],e.seed));
+      const parity=got.every((x,k)=>x.sha256===refs[profile][idx][k].sha256);
+      preflightParity=preflightParity&&parity;
+      if(!parity) throw new Error(`preflight visual parity failed ${profile}/worker${w}/${e.bookId}`);
+    }
+  }
+  // Leave each worker warm on a real document before steady-state timing starts.
   await Promise.all(pages.map((p,w)=>navigate(p,profile,w%3,entries[profile][w%3].seed)));
   const c0=cpuUsec(),t0=performance.now(),timer=setInterval(()=>{peak=Math.max(peak,processTreeRss())},40);
-  try{await Promise.all(pages.map(async(p,w)=>{for(let j=w;j<jobsN;j+=concurrency){const idx=j%3,e=entries[profile][idx],seed=e.seed,start=performance.now();try{const loadMs=await navigate(p,profile,idx,seed);const got=hashRows(await visualHashes(p,seed)),parity=got.every((x,k)=>x.sha256===refs[profile][idx][k].sha256);if(!parity)throw new Error(`visual parity failed ${profile}/${e.bookId}`);const enc=await encode(p,`${profile}-c${concurrency}-${j}`,e,seed);const muxMs=await finish(`${profile}-c${concurrency}-${j}`,enc);rows.push({j,bookId:e.bookId,loadMs,encodeMs:enc.encodeMs,drawMs:enc.drawMs,uploadMs:enc.uploadMs,muxMs,wallMs:performance.now()-start,parity,h264Bytes:enc.bytes});}catch(err){failures.push({j,bookId:e.bookId,error:String(err?.stack||err)});}}}));}
-  finally{clearInterval(timer);for(const p of pages)await p.close().catch(()=>{});await browser.close();}
-  const scenarioWallMs=performance.now()-t0,cpuMs=(cpuUsec()-c0)/1000;return{profile,concurrency,jobs:rows.length,failures,scenarioWallMs:+scenarioWallMs.toFixed(2),videosPerHour:+(rows.length*3600000/scenarioWallMs).toFixed(2),p50JobMs:+quantile(rows.map(r=>r.wallMs),.5).toFixed(2),p95JobMs:+quantile(rows.map(r=>r.wallMs),.95).toFixed(2),cpuMsPerVideo:+(cpuMs/Math.max(1,rows.length)).toFixed(2),peakRssBytes:peak,allParity:rows.every(r=>r.parity),rows};}
-try{const refs=await buildRefs(),results=[];for(const profile of profiles){for(const c of concurrencies){console.log(`R42 ${profile} c${c}`);const r=await scenario(profile,c,refs);results.push(r);console.log(JSON.stringify({profile,c,vph:r.videosPerHour,p50:r.p50JobMs,p95:r.p95JobMs,cpu:r.cpuMsPerVideo,rss:r.peakRssBytes,failures:r.failures.length},null,2));}}
-  const decisions={};for(const profile of profiles){const rows=results.filter(r=>r.profile===profile),base=rows.find(r=>r.concurrency===2);if(!base)throw new Error(`c2 baseline missing ${profile}`);const eligible=rows.filter(r=>{const gain=r.videosPerHour/base.videosPerHour-1,p95=r.p95JobMs/base.p95JobMs-1,rss=r.peakRssBytes/base.peakRssBytes-1;return r.concurrency!==2&&gain>=.10&&p95<=.20&&rss<=.30&&!r.failures.length&&r.allParity;}).sort((a,b)=>b.videosPerHour-a.videosPerHour);const best=eligible[0]||base;decisions[profile]={baselineConcurrency:2,selectedConcurrency:best.concurrency,selectedVideosPerHour:best.videosPerHour,gainVsC2:+(best.videosPerHour/base.videosPerHour-1).toFixed(4),p95DeltaVsC2:+(best.p95JobMs/base.p95JobMs-1).toFixed(4),rssDeltaVsC2:+(best.peakRssBytes/base.peakRssBytes-1).toFixed(4),profileSpecificPromoted:best.concurrency!==2};}
-  const report={schema:'nightwill-r42-profile-concurrency-v1',fixtures:Object.fromEntries(profiles.map(p=>[p,entries[p].map(e=>({id:e.id,bookId:e.bookId,style:e.style,width:e.width,height:e.height,seed:e.seed}))])),config:{jobsPerScenario:jobsN,concurrencies,bitrate,queueLimit,audio:'cached AAC stream-copy'},results,decisions};await fsp.writeFile(reportPath,JSON.stringify(report,null,2)+'\n');const md=['# R42 delivery-profile concurrency matrix','',...profiles.map(p=>{const d=decisions[p];return `- ${p}: selected c${d.selectedConcurrency}; ${d.selectedVideosPerHour} videos/h; ${(d.gainVsC2*100).toFixed(1)}% vs c2; ${d.profileSpecificPromoted?'PROMOTE':'keep global c2'}`;}),''];await fsp.writeFile(path.join(outDir,'summary.md'),md.join('\n'));console.log(md.join('\n'));}finally{await new Promise(ok=>server.close(ok));}
+  try{
+    await Promise.all(pages.map(async(p,w)=>{
+      for(let j=w;j<jobsN;j+=concurrency){
+        const idx=j%3,e=entries[profile][idx],seed=e.seed,start=performance.now();
+        try{
+          const loadMs=await navigate(p,profile,idx,seed);
+          const enc=await encode(p,`${profile}-c${concurrency}-${j}`,e,seed);
+          const muxMs=await finish(`${profile}-c${concurrency}-${j}`,enc);
+          rows.push({j,bookId:e.bookId,loadMs,encodeMs:enc.encodeMs,drawMs:enc.drawMs,uploadMs:enc.uploadMs,muxMs,wallMs:performance.now()-start,h264Bytes:enc.bytes});
+        }catch(err){failures.push({j,bookId:e.bookId,error:String(err?.stack||err)});}
+      }
+    }));
+  }finally{clearInterval(timer);for(const p of pages)await p.close().catch(()=>{});await browser.close();}
+  const scenarioWallMs=performance.now()-t0,cpuMs=(cpuUsec()-c0)/1000;
+  return{profile,concurrency,jobs:rows.length,failures,scenarioWallMs:+scenarioWallMs.toFixed(2),videosPerHour:+(rows.length*3600000/scenarioWallMs).toFixed(2),p50JobMs:+quantile(rows.map(r=>r.wallMs),.5).toFixed(2),p95JobMs:+quantile(rows.map(r=>r.wallMs),.95).toFixed(2),cpuMsPerVideo:+(cpuMs/Math.max(1,rows.length)).toFixed(2),peakRssBytes:peak,preflightParity,rows};
+}
+try{
+  const refs=await buildRefs(),results=[];
+  for(const profile of profiles){for(const c of concurrencies){console.log(`R42 clean ${profile} c${c}`);const r=await scenario(profile,c,refs);results.push(r);console.log(JSON.stringify({profile,c,vph:r.videosPerHour,p50:r.p50JobMs,p95:r.p95JobMs,cpu:r.cpuMsPerVideo,rss:r.peakRssBytes,failures:r.failures.length,preflightParity:r.preflightParity},null,2));}}
+  const decisions={};
+  for(const profile of profiles){
+    const rows=results.filter(r=>r.profile===profile),base=rows.find(r=>r.concurrency===2);if(!base)throw new Error(`c2 baseline missing ${profile}`);
+    const eligible=rows.filter(r=>{const gain=r.videosPerHour/base.videosPerHour-1,p95=r.p95JobMs/base.p95JobMs-1,rss=r.peakRssBytes/base.peakRssBytes-1;return r.concurrency!==2&&gain>=.10&&p95<=.20&&rss<=.30&&!r.failures.length&&r.preflightParity;}).sort((a,b)=>b.videosPerHour-a.videosPerHour);
+    const best=eligible[0]||base;
+    decisions[profile]={baselineConcurrency:2,selectedConcurrency:best.concurrency,selectedVideosPerHour:best.videosPerHour,gainVsC2:+(best.videosPerHour/base.videosPerHour-1).toFixed(4),p95DeltaVsC2:+(best.p95JobMs/base.p95JobMs-1).toFixed(4),rssDeltaVsC2:+(best.peakRssBytes/base.peakRssBytes-1).toFixed(4),profileSpecificPromoted:best.concurrency!==2};
+  }
+  const report={schema:'nightwill-r42-profile-concurrency-v2',method:'untimed sampled parity preflight; timed production path is navigation -> encode/upload -> cached AAC stream-copy mux',fixtures:Object.fromEntries(profiles.map(p=>[p,entries[p].map(e=>({id:e.id,bookId:e.bookId,style:e.style,width:e.width,height:e.height,seed:e.seed}))])),config:{jobsPerScenario:jobsN,concurrencies,bitrate,queueLimit,audio:'cached AAC stream-copy'},results,decisions};
+  await fsp.writeFile(reportPath,JSON.stringify(report,null,2)+'\n');
+  const md=['# R42 delivery-profile concurrency matrix — clean timing','',...profiles.map(p=>{const d=decisions[p];return `- ${p}: selected c${d.selectedConcurrency}; ${d.selectedVideosPerHour} videos/h; ${(d.gainVsC2*100).toFixed(1)}% vs c2; ${d.profileSpecificPromoted?'PROMOTE':'keep global c2'}`;}),''];
+  await fsp.writeFile(path.join(outDir,'summary.md'),md.join('\n'));console.log(md.join('\n'));
+}finally{await new Promise(ok=>server.close(ok));}
