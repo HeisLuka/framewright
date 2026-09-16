@@ -24,7 +24,6 @@ function isObject(value){return Boolean(value)&&typeof value==='object'&&!Array.
 function hasOwn(value,key){return Object.prototype.hasOwnProperty.call(value,key);}
 function add(errors,code,path,message){errors.push({code,path,message});}
 function sortErrors(errors){return errors.sort((a,b)=>a.path.localeCompare(b.path)||a.code.localeCompare(b.code)||a.message.localeCompare(b.message));}
-function string(value){return typeof value==='string'?value:'';}
 function requireString(errors,value,path){if(typeof value!=='string'||!value.length)add(errors,'INVALID_STRING',path,'expected a non-empty string');}
 function requireInteger(errors,value,path,{min=Number.MIN_SAFE_INTEGER}={}){if(!Number.isInteger(value)||value<min)add(errors,'INVALID_INTEGER',path,`expected an integer >= ${min}`);}
 function unique(values){return new Set(values).size===values.length;}
@@ -180,6 +179,19 @@ export class ExternalCreativeDraftValidationError extends Error{
   constructor(report){super(`ExternalCreativeDraft rejected with ${report.errors.length} error(s)`);this.name='ExternalCreativeDraftValidationError';this.report=report;}
 }
 
+function normalizeCopyBlock(block){return {text:block.text,supporting_fact_ids:[...block.supporting_fact_ids].sort()};}
+function normalizeNarrative(narrative){
+  return {
+    angle_type:narrative.angle_type,
+    hook:normalizeCopyBlock(narrative.hook),
+    ...(narrative.tension?{tension:normalizeCopyBlock(narrative.tension)}:{}),
+    ...(narrative.payoff?{payoff:normalizeCopyBlock(narrative.payoff)}:{}),
+    reveal_timing:narrative.reveal_timing,
+    cta_treatment:narrative.cta_treatment,
+    ...(narrative.cta_id?{cta_id:narrative.cta_id}:{}),
+  };
+}
+
 export function acceptExternalCreativeDraft(pack,draft){
   const report=validateExternalCreativeDraft(pack,draft);
   if(!report.valid)throw new ExternalCreativeDraftValidationError(report);
@@ -190,11 +202,33 @@ export function acceptExternalCreativeDraft(pack,draft){
     context_hash:pack.context_hash,
     account_id:draft.account_id,
     book_id:draft.book_id,
-    narrative:clone(draft.narrative),
+    narrative:normalizeNarrative(draft.narrative),
     presentation:clone(draft.presentation),
     selected_asset_ids:[...draft.selected_asset_ids],
   };
   accepted.draft_id=computeExternalDraftId(accepted);
+  return accepted;
+}
+
+function acceptedToRaw(accepted){
+  return {
+    schema:EXTERNAL_DRAFT_SCHEMA,
+    context_pack_id:accepted.context_pack_id,
+    context_hash:accepted.context_hash,
+    account_id:accepted.account_id,
+    book_id:accepted.book_id,
+    narrative:clone(accepted.narrative),
+    presentation:clone(accepted.presentation),
+    selected_asset_ids:[...accepted.selected_asset_ids],
+  };
+}
+
+function assertAcceptedExternalDraft(pack,accepted){
+  if(!accepted||accepted.schema!==ACCEPTED_EXTERNAL_DRAFT_SCHEMA)throw new Error('canonical accepted external draft required');
+  if(accepted.trust_mode!==C33_TRUST_MODE)throw new Error('accepted external draft trust_mode drift');
+  if(computeExternalDraftId(accepted)!==accepted.draft_id)throw new Error('accepted external draft identity drift');
+  const report=validateExternalCreativeDraft(pack,acceptedToRaw(accepted));
+  if(!report.valid)throw new ExternalCreativeDraftValidationError(report);
   return accepted;
 }
 
@@ -226,9 +260,7 @@ function programIdentityInput(program){const {program_id:_programId,...rest}=pro
 export function computeReviewRequiredProgramId(program){return `nbxprog1_${sha256Canonical(programIdentityInput(program))}`;}
 
 export function compileExternalCreativeDraft(pack,draft){
-  const accepted=draft?.schema===ACCEPTED_EXTERNAL_DRAFT_SCHEMA?clone(draft):acceptExternalCreativeDraft(pack,draft);
-  if(accepted.schema!==ACCEPTED_EXTERNAL_DRAFT_SCHEMA||computeExternalDraftId(accepted)!==accepted.draft_id)throw new Error('accepted external draft identity drift');
-  if(accepted.context_pack_id!==pack.context_pack_id||accepted.context_hash!==pack.context_hash)throw new Error('accepted external draft context drift');
+  const accepted=draft?.schema===ACCEPTED_EXTERNAL_DRAFT_SCHEMA?assertAcceptedExternalDraft(pack,clone(draft)):acceptExternalCreativeDraft(pack,draft);
   const ids=indexPack(pack),scoped=ids.books.get(accepted.book_id);
   if(!scoped)throw new Error('accepted external draft book is no longer in ContextPack');
   const n=accepted.narrative;
@@ -252,8 +284,9 @@ export function compileExternalCreativeDraft(pack,draft){
     seed:accepted.presentation.seed,
   });
   const assets=accepted.selected_asset_ids.map(id=>{
-    const asset=ids.assets.get(id)?.asset;
-    if(!asset)throw new Error(`accepted external draft asset ${id} missing from ContextPack`);
+    const found=ids.assets.get(id);
+    if(!found||found.book_id!==accepted.book_id)throw new Error(`accepted external draft asset ${id} is not scoped to selected book`);
+    const asset=found.asset;
     return {asset_id:asset.asset_id,role:asset.role,sha256:asset.sha256,...(asset.media_type?{media_type:asset.media_type}:{})};
   });
   const manifest=copyManifest(accepted);
@@ -278,7 +311,7 @@ export function compileExternalCreativeDraft(pack,draft){
 function approvalIdentityInput(approval){const {approval_id:_approvalId,...rest}=approval||{};return rest;}
 export function computeCreativeApprovalId(approval){return `nba1_${sha256Canonical(approvalIdentityInput(approval))}`;}
 
-export function createCreativeApproval({accepted_draft,program,decision,issuer_id,review_policy_version=C33_REVIEW_POLICY_VERSION}){
+export function createServerCreativeApproval({accepted_draft,program,decision,issuer_id,review_policy_version=C33_REVIEW_POLICY_VERSION}){
   if(!accepted_draft||accepted_draft.schema!==ACCEPTED_EXTERNAL_DRAFT_SCHEMA||computeExternalDraftId(accepted_draft)!==accepted_draft.draft_id)throw new Error('canonical accepted_draft required');
   if(!program||program.schema!==REVIEW_REQUIRED_PROGRAM_SCHEMA||computeReviewRequiredProgramId(program)!==program.program_id)throw new Error('canonical review-required program required');
   if(program.draft_id!==accepted_draft.draft_id)throw new Error('program/draft mismatch');
@@ -287,6 +320,7 @@ export function createCreativeApproval({accepted_draft,program,decision,issuer_i
   if(typeof review_policy_version!=='string'||!review_policy_version.trim())throw new Error('review_policy_version required');
   const approval={
     schema:CREATIVE_APPROVAL_SCHEMA,
+    authority:'server_owned',
     draft_id:accepted_draft.draft_id,
     program_id:program.program_id,
     copy_manifest_sha256:program.copy_manifest_sha256,
@@ -301,8 +335,9 @@ export function createCreativeApproval({accepted_draft,program,decision,issuer_i
 export function validateCreativeApproval(approval,acceptedDraft,program){
   const errors=[];
   if(!isObject(approval)){add(errors,'TYPE_OBJECT_REQUIRED','','CreativeApproval must be an object');return {valid:false,errors};}
-  checkUnknown(errors,approval,new Set(['schema','approval_id','draft_id','program_id','copy_manifest_sha256','decision','review_policy_version','issuer_id']),'');
+  checkUnknown(errors,approval,new Set(['schema','authority','approval_id','draft_id','program_id','copy_manifest_sha256','decision','review_policy_version','issuer_id']),'');
   if(approval.schema!==CREATIVE_APPROVAL_SCHEMA)add(errors,'SCHEMA_VERSION_MISMATCH','/schema',`expected ${CREATIVE_APPROVAL_SCHEMA}`);
+  if(approval.authority!=='server_owned')add(errors,'APPROVAL_AUTHORITY_INVALID','/authority','approval authority must be server_owned');
   for(const key of ['approval_id','draft_id','program_id','copy_manifest_sha256','decision','review_policy_version','issuer_id'])requireString(errors,approval[key],`/${key}`);
   if(!['approved','rejected'].includes(approval.decision))add(errors,'APPROVAL_DECISION_INVALID','/decision','decision must be approved or rejected');
   if(typeof approval.approval_id==='string'&&/^nba1_[a-f0-9]{64}$/.test(approval.approval_id)){
@@ -321,12 +356,12 @@ export function validateCreativeApproval(approval,acceptedDraft,program){
   return {valid:errors.length===0,errors:sortErrors(errors)};
 }
 
-export function evaluatePublishEligibility({accepted_draft,program,approval=null}){
+export function evaluatePublishEligibility({accepted_draft,program,trusted_approval=null}){
   if(!accepted_draft||accepted_draft.schema!==ACCEPTED_EXTERNAL_DRAFT_SCHEMA||computeExternalDraftId(accepted_draft)!==accepted_draft.draft_id)return {preview_render_allowed:false,publish_allowed:false,reason:'invalid_draft'};
   if(!program||program.schema!==REVIEW_REQUIRED_PROGRAM_SCHEMA||computeReviewRequiredProgramId(program)!==program.program_id||program.draft_id!==accepted_draft.draft_id)return {preview_render_allowed:false,publish_allowed:false,reason:'invalid_program'};
-  if(!approval)return {preview_render_allowed:true,publish_allowed:false,reason:'review_required'};
-  const report=validateCreativeApproval(approval,accepted_draft,program);
+  if(!trusted_approval)return {preview_render_allowed:true,publish_allowed:false,reason:'review_required'};
+  const report=validateCreativeApproval(trusted_approval,accepted_draft,program);
   if(!report.valid)return {preview_render_allowed:true,publish_allowed:false,reason:'approval_invalid',errors:report.errors};
-  if(approval.decision!=='approved')return {preview_render_allowed:true,publish_allowed:false,reason:'rejected'};
-  return {preview_render_allowed:true,publish_allowed:true,reason:'approved',approval_id:approval.approval_id};
+  if(trusted_approval.decision!=='approved')return {preview_render_allowed:true,publish_allowed:false,reason:'rejected'};
+  return {preview_render_allowed:true,publish_allowed:true,reason:'approved',approval_id:trusted_approval.approval_id};
 }
