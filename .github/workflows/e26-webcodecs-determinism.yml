@@ -1,0 +1,61 @@
+name: E26 WebCodecs determinism
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/scripts/bench-webcodecs-determinism.mjs"
+      - ".github/workflows/e26-webcodecs-determinism.yml"
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - run: node --check .agents/skills/framewright/scripts/bench-webcodecs-determinism.mjs
+      - name: Determinism 720
+        env:
+          WEBCODECS_BITRATE: "1000000"
+        run: |
+          mkdir -p artifacts
+          node .agents/skills/framewright/scripts/bench-webcodecs-determinism.mjs artifacts/e26-720.json 720 450 3
+      - name: Determinism 1080
+        env:
+          WEBCODECS_BITRATE: "2000000"
+        run: node .agents/skills/framewright/scripts/bench-webcodecs-determinism.mjs artifacts/e26-1080.json 1080 450 3
+      - name: Summary
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const profiles = ['720','1080'].map((size) => JSON.parse(fs.readFileSync(`artifacts/e26-${size}.json`, 'utf8')));
+          const summary = {
+            experiment: 'E26-webcodecs-determinism-summary',
+            profiles: profiles.map((p) => ({
+              width: p.width,
+              height: p.height,
+              frames: p.frames,
+              bitrate: p.bitrate,
+              hashes: p.runs.map((r) => r.sha256),
+              totalBytes: p.runs.map((r) => r.totalBytes),
+              milliseconds: p.runs.map((r) => r.milliseconds),
+              hypothesis: p.hypothesis,
+              caveat: p.caveat,
+            })),
+          };
+          fs.writeFileSync('artifacts/e26-summary.json', JSON.stringify(summary, null, 2) + '\n');
+          console.log(JSON.stringify(summary, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e26-webcodecs-determinism
+          path: |
+            artifacts/e26-720.json
+            artifacts/e26-1080.json
+            artifacts/e26-summary.json
