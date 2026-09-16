@@ -1,0 +1,71 @@
+name: R47 Catalog Bitrate Floor
+
+on:
+  pull_request:
+    paths:
+      - '.agents/skills/framewright/scripts/r47-catalog-bitrate-floor.mjs'
+      - '.agents/skills/framewright/scripts/make-r47-catalog-bitrate-fixtures.mjs'
+      - '.github/workflows/r47-catalog-bitrate-floor.yml'
+      - 'docs/r47-catalog-bitrate-floor.md'
+      - 'docs/r46-adaptive-bitrate-oracle.md'
+  workflow_dispatch:
+
+jobs:
+  catalog-bitrate-floor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/r47-catalog-bitrate-floor.mjs
+          node --check .agents/skills/framewright/scripts/make-r47-catalog-bitrate-fixtures.mjs
+      - name: Prepare responsive fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r47.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r47.html examples/book-ad-systems/index-e17-for-r47.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r47.html examples/book-ad-systems/index-e17-e14-for-r47.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r47.html examples/book-ad-systems/index-e18-for-r47.html
+          node .agents/skills/framewright/scripts/make-r47-catalog-bitrate-fixtures.mjs examples/book-ad-systems/generated-r47
+      - name: Run catalog semantic-ROI bitrate floor scout
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r47.html
+          MANIFEST: examples/book-ad-systems/generated-r47/manifest.json
+          OUT_DIR: artifacts/r47
+          REPORT: artifacts/r47/report.json
+          BITRATES: 3000000,3250000,3500000,3750000,4000000
+        run: node .agents/skills/framewright/scripts/r47-catalog-bitrate-floor.mjs
+      - name: Validate report
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r47/report.json','utf8'));
+          if(r.schema!=='nightwill-r47-catalog-bitrate-floor-v1') throw new Error('wrong schema');
+          if(r.fixtures.length!==6) throw new Error('incomplete fixture set');
+          for(const style of ['paper','swiss','newspaper']){
+            if(r.fixtures.filter(f=>f.style===style).length<2) throw new Error(`${style}: need two fixtures`);
+          }
+          for(const f of r.fixtures){
+            const wc=f.rows.filter(x=>x.kind==='webcodecs');
+            if(wc.length!==5) throw new Error(`${f.bookId}: incomplete bitrate ladder`);
+            for(const b of [3000000,3250000,3500000,3750000,4000000]) if(!wc.find(x=>x.bitrate===b)) throw new Error(`${f.bookId}: missing ${b}`);
+          }
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - name: Show result
+        run: cat artifacts/r47/summary.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r47-catalog-bitrate-floor
+          path: |
+            artifacts/r47/report.json
+            artifacts/r47/summary.md
+          retention-days: 14

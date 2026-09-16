@@ -1,0 +1,172 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://newboo.example/contracts/creative-ingress-v1.schema.json",
+  "title": "Newboo Creative Ingress v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "mode", "context_pack_id", "context_hash", "payload"],
+  "properties": {
+    "schema": { "const": "newboo-creative-ingress-v1" },
+    "mode": { "enum": ["trusted_atoms", "verified_composition", "external_copy_review_required"] },
+    "context_pack_id": { "type": "string", "minLength": 1 },
+    "context_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "payload": { "type": "object" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "mode": { "const": "trusted_atoms" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/trustedPayload" } } }
+    },
+    {
+      "if": { "properties": { "mode": { "const": "verified_composition" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/composedPayload" } } }
+    },
+    {
+      "if": { "properties": { "mode": { "const": "external_copy_review_required" } } },
+      "then": { "properties": { "payload": { "$ref": "#/$defs/externalPayload" } } }
+    }
+  ],
+  "$defs": {
+    "presentation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["duration_seconds", "fps", "visual_system", "delivery_profile", "seed"],
+      "properties": {
+        "duration_seconds": { "enum": [3, 5, 7, 9, 12, 15] },
+        "fps": { "type": "integer", "minimum": 1 },
+        "visual_system": { "type": "string", "minLength": 1 },
+        "delivery_profile": { "type": "string", "minLength": 1 },
+        "seed": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "assetIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "trustedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account_id", "book_id", "narrative", "presentation", "selected_asset_ids"],
+      "properties": {
+        "account_id": { "type": "string", "minLength": 1 },
+        "book_id": { "type": "string", "minLength": 1 },
+        "narrative": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["angle_type", "hook_atom_id", "reveal_timing", "cta_treatment"],
+          "properties": {
+            "angle_type": { "type": "string", "minLength": 1 },
+            "hook_atom_id": { "type": "string", "minLength": 1 },
+            "tension_atom_id": { "type": "string", "minLength": 1 },
+            "payoff_atom_id": { "type": "string", "minLength": 1 },
+            "reveal_timing": { "enum": ["none", "early", "mid", "late"] },
+            "cta_treatment": { "enum": ["none", "soft_reveal", "intent", "direct", "qr_slot"] },
+            "cta_id": { "type": "string", "minLength": 1 }
+          }
+        },
+        "presentation": { "$ref": "#/$defs/presentation" },
+        "selected_asset_ids": { "$ref": "#/$defs/assetIds" }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot_id", "form_id"],
+      "properties": {
+        "slot_id": { "type": "string", "minLength": 1 },
+        "form_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "expression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["template_id", "bindings"],
+      "properties": {
+        "template_id": { "type": "string", "minLength": 1 },
+        "bindings": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/binding" }
+        }
+      }
+    },
+    "composedPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["copy_language_id", "copy_language_hash", "account_id", "book_id", "narrative", "presentation", "selected_asset_ids"],
+      "properties": {
+        "copy_language_id": { "type": "string", "minLength": 1 },
+        "copy_language_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "account_id": { "type": "string", "minLength": 1 },
+        "book_id": { "type": "string", "minLength": 1 },
+        "narrative": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["angle_type", "hook", "reveal_timing", "cta_treatment"],
+          "properties": {
+            "angle_type": { "type": "string", "minLength": 1 },
+            "hook": { "$ref": "#/$defs/expression" },
+            "tension": { "$ref": "#/$defs/expression" },
+            "payoff": { "$ref": "#/$defs/expression" },
+            "reveal_timing": { "enum": ["none", "early", "mid", "late"] },
+            "cta_treatment": { "enum": ["none", "soft_reveal", "intent", "direct", "qr_slot"] },
+            "cta_id": { "type": "string", "minLength": 1 }
+          }
+        },
+        "presentation": { "$ref": "#/$defs/presentation" },
+        "selected_asset_ids": { "$ref": "#/$defs/assetIds" }
+      }
+    },
+    "factIds": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "hookCopy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "supporting_fact_ids"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 220 },
+        "supporting_fact_ids": { "$ref": "#/$defs/factIds" }
+      }
+    },
+    "bodyCopy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "supporting_fact_ids"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 280 },
+        "supporting_fact_ids": { "$ref": "#/$defs/factIds" }
+      }
+    },
+    "externalPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["account_id", "book_id", "narrative", "presentation", "selected_asset_ids"],
+      "properties": {
+        "account_id": { "type": "string", "minLength": 1 },
+        "book_id": { "type": "string", "minLength": 1 },
+        "narrative": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["angle_type", "hook", "reveal_timing", "cta_treatment"],
+          "properties": {
+            "angle_type": { "type": "string", "minLength": 1 },
+            "hook": { "$ref": "#/$defs/hookCopy" },
+            "tension": { "$ref": "#/$defs/bodyCopy" },
+            "payoff": { "$ref": "#/$defs/bodyCopy" },
+            "reveal_timing": { "enum": ["none", "early", "mid", "late"] },
+            "cta_treatment": { "enum": ["none", "soft_reveal", "intent", "direct", "qr_slot"] },
+            "cta_id": { "type": "string", "minLength": 1 }
+          }
+        },
+        "presentation": { "$ref": "#/$defs/presentation" },
+        "selected_asset_ids": { "$ref": "#/$defs/assetIds" }
+      }
+    }
+  }
+}

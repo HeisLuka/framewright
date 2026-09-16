@@ -1,0 +1,84 @@
+name: R49 Codec Oracle Calibration
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r47-catalog-bitrate-floor.mjs'
+      - '.agents/skills/framewright/scripts/r49-codec-oracle-calibration.mjs'
+      - '.agents/skills/framewright/scripts/make-r47-catalog-bitrate-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e12-motion-template.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e14-variant-template.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs'
+      - '.github/workflows/r49-codec-oracle-calibration.yml'
+      - 'docs/r49-codec-oracle-calibration.md'
+      - 'examples/book-ad-systems/**'
+  workflow_dispatch:
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/r47-catalog-bitrate-floor.mjs
+          node --check .agents/skills/framewright/scripts/r49-codec-oracle-calibration.mjs
+      - name: Prepare exact R47 catalog fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r49.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r49.html examples/book-ad-systems/index-e17-for-r49.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r49.html examples/book-ad-systems/index-e17-e14-for-r49.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r49.html examples/book-ad-systems/index-e18-for-r49.html
+          node .agents/skills/framewright/scripts/make-r47-catalog-bitrate-fixtures.mjs examples/book-ad-systems/generated-r49
+      - name: Re-render bounded calibration matrix
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r49.html
+          MANIFEST: examples/book-ad-systems/generated-r49/manifest.json
+          OUT_DIR: artifacts/r49/raw
+          REPORT: artifacts/r49/raw/report.json
+          BITRATES: '3000000,3500000'
+        run: node .agents/skills/framewright/scripts/r47-catalog-bitrate-floor.mjs
+      - name: Build visual contacts and metric-disagreement report
+        run: node .agents/skills/framewright/scripts/r49-codec-oracle-calibration.mjs artifacts/r49/raw artifacts/r49
+      - name: Validate evidence completeness
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r49/report.json','utf8'));
+          if(r.schema!=='nightwill-r49-codec-oracle-calibration-v1') throw new Error('wrong R49 schema');
+          if(r.counts.fixtures!==6||r.counts.rois!==7||r.counts.webcodecs_policies!==2) throw new Error('R49 matrix dimensions drifted');
+          if(r.counts.comparisons!==84||r.counts.visual_contacts!==42) throw new Error('R49 evidence matrix incomplete');
+          if(r.decision?.status!=='ORACLE_CALIBRATION_REQUIRED'||r.decision?.policy_change!==false) throw new Error('R49 evidence-only boundary drifted');
+          const visual=JSON.parse(fs.readFileSync('artifacts/r49/visual-manifest.json','utf8'));
+          if(visual.items?.length!==42) throw new Error('R49 visual manifest incomplete');
+          for(const item of visual.items) if(!fs.existsSync(`artifacts/r49/${item.contact}`)) throw new Error(`missing contact ${item.contact}`);
+          console.log(JSON.stringify({counts:r.counts,replay:r.replay,decision:r.decision},null,2));
+          NODE
+      - name: Remove bulky intermediate videos and full frames
+        if: always()
+        run: rm -rf artifacts/r49/raw/*/decoded artifacts/r49/raw/*/refs artifacts/r49/raw/*/*.mp4 || true
+      - name: Show calibration summary
+        if: always()
+        run: test -f artifacts/r49/summary.md && cat artifacts/r49/summary.md || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r49-codec-oracle-calibration
+          path: |
+            artifacts/r49/report.json
+            artifacts/r49/summary.md
+            artifacts/r49/visual-manifest.json
+            artifacts/r49/contacts/**
+            artifacts/r49/raw/report.json
+          retention-days: 14

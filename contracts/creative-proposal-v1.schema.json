@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://newboo.dev/contracts/creative-proposal-v1.schema.json",
+  "title": "NEwBOO CreativeProposal v1",
+  "type": "object",
+  "required": ["schema", "proposal_id", "context_pack_id", "context_hash", "account_id", "book_id", "narrative", "presentation", "selected_asset_ids"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "newboo-creative-proposal-v1" },
+    "proposal_id": { "type": "string", "pattern": "^nbp1_[a-f0-9]{64}$" },
+    "context_pack_id": { "type": "string", "minLength": 1 },
+    "context_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "account_id": { "type": "string", "minLength": 1 },
+    "book_id": { "type": "string", "minLength": 1 },
+    "narrative": { "$ref": "#/$defs/NarrativeSelection" },
+    "presentation": { "$ref": "#/$defs/PresentationSelection" },
+    "selected_asset_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+  },
+  "$defs": {
+    "NarrativeSelection": {
+      "type": "object",
+      "required": ["angle_type", "hook_atom_id", "reveal_timing", "cta_treatment"],
+      "additionalProperties": false,
+      "properties": {
+        "angle_type": { "enum": ["premise", "conflict", "identity", "emotion", "question", "world", "character", "thesis", "quote", "recommendation_context"] },
+        "hook_atom_id": { "type": "string", "minLength": 1 },
+        "tension_atom_id": { "type": "string", "minLength": 1 },
+        "payoff_atom_id": { "type": "string", "minLength": 1 },
+        "reveal_timing": { "enum": ["none", "early", "mid", "late"] },
+        "cta_treatment": { "enum": ["none", "soft_reveal", "intent", "direct", "qr_slot"] },
+        "cta_id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "PresentationSelection": {
+      "type": "object",
+      "required": ["duration_seconds", "fps", "visual_system", "delivery_profile", "seed"],
+      "additionalProperties": false,
+      "properties": {
+        "duration_seconds": { "enum": [3, 5, 7, 9, 12, 15] },
+        "fps": { "type": "integer", "minimum": 1 },
+        "visual_system": { "type": "string", "minLength": 1 },
+        "delivery_profile": { "type": "string", "minLength": 1 },
+        "seed": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "schema": "newboo-creative-ingress-v1",
+  "mode": "external_copy_review_required",
+  "context_pack_id": "ctx_example_account_revision_1",
+  "context_hash": "5961044fafce498e72fe3e527f94a3a3a897e690b8404afab097796c50bba331",
+  "payload": {
+    "account_id": "account_example",
+    "book_id": "book_example",
+    "narrative": {
+      "angle_type": "conflict",
+      "hook": {
+        "text": "Every night, the future leaves instructions in the mailbox.",
+        "supporting_fact_ids": ["fact_premise", "fact_conflict"]
+      },
+      "tension": {
+        "text": "What starts as a warning begins to sound like an order.",
+        "supporting_fact_ids": ["fact_conflict"]
+      },
+      "payoff": {
+        "text": "If your future self begged you to obey, would you trust them?",
+        "supporting_fact_ids": ["fact_promise", "fact_conflict"]
+      },
+      "reveal_timing": "late",
+      "cta_treatment": "intent",
+      "cta_id": "cta_read"
+    },
+    "presentation": {
+      "duration_seconds": 9,
+      "fps": 30,
+      "visual_system": "swiss",
+      "delivery_profile": "youtube_shorts",
+      "seed": 17
+    },
+    "selected_asset_ids": ["asset_cover"]
+  }
+}

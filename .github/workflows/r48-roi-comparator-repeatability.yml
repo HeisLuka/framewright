@@ -1,0 +1,59 @@
+name: R48 ROI Comparator Repeatability
+
+on:
+  pull_request:
+    paths:
+      - '.agents/skills/framewright/scripts/r48-roi-comparator-repeatability.mjs'
+      - '.github/workflows/r48-roi-comparator-repeatability.yml'
+      - 'docs/r48-roi-comparator-repeatability.md'
+  workflow_dispatch:
+
+jobs:
+  repeatability:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r48-roi-comparator-repeatability.mjs
+      - name: Prepare fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r48.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r48.html examples/book-ad-systems/index-e17-for-r48.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r48.html examples/book-ad-systems/index-e17-e14-for-r48.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r48.html examples/book-ad-systems/index-e18-for-r48.html
+          node .agents/skills/framewright/scripts/make-r47-catalog-bitrate-fixtures.mjs examples/book-ad-systems/generated-r48
+      - name: Run repeatability scout
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r48.html
+          MANIFEST: examples/book-ad-systems/generated-r48/manifest.json
+          OUT_DIR: artifacts/r48
+          REPORT: artifacts/r48/report.json
+          REPEATS: 3
+        run: node .agents/skills/framewright/scripts/r48-roi-comparator-repeatability.mjs
+      - name: Validate report
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r48/report.json','utf8'));
+          if(r.schema!=='nightwill-r48-roi-comparator-repeatability-v1') throw new Error('wrong schema');
+          if(r.fixtures.length!==4) throw new Error('expected four fixtures');
+          for(const f of r.fixtures){
+            if(f.x264.runs.length!==2) throw new Error(`${f.bookId}: expected two x264 repeats`);
+            for(const b of [3000000,4000000]) if(f.runs.filter(x=>x.bitrate===b).length!==3) throw new Error(`${f.bookId}: missing repeats at ${b}`);
+          }
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r48-roi-comparator-repeatability
+          path: artifacts/r48/report.json
+          retention-days: 14

@@ -1,0 +1,92 @@
+{
+  "schema": "newboo-context-pack-v1",
+  "context_pack_id": "ctx_example_account_revision_1",
+  "context_hash": "5961044fafce498e72fe3e527f94a3a3a897e690b8404afab097796c50bba331",
+  "revision": 1,
+  "account": {
+    "account_id": "account_example",
+    "brand_name": "NEwBOO",
+    "locale": "en-US"
+  },
+  "books": [
+    {
+      "book_id": "book_example",
+      "title": "Tomorrow Writes Back",
+      "author": "A. Example",
+      "facts": [
+        {
+          "fact_id": "fact_premise",
+          "kind": "premise",
+          "value": "Each evening the protagonist receives a letter written by their future self.",
+          "source_ref": "book:example:synopsis:v3"
+        },
+        {
+          "fact_id": "fact_conflict",
+          "kind": "conflict",
+          "value": "The letters become instructions the protagonist is afraid to follow.",
+          "source_ref": "book:example:synopsis:v3"
+        },
+        {
+          "fact_id": "fact_promise",
+          "kind": "promise",
+          "value": "The story asks whether foreknowledge is a gift or a trap.",
+          "source_ref": "book:example:editorial:v2"
+        }
+      ],
+      "creative_atoms": [
+        {
+          "atom_id": "atom_hook",
+          "role": "hook",
+          "angle_types": ["premise", "conflict"],
+          "text": "Every evening, a letter arrives from tomorrow.",
+          "source_fact_ids": ["fact_premise"],
+          "spoiler_level": 0
+        },
+        {
+          "atom_id": "atom_tension",
+          "role": "tension",
+          "angle_types": ["conflict"],
+          "text": "Then the letters start giving instructions.",
+          "source_fact_ids": ["fact_conflict"],
+          "spoiler_level": 0
+        },
+        {
+          "atom_id": "atom_payoff",
+          "role": "payoff",
+          "angle_types": ["conflict"],
+          "text": "Would you obey a future you no longer trust?",
+          "source_fact_ids": ["fact_promise"],
+          "spoiler_level": 1
+        }
+      ],
+      "assets": [
+        {
+          "asset_id": "asset_cover",
+          "role": "cover",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "media_type": "image/webp"
+        }
+      ]
+    }
+  ],
+  "ctas": [
+    {
+      "cta_id": "cta_read",
+      "text": "Read it in NEwBOO",
+      "treatments": ["intent", "direct"]
+    }
+  ],
+  "capabilities": {
+    "angle_types": ["premise", "conflict"],
+    "visual_systems": ["swiss", "newspaper", "paper"],
+    "duration_seconds": [3, 5, 7, 9, 12, 15],
+    "fps": [30],
+    "reveal_timings": ["none", "early", "mid", "late"],
+    "cta_treatments": ["none", "soft_reveal", "intent", "direct", "qr_slot"],
+    "delivery_profiles": ["youtube_shorts", "instagram_reels", "tiktok"]
+  },
+  "constraints": {
+    "max_spoiler_level": 1,
+    "max_body_atoms": 2
+  }
+}

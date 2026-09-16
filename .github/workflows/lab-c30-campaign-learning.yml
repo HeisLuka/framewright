@@ -1,0 +1,27 @@
+name: Lab C30 Campaign Learning
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - '.agents/skills/framewright/scripts/c30-*.mjs'
+      - 'docs/c30-live-campaign-learning.md'
+      - '.github/workflows/lab-c30-campaign-learning.yml'
+  workflow_dispatch:
+
+jobs:
+  campaign-learning-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Syntax check C30
+        run: |
+          node --check .agents/skills/framewright/scripts/c30-campaign-learning.mjs
+          node --check .agents/skills/framewright/scripts/c30-campaign-learning-audit.mjs
+      - name: Audit deterministic evidence-to-prior contract
+        run: node .agents/skills/framewright/scripts/c30-campaign-learning-audit.mjs

@@ -21,6 +21,7 @@ shots/
 portrait.js
 *.log
 tmp/
+.local-render-queue/
 
 # --- source material and personal files: photos and footage stay local ---
 *.jpg
