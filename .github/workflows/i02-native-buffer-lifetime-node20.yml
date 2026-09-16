@@ -1,0 +1,64 @@
+name: I02 Native Buffer Lifetime Node20
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/i02-native-buffer-memory-probe.mjs'
+      - '.github/workflows/i02-native-buffer-lifetime-node20.yml'
+  workflow_dispatch:
+
+jobs:
+  lifetime:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install pinned native dependencies
+        run: |
+          npm install
+          npm install --no-save @napi-rs/canvas@1.0.9 @napi-rs/webcodecs@1.3.0
+      - name: Prepare exact C18 scene
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-i02.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-i02.html examples/book-ad-systems/index-e17-for-i02.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-i02.html examples/book-ad-systems/index-e17-e14-for-i02.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-i02.html examples/book-ad-systems/index-e18-for-i02.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-i02
+      - name: Probe event-loop lifetime
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-i02.html
+          MANIFEST: examples/book-ad-systems/generated-i02/manifest.json
+          BOOK_ID: river-station
+          VARIANT: hook-first
+          PROFILE: vertical
+        run: |
+          run_probe() {
+            label="$1"; mode="$2"; yield_each="$3"; gc_each="$4"
+            out="artifacts/i02-lifetime/$label"
+            mkdir -p "$out"
+            echo "=== $label ==="
+            OUT_DIR="$out" LABEL="$label" MODE="$mode" YIELD_EACH="$yield_each" GC_EACH="$gc_each" node --expose-gc .agents/skills/framewright/scripts/i02-native-buffer-memory-probe.mjs
+          }
+          run_probe image-yield image-data-only 1 0
+          run_probe image-gc-yield image-data-only 1 1
+          run_probe frame-yield image-data-frame 1 0
+          run_probe frame-gc-yield image-data-frame 1 1
+      - name: Summarize
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          for (const label of ['image-yield','image-gc-yield','frame-yield','frame-gc-yield']) {
+            const r=JSON.parse(fs.readFileSync(`artifacts/i02-lifetime/${label}/${label}.json`));
+            console.log(`${label}: wall=${(r.wallMs/1000).toFixed(3)}s start=${r.startRssMiB}MiB end=${r.endRssMiB}MiB peak=${r.peakRssMiB}MiB growth=${r.growthMiB}MiB (${r.growthMiBPerFrame} MiB/frame)`);
+            console.log('  checkpoints:', r.checkpoints.map(x=>`${x.frame}:${x.rssMiB}`).join(' '));
+          }
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: i02-native-buffer-lifetime-node20
+          path: artifacts/i02-lifetime/
+          retention-days: 14
