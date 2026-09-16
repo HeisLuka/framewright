@@ -91,7 +91,7 @@ if (!force && artifactMp4 && artifactReceipt && fs.existsSync(artifactMp4) && fs
   const cached = JSON.parse(await fsp.readFile(artifactReceipt, 'utf8'));
   if (cached.render_spec_id === plan.render_spec_id && cached.output?.sha256 === await sha256File(artifactMp4)) {
     if (path.resolve(artifactMp4) !== out) await fsp.copyFile(artifactMp4, out);
-    const receipt = { ...cached, invocation: { ...cached.invocation, cache_hit: true, output: out, at: new Date().toISOString() } };
+    const receipt = { ...cached, invocation: { cache_hit: true, attempts: cached.invocation?.attempts ?? 0 } };
     await atomicJson(receiptPath, receipt);
     console.log(`factory FAST cache hit ${plan.render_spec_id}`);
     process.exit(0);
@@ -107,6 +107,27 @@ if (plan.audio) {
   if (actualAudioSha !== plan.audio.expected_sha256) throw new Error(`canonical audio sha256 mismatch: expected ${plan.audio.expected_sha256}, got ${actualAudioSha}`);
 }
 
+let scenePayloadPath = process.env.PAYLOAD ? path.resolve(INVOCATION_CWD, process.env.PAYLOAD) : null;
+let payloadBinding = null;
+if (plan.delivery.platform_ui_profile) {
+  if (!scenePayloadPath || !fs.existsSync(scenePayloadPath)) {
+    throw new Error(`RenderSpec declares platform_ui_profile=${plan.delivery.platform_ui_profile}; PAYLOAD is required so delivery semantics can be materialized into the scene`);
+  }
+  const sourcePayload = JSON.parse(await fsp.readFile(scenePayloadPath, 'utf8'));
+  const boundPayload = { ...sourcePayload, platform_profile: plan.delivery.platform_ui_profile };
+  scenePayloadPath = `${out}.scene-payload.json`;
+  await atomicJson(scenePayloadPath, boundPayload);
+  payloadBinding = {
+    expected: plan.delivery.platform_ui_profile,
+    source_before: sourcePayload.platform_profile || null,
+    bound: boundPayload.platform_profile,
+    platform_ui_version: plan.delivery.platform_ui_version || null,
+    sha256: await sha256File(scenePayloadPath),
+  };
+} else if (scenePayloadPath && fs.existsSync(scenePayloadPath)) {
+  payloadBinding = { expected: null, source_before: null, bound: null, platform_ui_version: null, sha256: await sha256File(scenePayloadPath) };
+}
+
 const rawVideo = plan.audio ? `${out}.video-only.mp4` : out;
 const innerReport = `${rawVideo}.report.json`;
 const innerEnv = {
@@ -114,8 +135,8 @@ const innerEnv = {
   WEBCODECS_CODEC: plan.video.codec,
   WEBCODECS_LATENCY_MODE: 'realtime',
 };
-if (process.env.HTML) innerEnv.HTML = process.env.HTML;
-if (process.env.PAYLOAD) innerEnv.PAYLOAD = process.env.PAYLOAD;
+if (process.env.HTML) innerEnv.HTML = path.resolve(INVOCATION_CWD, process.env.HTML);
+if (scenePayloadPath) innerEnv.PAYLOAD = scenePayloadPath;
 if (process.env.CI) innerEnv.CI = process.env.CI;
 
 let lastError = null, attemptsUsed = 0;
@@ -154,18 +175,22 @@ if (Number(video?.nb_read_frames) !== plan.delivery.frame_count) throw new Error
 if (plan.audio && !audio) throw new Error('RenderSpec declares audio but final MP4 has no audio stream');
 if (!plan.audio && audio) throw new Error('silent RenderSpec unexpectedly produced an audio stream');
 
+const checks = [
+  { id: 'factory-identity', status: 'pass', details: { render_spec_id: plan.render_spec_id } },
+  { id: 'runtime-codec', status: 'pass', details: { expected: plan.video.codec, actual: inner.browser.codec.codec } },
+  { id: 'frame-count', status: 'pass', details: { expected: plan.delivery.frame_count, actual: Number(video.nb_read_frames) } },
+  { id: 'audio-stream', status: 'pass', details: { expected: Boolean(plan.audio), present: Boolean(audio), audio_spec_id: plan.audio?.audio_spec_id || null } },
+];
+if (plan.delivery.platform_ui_profile) {
+  checks.push({ id: 'delivery-platform-profile', status: 'pass', details: payloadBinding });
+}
 const receipt = {
   schema: 'newboo-render-artifact-v1',
   render_spec_id: plan.render_spec_id,
   output: { sha256: await sha256File(out), bytes: (await fsp.stat(out)).size, mime_type: 'video/mp4', duration_ms: Number(media.format?.duration || 0) * 1000, frame_count: Number(video.nb_read_frames), storage_uri: artifactMp4 || out },
-  qa: { status: 'pass', checks: [
-    { id: 'factory-identity', status: 'pass', details: { render_spec_id: plan.render_spec_id } },
-    { id: 'runtime-codec', status: 'pass', details: { expected: plan.video.codec, actual: inner.browser.codec.codec } },
-    { id: 'frame-count', status: 'pass', details: { expected: plan.delivery.frame_count, actual: Number(video.nb_read_frames) } },
-    { id: 'audio-stream', status: 'pass', details: { expected: Boolean(plan.audio), present: Boolean(audio), audio_spec_id: plan.audio?.audio_spec_id || null } },
-  ]},
-  metrics: { inner_total_run_ms: inner.totalRunMs || null },
-  invocation: { cache_hit: false, attempts: attemptsUsed, runtime_plan_schema: plan.schema },
+  qa: { status: 'pass', checks },
+  metrics: { inner_total_run_ms: inner.totalRunMs || null, runtime_plan_schema: plan.schema, scene_payload_sha256: payloadBinding?.sha256 || null },
+  invocation: { cache_hit: false, attempts: attemptsUsed },
 };
 if (artifactMp4 && artifactReceipt) {
   if (path.resolve(out) !== path.resolve(artifactMp4)) await fsp.copyFile(out, artifactMp4);
