@@ -1,0 +1,104 @@
+name: I10 Canonical Warm C2 Executor
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/render-webcodecs-pool.mjs'
+      - '.agents/skills/framewright/scripts/render-factory-fast.mjs'
+      - '.agents/skills/framewright/scripts/run-video-factory.mjs'
+      - '.agents/skills/framewright/scripts/local-render-worker-standard.mjs'
+      - '.agents/skills/framewright/scripts/i10-canonical-warm-executor.mjs'
+      - 'package.json'
+      - '.github/workflows/i10-canonical-warm-executor.yml'
+      - 'docs/i10-canonical-warm-executor.md'
+  workflow_dispatch:
+
+jobs:
+  canonical-warm-executor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install ffmpeg and fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          ffmpeg -version | head -1
+      - name: Syntax and queue regression checks
+        run: |
+          node --check .agents/skills/framewright/scripts/render-webcodecs-pool.mjs
+          node --check .agents/skills/framewright/scripts/render-factory-fast.mjs
+          node --check .agents/skills/framewright/scripts/run-video-factory.mjs
+          node --check .agents/skills/framewright/scripts/local-render-worker-standard.mjs
+          node --check .agents/skills/framewright/scripts/i10-canonical-warm-executor.mjs
+          npm run check:i07
+      - name: Generate verified C27 source pack
+        run: |
+          mkdir -p .bench/i10
+          node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs .bench/i10/c27-fixtures
+      - name: Build current C27 runtime template
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-i10.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-i10.html examples/book-ad-systems/index-c22-i10.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-c22-i10.html examples/book-ad-systems/index-e17-i10.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-i10.html examples/book-ad-systems/index-e17-e14-i10.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-i10.html examples/book-ad-systems/index-e18-i10.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-i10.html examples/book-ad-systems/index-c20-i10.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-i10.html examples/book-ad-systems/index-c21-i10.html
+          node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c21-i10.html examples/book-ad-systems/index-c23-i10.html
+          node .agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs examples/book-ad-systems/index-c23-i10.html examples/book-ad-systems/index-c24-i10.html
+          node .agents/skills/framewright/scripts/prepare-c25-typography-axis.mjs examples/book-ad-systems/index-c24-i10.html examples/book-ad-systems/index-c25-i10.html
+          node .agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs examples/book-ad-systems/index-c25-i10.html examples/book-ad-systems/index-c26-i10.html examples/book-ad-systems/platform-ui-profiles.v1.json
+          node .agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs examples/book-ad-systems/index-c26-i10.html examples/book-ad-systems/index-c27-i10.html
+      - name: Build canonical 9s AAC artifact
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=220:sample_rate=48000' -t 9 -c:a pcm_s16le .bench/i10/source.wav
+          ffmpeg -hide_banner -loglevel error -y -i .bench/i10/source.wav -t 9 -c:a aac -b:a 192k -movflags +faststart .bench/i10/canonical-audio.m4a
+      - name: Compile I03 production fixture
+        run: |
+          node .agents/skills/framewright/scripts/make-i03-campaign-fixture.mjs \
+            .bench/i10/c27-fixtures \
+            examples/book-ad-systems/index-c27-i10.html \
+            .bench/i10/source.wav \
+            .bench/i10/canonical-audio.m4a \
+            .bench/i10/input
+      - name: Run canonical one-shot vs warm-c2 acceptance
+        env:
+          CI: '1'
+          CAMPAIGN: .bench/i10/input/campaign.json
+          EXECUTION_MAP: .bench/i10/input/execution-map.json
+          OUT_DIR: artifacts/i10
+          REPORT: artifacts/i10/report.json
+        run: node .agents/skills/framewright/scripts/i10-canonical-warm-executor.mjs
+      - name: Validate frozen acceptance shape
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/i10/report.json','utf8'));
+          assert.equal(r.schema,'nightwill-i10-canonical-warm-executor-v1');
+          assert.equal(r.decision,'PASS_CANONICAL_WARM_C2_WIRING');
+          assert.equal(r.factory.renderSpecIds.length,2);
+          assert.equal(r.factory.oneShotConcurrency,1);
+          assert.equal(r.factory.warmConcurrency,2);
+          assert.equal(r.pool.concurrency,2);
+          assert.equal(r.pool.healthAfterReplay.renderSequence,r.pool.healthAfterA.renderSequence);
+          assert.equal(r.pool.healthAfterB.renderSequence,4);
+          assert.equal(r.fingerprints.length,2);
+          assert.ok(r.visual.every(v=>v.pass));
+          console.log(JSON.stringify({decision:r.decision,pool:r.pool,factory:r.factory,visual:r.visual},null,2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i10-canonical-warm-executor
+          path: |
+            artifacts/i10/
+            .bench/i10/input/
+          retention-days: 14
