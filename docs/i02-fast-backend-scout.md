@@ -161,7 +161,7 @@ The final native path is valid, browserless, low-memory and close to Chromium in
 
 A rough isolated-job ratio is about 1180 videos/hour/GiB for candidate C versus about 670 for Chromium and about 800 for x264 CRF22, but that ratio is only a prioritization signal. It is not a capacity result until concurrent jobs are measured on the same machine.
 
-Do not reopen the already-completed R30 experiment or change active R33 scope. If memory/cost remains material after R33, compare the packet-copy native candidate under concurrency and soak. If it does not produce a material capacity/$ win, kill the branch. Only if it earns that gate should we spend time quality-matching its encoder policy or moving the scout to Node 22+ / `@napi-rs/webcodecs` 1.4+.
+R30 is already complete and found warm Chromium page reuse at concurrency 2 to be the best tested Chromium operating point. R33 is now actively testing heterogeneous warm-page reset safety. Do not reopen or mutate either scope just to accommodate candidate C. If memory/cost remains material after R33, create a new bounded capacity task comparing the packet-copy native path against the then-current Chromium operating point. If it does not produce a material capacity/$ win, kill the native branch. Only if it earns that gate should we spend time quality-matching its encoder policy or moving the scout to Node 22+ / `@napi-rs/webcodecs` 1.4+.
 
 ## What remains before STANDARD freeze
 
