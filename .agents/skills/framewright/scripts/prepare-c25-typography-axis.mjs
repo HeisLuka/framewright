@@ -31,6 +31,31 @@ function __c25Opts(o={}){
   if(o.lineHeight)n.lineHeight=Math.max(.80,Math.min(1.26,o.lineHeight+__c25Policy.line));
   return n;
 }
+
+// fitBlock is pure for pinned font metrics + text + bounded options, but the base
+// template recomputes its linear size search every frame. Cache the resolved fit
+// inside one template runtime. This applies identically to baseline and every C25
+// system and changes no drawing contract; on a cache hit we restore the same final
+// canvas font that the original fitBlock leaves behind before returning.
+const __c25FitBlock=fitBlock,__c25FitCache=new Map();
+let __c25FitHits=0,__c25FitMisses=0;
+function __c25FitKey(text,o={}){
+  const maxH=o.maxH??Infinity;
+  return [String(text),o.maxW??900,Number.isFinite(maxH)?maxH:'inf',o.maxLines??99,o.size??88,o.min??24,o.weight??700,o.lineHeight??1.02].join('\u001f');
+}
+fitBlock=function(g,text,o={}){
+  const key=__c25FitKey(text,o),cached=__c25FitCache.get(key);
+  if(cached){
+    __c25FitHits++;
+    font(g,cached.size,o.weight||700);
+    return{...cached,lines:[...cached.lines]};
+  }
+  __c25FitMisses++;
+  const b=__c25FitBlock(g,text,o),saved={...b,lines:[...b.lines]};
+  __c25FitCache.set(key,saved);
+  return b;
+};
+
 let __c25Capture=false,__c25Events=[];
 function __c25AlignedBox(x,y,w,h,align){let left=x;if(align==='center')left=x-w/2;else if(align==='right')left=x-w;return{x:Math.round(left-8),y:Math.round(y-8),w:Math.round(w+16),h:Math.round(h+16)};}
 function __c25Record(e){if(__c25Capture)__c25Events.push(e);}
@@ -52,7 +77,7 @@ track=function(g,text,x,y,spacing,o={}){
 };
 window.__C25_BEGIN_CAPTURE=()=>{__c25Events=[];__c25Capture=true;};
 window.__C25_END_CAPTURE=()=>{__c25Capture=false;return __c25Events.map(e=>({...e,box:{...e.box}}));};
-window.__C25_TYPOGRAPHY=()=>({system:ACTIVE_TYPOGRAPHY_SYSTEM,policy:{...__c25Policy}});
+window.__C25_TYPOGRAPHY=()=>({system:ACTIVE_TYPOGRAPHY_SYSTEM,policy:{...__c25Policy},fitCache:{entries:__c25FitCache.size,hits:__c25FitHits,misses:__c25FitMisses}});
 `;
 html=html.replace(marker,injection+'\n'+marker);
 fs.mkdirSync(path.dirname(output),{recursive:true});fs.writeFileSync(output,html);
