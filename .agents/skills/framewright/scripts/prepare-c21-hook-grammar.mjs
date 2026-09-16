@@ -41,13 +41,13 @@ function __c21OpeningOverlay(g,S,style){
     const p=easeOut(span(S.t,0,.28));
     label(g,P.eyebrow,SAFE.x,top,{size:22,min:15,maxW:SAFE.w,weight:800,color:P.accent});
     textBlock(g,P.title,{x:SAFE.x,y:top+150+lerp(46,0,p),maxW:SAFE.w,maxH:PROFILE==='vertical'?630:420,size:PROFILE==='vertical'?104:84,min:30,maxLines:7,lineHeight:.91,weight:800});
-    g.fillStyle=P.accent;g.fillRect(SAFE.x,top+PROFILE==='vertical'?860:620,Math.min(240,SAFE.w*.28),8);
+    g.fillStyle=P.accent;g.fillRect(SAFE.x,top+(PROFILE==='vertical'?860:620),Math.min(240,SAFE.w*.28),8);
   }else{
     const frag=__c21Fragment(P.hook),p=easeOut(span(S.t,0,.22));
     label(g,'01',SAFE.x,top,{size:26,weight:800,color:P.accent});
     textBlock(g,frag,{x:SAFE.x,y:top+190+lerp(55,0,p),maxW:SAFE.w,maxH:PROFILE==='vertical'?620:400,size:PROFILE==='vertical'?108:82,min:30,maxLines:6,lineHeight:.92,weight:800});
     const tick=Math.min(__c21Words(frag).length,1+Math.floor(span(S.t,.08,.48)*6));
-    g.fillStyle=P.accent;g.fillRect(SAFE.x,top+PROFILE==='vertical'?860:590,Math.max(80,Math.min(SAFE.w,tick*72)),8);
+    g.fillStyle=P.accent;g.fillRect(SAFE.x,top+(PROFILE==='vertical'?860:590),Math.max(80,Math.min(SAFE.w,tick*72)),8);
   }
   g.restore();
 }
