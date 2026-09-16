@@ -24,8 +24,26 @@ For vertical, square and landscape profiles, record navigation-to-`window.__read
 
 This is an opportunity scout, not a production throughput verdict. It intentionally avoids encode/mux so that a small reusable setup component can be bounded cheaply. Any follow-up implementation must translate the absolute saved milliseconds against the current full-job wall before claiming a >=10% E2E opportunity.
 
-## Gate
+## Canonical result
 
-Do not implement a custom decoded-asset memory cache unless the measured reusable asset/setup component has a credible >=10% end-to-end upper bound on the current FAST job wall. Do not implement locality-aware scheduling unless grouped cacheable ordering materially beats cacheable random ordering after all assets are warm.
+GitHub Actions run `35155186739`, artifact `10470294580`, on head `6a20304d5a0bd46e95ccd5eb4bbf877a370b9270` passed the corrected request-telemetry gate.
 
-Any later production candidate still requires sampled pixel parity, peak RSS <=30% worse, and neutral-or-better videos/hour/GiB.
+Across the three delivery profiles, mean navigation-to-ready was:
+
+- `no-store + random`: **33.77 ms**;
+- `cacheable + random`: **32.03 ms** (`-4.9%` versus no-store at the setup-only layer);
+- `cacheable + grouped`: **26.74 ms** (`-16.6%` versus cacheable random).
+
+The server-side oracle confirms that this is a real browser-cache experiment rather than timing noise: every no-store scenario generated **63 cover requests** (3 warmup + 60 timed jobs), while cacheable random/grouped generated only **3** warmup requests per profile and then served timed cover loads from cache (`zeroTransferRate = 1`).
+
+Grouping therefore saves only **5.28 ms/job** on average after assets are warm. Even against a deliberately optimistic full production job of just 2000 ms, that is an upper bound of **0.264% E2E** — roughly forty times smaller than the 10% Gold Rush gate. Current full jobs are in fact longer, so the real fraction is smaller still.
+
+Per-profile grouping savings were 4.69 ms vertical, 5.48 ms square, and 5.69 ms landscape. The direction is consistent enough to show locality exists, but its absolute magnitude is economically irrelevant to renderer throughput.
+
+## Decision
+
+**KILL custom decoded-asset memory cache and similarity-aware renderer scheduling for the current FAST architecture.**
+
+The useful production rule is simpler: keep reusable static assets content-addressed/cacheable and let Chromium's native cache do its job. Do not add another decoded-asset cache or scheduler branch merely to chase a few milliseconds of navigation setup.
+
+Reopen only if the rendering architecture changes so radically that full-job wall falls by roughly an order of magnitude, or asset setup grows materially enough to become a double-digit share of E2E time.
