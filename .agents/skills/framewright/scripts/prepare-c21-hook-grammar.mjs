@@ -15,14 +15,14 @@ const OPENING_GRAMMARS=new Set(['hook-led','cover-led','title-led','progressive-
 const ACTIVE_OPENING_GRAMMAR=OPENING_GRAMMARS.has(OPENING_GRAMMAR)?OPENING_GRAMMAR:'hook-led';
 
 function __c21Bg(g,S,style){
-  // Keep the exact baseline hook background/motif. C21 is allowed to change foreground hierarchy and timing only.
+  // Keep the exact baseline hook background/motif. C21 changes foreground hierarchy and timing only.
   if(typeof __profileBg==='function')return __profileBg(g,S,style,'hook');
   if(style==='swiss')return swissBg(g,S.seed,'hook');
   if(style==='newspaper')return newspaperBg(g,S.seed,'hook');
   return paperBg(g,S.seed,'hook');
 }
 function __c21Header(g,style){if(typeof __profileHeader==='function')return __profileHeader(g,style);}
-function __c21Fade(S){return 1-easeIO(span(S.t,.52,.72));}
+function __c21Reveal(S){return easeIO(span(S.t,.58,.70));}
 function __c21Words(text){return String(text).trim().split(/\s+/).filter(Boolean);}
 function __c21ProgressiveHook(text,t){
   const words=__c21Words(text);if(!words.length)return '';
@@ -31,9 +31,17 @@ function __c21ProgressiveHook(text,t){
   return words.slice(0,n).join(' ')+(n<words.length?'…':'');
 }
 function __c21OpeningOverlay(g,S,style){
-  if(ACTIVE_OPENING_GRAMMAR==='hook-led'||S.t>.72)return;
-  const out=__c21Fade(S);if(out<=0)return;
-  g.save();g.globalAlpha=out;__c21Bg(g,S,style);__c21Header(g,style);
+  if(ACTIVE_OPENING_GRAMMAR==='hook-led'||S.t>.70)return;
+  const reveal=__c21Reveal(S);
+  g.save();
+  // The baseline hook is already drawn underneath. Reveal it with a geometric wipe instead of
+  // alpha-fading two text hierarchies through each other; this keeps the transition readable.
+  if(reveal>0){
+    const w=g.canvas.width,h=g.canvas.height,x=Math.max(0,Math.min(w,Math.round(reveal*w)));
+    if(x>=w){g.restore();return;}
+    g.beginPath();g.rect(x,0,w-x,h);g.clip();
+  }
+  __c21Bg(g,S,style);__c21Header(g,style);
   const top=SAFE.y+(PROFILE==='vertical'?145:120),cx=SAFE.x+SAFE.w/2;
   if(ACTIVE_OPENING_GRAMMAR==='cover-led'){
     const p=easeOut(span(S.t,0,.34));
