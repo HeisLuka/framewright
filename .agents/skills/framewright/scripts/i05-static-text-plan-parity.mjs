@@ -1,0 +1,95 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import {performance} from 'node:perf_hooks';
+import {createHash} from 'node:crypto';
+import {createCanvas,Image,GlobalFonts} from '@napi-rs/canvas';
+
+const baselineHtml=path.resolve(process.env.BASELINE_HTML||'examples/book-ad-systems/index-c27-i05.html');
+const compiledHtml=path.resolve(process.env.COMPILED_HTML||'examples/book-ad-systems/index-i05-static-text.html');
+const fixtureDir=path.resolve(process.env.C27_FIXTURES||'/tmp/c27-fixtures');
+const reportPath=path.resolve(process.env.STATIC_TEXT_REPORT||'artifacts/i05/static-text-plan-parity.json');
+const renderWidth=Number(process.env.STATIC_TEXT_WIDTH||540);
+const styles=['swiss','newspaper','paper'];
+const platforms=['generic','youtube_shorts','instagram_reels','tiktok'];
+const fractions=[.18,.50,.82];
+
+for(const [file,family] of [['/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf','DejaVu Sans'],['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf','DejaVu Sans']])if(fs.existsSync(file))GlobalFonts.registerFromPath(file,family);
+
+function sourceOf(file){const html=fs.readFileSync(file,'utf8'),m=html.match(/<script>([\s\S]*?)<\/script>/i);if(!m)throw new Error(`inline template script missing: ${file}`);return m[1];}
+const baselineSource=sourceOf(baselineHtml),compiledSource=sourceOf(compiledHtml),templateDir=path.dirname(baselineHtml);
+const manifest=JSON.parse(fs.readFileSync(path.join(fixtureDir,'manifest.json'),'utf8'));
+if(manifest.schema!=='framewright-c27-narrative-fixtures-v1')throw new Error('wrong C27 fixture schema');
+
+function stable(v){if(Array.isArray(v))return v.map(stable);if(v&&typeof v==='object')return Object.fromEntries(Object.keys(v).sort().map(k=>[k,stable(v[k])]));return v;}
+const stableJson=v=>JSON.stringify(stable(v));
+const sha=v=>createHash('sha256').update(typeof v==='string'?v:stableJson(v)).digest('hex');
+function pixelSha(canvas){const d=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;return createHash('sha256').update(Buffer.from(d.buffer,d.byteOffset,d.byteLength)).digest('hex');}
+function planCore(bundle){return{schema:bundle.schema,version:bundle.version,environment:bundle.environment,plans:bundle.plans};}
+function planDigest(bundle){return sha(planCore(bundle));}
+
+async function boot(source,payload,seed,label){
+  payload=structuredClone(payload);
+  if(payload.cover_url&&!/^[a-z]+:/i.test(payload.cover_url)&&!path.isAbsolute(payload.cover_url))payload.cover_url=path.resolve(templateDir,payload.cover_url);
+  const canvas=createCanvas(1080,1920),ctx=canvas.getContext('2d');
+  let measureCalls=0;
+  const nativeMeasure=ctx.measureText.bind(ctx);
+  ctx.measureText=(...args)=>{measureCalls++;return nativeMeasure(...args);};
+  const document={createElement(n){if(String(n).toLowerCase()!=='canvas')throw new Error(`unsupported ${n}`);return createCanvas(1,1);},getElementById(id){return id==='c'?canvas:null;}};
+  const window={FRAMEWRIGHT_PAYLOAD:payload},location={search:`?f=0&w=1080&s=${seed}&profile=vertical`};
+  const sandbox={window,document,Image,URLSearchParams,location,console,performance,setTimeout,clearTimeout,requestAnimationFrame(){return 0;}};sandbox.globalThis=sandbox;window.window=window;window.document=document;window.location=location;
+  vm.runInContext(source,vm.createContext(sandbox),{filename:label});
+  const deadline=performance.now()+10000;while(!window.__ready&&performance.now()<deadline)await new Promise(r=>setTimeout(r,10));
+  if(!window.__ready)throw new Error(`${label}: boot timeout`);if(window.__bootError)throw new Error(`${label}: ${window.__bootError}`);
+  return{window,canvas,getMeasureCalls:()=>measureCalls,resetMeasureCalls:()=>{measureCalls=0;}};
+}
+function render(env,frame,seed){env.window.RISO.frame(frame,renderWidth,seed);return pixelSha(env.canvas);}
+function capture(env,frame,seed){if(env.window.__C26_BEGIN_CAPTURE)env.window.__C26_BEGIN_CAPTURE();env.window.RISO.frame(frame,renderWidth,seed);return env.window.__C26_END_CAPTURE?env.window.__C26_END_CAPTURE():{events:[]};}
+
+let chosen=null;
+for(const item of manifest.items){const plan=JSON.parse(fs.readFileSync(path.join(fixtureDir,item.planFile),'utf8'));if(plan.roles.length===5){chosen={item,plan,input:JSON.parse(fs.readFileSync(path.join(fixtureDir,item.inputFile),'utf8'))};break;}}
+if(!chosen)throw new Error('no five-role C27 plan in fixture set');
+const {item,plan,input}=chosen,coverBase=path.basename(String(input.book.cover_url||''));if(!coverBase)throw new Error('chosen C27 plan has no cover');
+function payloadFor(style,platform){return{...input.book,cover_url:`../book-ad-v0/generated-e08/${coverBase}`,visual_system:style,creative_variant:'hook-first',delivery_profile:'vertical',art_direction_mode:'cover',cover_composition_mode:'adaptive',opening_grammar:'hook-led',motion_density:'choreography-v2',typography_system:'baseline',pacing_mode:'c27-narrative-v1',platform_profile:platform,narrative_plan:plan};}
+function checkpointFrames(){const out=[];let cursor=0;for(const role of plan.roles){for(const frac of fractions)out.push({role:role.role,frac,frame:cursor+Math.min(role.frames-1,Math.max(0,Math.round((role.frames-1)*frac)))});cursor+=role.frames;}return out;}
+const checkpoints=checkpointFrames();
+const rows=[],errors=[];let firstPassExact=0,replayExact=0,semanticExact=0,totalCheckpoints=0;
+
+for(const style of styles){
+  for(const platform of platforms){
+    const payload=payloadFor(style,platform),base=await boot(baselineSource,payload,plan.seed,`baseline-${style}-${platform}`),cand=await boot(compiledSource,payload,plan.seed,`compiled-${style}-${platform}`);
+    if(typeof cand.window.__I05_STATIC_TEXT_PLAN!=='function'){errors.push(`${style}/${platform}: static text plan API missing`);continue;}
+    const initial=cand.window.__I05_STATIC_TEXT_PLAN(),checks=[];
+    for(const cp of checkpoints){
+      const bh=render(base,cp.frame,plan.seed),first=render(cand,cp.frame,plan.seed),replay=render(cand,cp.frame,plan.seed);totalCheckpoints++;
+      const firstOk=bh===first,replayOk=bh===replay;if(firstOk)firstPassExact++;else errors.push(`${style}/${platform}/${cp.role}@${cp.frame}: first-pass pixel drift`);if(replayOk)replayExact++;else errors.push(`${style}/${platform}/${cp.role}@${cp.frame}: replay pixel drift`);
+      const bc=capture(base,cp.frame,plan.seed),cc=capture(cand,cp.frame,plan.seed),semOk=stableJson(bc)===stableJson(cc);if(semOk)semanticExact++;else errors.push(`${style}/${platform}/${cp.role}@${cp.frame}: semantic capture drift`);
+      checks.push({...cp,firstExact:firstOk,replayExact:replayOk,semanticExact:semOk});
+    }
+    const bundle=cand.window.__I05_STATIC_TEXT_PLAN(),digest=planDigest(bundle);
+    if(!bundle.plans.length)errors.push(`${style}/${platform}: no compiled text plans`);
+    if(bundle.plans.some(p=>!['block','label','track'].includes(p.kind)))errors.push(`${style}/${platform}: unknown plan kind`);
+    rows.push({style,platform,initialEntries:initial.stats?.entries??null,entries:bundle.stats?.entries??bundle.plans.length,blockEntries:bundle.stats?.blockEntries??null,labelEntries:bundle.stats?.labelEntries??null,trackEntries:bundle.stats?.trackEntries??null,planDigest:digest,stats:bundle.stats,checks});
+  }
+}
+
+// Full-frame-order determinism + measureText diagnostics on one platform per visual system.
+const diagnostics=[];
+for(const style of styles){
+  const payload=payloadFor(style,'generic'),frames=[...Array(plan.total_frames).keys()];
+  const base=await boot(baselineSource,payload,plan.seed,`measure-base-${style}`),forward=await boot(compiledSource,payload,plan.seed,`measure-forward-${style}`),reverse=await boot(compiledSource,payload,plan.seed,`measure-reverse-${style}`);
+  base.resetMeasureCalls();forward.resetMeasureCalls();reverse.resetMeasureCalls();
+  let t=performance.now();for(const f of frames)base.window.RISO.frame(f,renderWidth,plan.seed);const baseMs=performance.now()-t,baseMeasures=base.getMeasureCalls();
+  t=performance.now();for(const f of frames)forward.window.RISO.frame(f,renderWidth,plan.seed);const forwardMs=performance.now()-t,forwardMeasures=forward.getMeasureCalls();
+  t=performance.now();for(const f of [...frames].reverse())reverse.window.RISO.frame(f,renderWidth,plan.seed);const reverseMs=performance.now()-t,reverseMeasures=reverse.getMeasureCalls();
+  const fBundle=forward.window.__I05_STATIC_TEXT_PLAN(),rBundle=reverse.window.__I05_STATIC_TEXT_PLAN(),fDigest=planDigest(fBundle),rDigest=planDigest(rBundle),orderIndependent=fDigest===rDigest;
+  if(!orderIndependent)errors.push(`${style}: plan bundle depends on frame traversal order`);
+  const reduction=baseMeasures?1-forwardMeasures/baseMeasures:0;if(reduction<.25)errors.push(`${style}: measureText reduction ${(reduction*100).toFixed(1)}% < 25%`);
+  diagnostics.push({style,frames:plan.total_frames,baseline:{measureTextCalls:baseMeasures,wallMs:+baseMs.toFixed(3)},compiledForward:{measureTextCalls:forwardMeasures,wallMs:+forwardMs.toFixed(3),entries:fBundle.stats?.entries??fBundle.plans.length,digest:fDigest},compiledReverse:{measureTextCalls:reverseMeasures,wallMs:+reverseMs.toFixed(3),entries:rBundle.stats?.entries??rBundle.plans.length,digest:rDigest},measureTextReduction:+reduction.toFixed(6),orderIndependent});
+}
+
+const report={schema:'framewright-i05-static-text-plan-parity-v1',sourcePlan:{id:item.id,narrativePlanId:plan.narrative_plan_id,totalFrames:plan.total_frames,roles:plan.roles.map(r=>({role:r.role,frames:r.frames}))},matrix:{styles,platforms,scenes:rows.length,checkpointsPerScene:checkpoints.length},pixelParity:{total:totalCheckpoints,firstPassExact,replayExact,firstPassRatio:+(firstPassExact/Math.max(1,totalCheckpoints)).toFixed(6),replayRatio:+(replayExact/Math.max(1,totalCheckpoints)).toFixed(6)},semanticParity:{exact:semanticExact,total:totalCheckpoints,ratio:+(semanticExact/Math.max(1,totalCheckpoints)).toFixed(6)},diagnostics,rows,errors,passed:errors.length===0};
+fs.mkdirSync(path.dirname(reportPath),{recursive:true});fs.writeFileSync(reportPath,JSON.stringify(report,null,2)+'\n');
+console.log(JSON.stringify({matrix:report.matrix,pixelParity:report.pixelParity,semanticParity:report.semanticParity,diagnostics:report.diagnostics.map(x=>({style:x.style,baselineMeasures:x.baseline.measureTextCalls,compiledMeasures:x.compiledForward.measureTextCalls,reduction:x.measureTextReduction,entries:x.compiledForward.entries,orderIndependent:x.orderIndependent})),errors:errors.length,passed:report.passed},null,2));
+if(errors.length)throw new Error(`I05 static text plan gate failed with ${errors.length} errors`);
