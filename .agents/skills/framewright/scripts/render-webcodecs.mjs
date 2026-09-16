@@ -1,10 +1,7 @@
 #!/usr/bin/env node
 // Render a Framewright template entirely inside Chromium and encode with WebCodecs.
-// No per-frame PNG/dataURL/CDP/disk path: RISO.frame() still draws the same canvas,
-// while canvas.toDataURL() is temporarily replaced with a no-op during the loop.
-//
-// HTML=examples/book-ad-v0/index.html PAYLOAD=examples/book-ad-v0/payload.example.json \
-//   node render-webcodecs.mjs [out.mp4] [seed=7] [width=1080] [bitrate=2500000]
+// Factory callers may pin the exact codec/latency policy through env; the renderer
+// must not silently reinterpret a canonical RenderSpec.
 import puppeteer from 'puppeteer';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -17,6 +14,8 @@ const out=path.resolve(outArg),seed=+seedS,width=+widthS,bitrate=+bitrateS;
 const html=path.resolve(process.env.HTML||'index.html');
 const payloadPath=process.env.PAYLOAD?path.resolve(process.env.PAYLOAD):null;
 const reportPath=path.resolve(process.env.REPORT_OUT||out.replace(/\.mp4$/i,'')+'-report.json');
+const requestedCodec=String(process.env.WEBCODECS_CODEC||'').trim();
+const latencyMode=String(process.env.WEBCODECS_LATENCY_MODE||'realtime').trim();
 if(!fs.existsSync(html)){console.error(`no such HTML: ${html}`);process.exit(1);}
 let payload=null;
 if(payloadPath){try{payload=JSON.parse(fs.readFileSync(payloadPath,'utf8'));}catch(e){console.error(`bad payload: ${e.message}`);process.exit(1);}}
@@ -49,18 +48,18 @@ await page.waitForFunction('window.__ready===true',{timeout:120000});
 const pageLoadMs=performance.now()-loadT0;
 const bootError=await page.evaluate(()=>window.__bootError||null);if(bootError)throw new Error(bootError);
 
-const codecCandidates=['avc1.4d002a','avc1.42002a','avc1.4d0028','avc1.420028'];
+const codecCandidates=requestedCodec?[requestedCodec]:['avc1.4d002a','avc1.42002a','avc1.4d0028','avc1.420028'];
 const resultT0=performance.now();
-const result=await page.evaluate(async({seed,width,bitrate,codecCandidates})=>{
+const result=await page.evaluate(async({seed,width,bitrate,codecCandidates,latencyMode})=>{
   if(typeof VideoEncoder==='undefined'||typeof VideoFrame==='undefined')throw new Error('WebCodecs VideoEncoder/VideoFrame unavailable');
   const canvas=document.getElementById('c');if(!canvas)throw new Error('main canvas #c not found');
   const total=window.RISO.total,fps=window.RISO.fps||30,height=Math.round(width*16/9/2)*2;
   let selected=null;
   for(const codec of codecCandidates){
-    const config={codec,width,height,bitrate,framerate:fps,bitrateMode:'variable',latencyMode:'quality',avc:{format:'annexb'}};
+    const config={codec,width,height,bitrate,framerate:fps,latencyMode,avc:{format:'annexb'}};
     try{const s=await VideoEncoder.isConfigSupported(config);if(s.supported){selected=s.config||config;break;}}catch{}
   }
-  if(!selected)throw new Error(`no supported H.264 WebCodecs config at ${width}x${height}`);
+  if(!selected)throw new Error(`no supported H.264 WebCodecs config at ${width}x${height}; requested=${codecCandidates.join(',')}`);
   const chunks=[];let totalBytes=0,encoderError=null,decoderConfig=null;
   const encoder=new VideoEncoder({
     output(chunk,meta){
@@ -92,7 +91,7 @@ const result=await page.evaluate(async({seed,width,bitrate,codecCandidates})=>{
   const all=new Uint8Array(totalBytes);let off=0;for(const c of chunks){all.set(c,off);off+=c.byteLength;}
   const b64T0=performance.now();let binary='';const STEP=0x8000;for(let i=0;i<all.length;i+=STEP)binary+=String.fromCharCode(...all.subarray(i,i+STEP));const base64=btoa(binary);const base64Ms=performance.now()-b64T0;
   return{base64,meta:{total,fps,width,height,codec:selected,encodedBytes:totalBytes,chunks:chunks.length,browserWallMs,renderMs,videoFrameMs,enqueueMs,base64Ms,maxQueue,decoderConfig,isSecureContext:self.isSecureContext}};
-},{seed,width,bitrate,codecCandidates});
+},{seed,width,bitrate,codecCandidates,latencyMode});
 const evaluateWallMs=performance.now()-resultT0;
 await page.close();await browser.close();await new Promise(resolve=>server.close(resolve));
 
@@ -107,8 +106,8 @@ if(mux.status!==0){console.error(mux.stderr||`ffmpeg exit ${mux.status}`);proces
 const probe=spawnSync('ffprobe',['-v','error','-show_entries','format=duration,size','-show_entries','stream=codec_name,profile,width,height,nb_frames,avg_frame_rate,r_frame_rate,time_base','-of','json',out],{encoding:'utf8'});
 let ffprobe=null;try{ffprobe=JSON.parse(probe.stdout);}catch{ffprobe={raw:probe.stdout,stderr:probe.stderr};}
 const report={
-  schema:'framewright-webcodecs-render-v3',createdAt:new Date().toISOString(),
-  config:{html,payloadPath,seed,width,bitrate},
+  schema:'framewright-webcodecs-render-v4',createdAt:new Date().toISOString(),
+  config:{html,payloadPath,seed,width,bitrate,requestedCodec:requestedCodec||null,latencyMode},
   startup:{chromeLaunchMs:+chromeLaunchMs.toFixed(3),pageLoadMs:+pageLoadMs.toFixed(3)},
   browser:result.meta,
   node:{evaluateWallMs:+evaluateWallMs.toFixed(3),finalCdpTransferApproxMs:+Math.max(0,evaluateWallMs-result.meta.browserWallMs-result.meta.base64Ms).toFixed(3),base64DecodeMs:+base64DecodeMs.toFixed(3),muxMs:+muxMs.toFixed(3),timestampNormalization:`setts time_base=1/${fps}, pts=dts=N, duration=1; MP4 track timescale=${fps}`},
