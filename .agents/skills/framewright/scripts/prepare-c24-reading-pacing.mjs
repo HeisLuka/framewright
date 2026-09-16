@@ -6,8 +6,10 @@ const input=path.resolve(process.argv[2]||'examples/book-ad-systems/index-c23.ht
 const output=path.resolve(process.argv[3]||'examples/book-ad-systems/index-c24.html');
 let html=fs.readFileSync(input,'utf8');
 
-const plateMarker="plate('hook',90,(g,S)=>SYSTEM[P.visual_system][0](g,S));plate('book',150,(g,S)=>SYSTEM[P.visual_system][1](g,S));plate('cta',120,(g,S)=>SYSTEM[P.visual_system][2](g,S));";
-if(!html.includes(plateMarker))throw new Error('C24 plate marker missing');
+const hookPlate=/plate\('hook',\s*90\s*,/;
+const bookPlate=/plate\('book',\s*150\s*,/;
+const ctaPlate=/plate\('cta',\s*120\s*,/;
+if(!hookPlate.test(html)||!bookPlate.test(html)||!ctaPlate.test(html))throw new Error('C24 baseline plate declarations missing');
 const pacing=String.raw`
 const PACING_MODE=String((window.FRAMEWRIGHT_PAYLOAD&&window.FRAMEWRIGHT_PAYLOAD.pacing_mode)||'fixed').toLowerCase();
 function __c24TextStats(text){const s=String(text||'').trim(),words=s?s.split(/\s+/).filter(Boolean).length:0,chars=Array.from(s).filter(ch=>!\s/.test(ch)).length;return{words,chars};}
@@ -34,10 +36,13 @@ function __c24Allocate(){
   return{mode:'reading-adaptive-v1',frames,seconds:Object.fromEntries(Object.entries(frames).map(([k,v])=>[k,+((v/FPS).toFixed(3))])),bounds,...load};
 }
 const __C24_PACING=__c24Allocate();P.pacing=__C24_PACING;
-plate('hook',__C24_PACING.frames.hook,(g,S)=>SYSTEM[P.visual_system][0](g,S));plate('book',__C24_PACING.frames.book,(g,S)=>SYSTEM[P.visual_system][1](g,S));plate('cta',__C24_PACING.frames.cta,(g,S)=>SYSTEM[P.visual_system][2](g,S));
 window.__C24_PACING=()=>P.pacing;
 `;
-html=html.replace(plateMarker,pacing);
+// Insert the allocator before the first plate declaration, then only replace each duration argument.
+// Earlier preparers are free to wrap/change the callbacks without breaking C24.
+html=html.replace(hookPlate,pacing+"\nplate('hook',__C24_PACING.frames.hook,");
+html=html.replace(bookPlate,"plate('book',__C24_PACING.frames.book,");
+html=html.replace(ctaPlate,"plate('cta',__C24_PACING.frames.cta,");
 
 // C22 originally normalized motion against fixed 90/150/120-frame plates. The renderer already
 // exposes S.t as local-frame / actual-plate-length, so use it after C24 changes the budgets.
