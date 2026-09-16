@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - lab/e03-encoder-matrix
+  pull_request:
+    branches:
+      - lab/e02-book-ad-v0
   workflow_dispatch:
 
 jobs:
