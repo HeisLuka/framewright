@@ -104,16 +104,36 @@ invocation.cacheHit: whether this request reused a stored artifact
 
 The artifact cache is filesystem-backed. Its contract is deliberately storage-agnostic so the next step can replace the directory with object storage while retaining the same `render_id -> stored MP4 + manifest` semantics.
 
-## CI gate
+## CI gate and canonical result
 
-`.github/workflows/e28-webcodecs-fast-prototype.yml` renders a full 15-second / 450-frame book ad with:
+Canonical GitHub Actions run: `35126452727` — SUCCESS.
 
-- deterministic fixture book;
-- staged cover;
-- 15-second audio track;
-- H.264 + AAC MP4;
-- persistent artifact cache;
-- repeated identical request expected to be a cache hit;
-- different seed expected to create a different `render_id`.
+`.github/workflows/e28-webcodecs-fast-prototype.yml` rendered a full 15-second / 450-frame book ad with a deterministic fixture book, staged cover and 15-second audio track. It then repeated the identical request through the artifact cache and rendered the same job with a different seed.
 
-Canonical run and measured results are appended after the first green E28 run.
+First 720x1280 render at 30 fps / 1 Mbps:
+
+- 450/450 decoded frames;
+- H.264 video + AAC 48 kHz mono;
+- final duration: 15.006641 s;
+- final MP4: 1,220,892 bytes;
+- full prototype wall time: 4.400696 s (102.26 effective frames/s);
+- Canvas + WebCodecs encode: 1,322.9 ms (340.16 encoded frames/s);
+- page load: 260.48 ms;
+- compressed H.264 upload: 50.7 ms;
+- FFmpeg video-copy + AAC mux: 828.13 ms;
+- one attempt, no retry required.
+
+Stable identity/cache proof:
+
+- seed 7 render_id: `fwc1_cb6e2456cb095864ef2159c92155190ce7666772ff2b612941b05083087ab719`;
+- the identical second request returned `cacheHit=true` and reused the same stored MP4 SHA-256;
+- seed 8 produced a different render_id: `fwc1_48b76223c360294a1c1623e69c49729ecec0010ce5f90fd7e0c0347923150178`;
+- all 20 repository tests passed.
+
+The first output SHA-256 was `a5783adaa9b2b751f5a5f5595917384f16d88a1781f42d7817701c176f06b234`.
+
+## Decision after E28
+
+For STANDARD book ads, this WebCodecs path is now the primary production candidate. The raw RGBA/FFmpeg route remains useful as a compatibility/reference path and as the boundary for SPECIAL renderers that require external native/GPU post-processing.
+
+The next infrastructure experiment should be a persistent worker: warm Chromium/page pool, bounded 2-4 concurrent render jobs, object-storage-backed `render_id -> MP4 + manifest`, and provider-specific `videos/hour/$` + `$/100k` measurement. With raw transport removed, the measurable remaining per-video overhead is browser/page lifecycle plus MP4/audio finalization rather than frame transport.
