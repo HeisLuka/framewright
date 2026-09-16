@@ -1,0 +1,69 @@
+name: Lab C22 Motion Quality v2
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs'
+      - '.agents/skills/framewright/scripts/make-c22-motion-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/c22-motion-audit.mjs'
+      - '.agents/skills/framewright/scripts/c22-summarize.mjs'
+      - '.agents/skills/framewright/scripts/c22-review-sheets.mjs'
+      - '.github/workflows/lab-c22-motion-quality.yml'
+  workflow_dispatch:
+
+jobs:
+  motion-quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install pinned renderer dependencies
+        run: npm install --no-save @napi-rs/canvas@1.0.9
+      - name: Install FFmpeg + pinned fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs
+          node --check .agents/skills/framewright/scripts/make-c22-motion-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/c22-motion-audit.mjs
+          node --check .agents/skills/framewright/scripts/c22-summarize.mjs
+          node --check .agents/skills/framewright/scripts/c22-review-sheets.mjs
+      - name: Prepare current semantic stack with paired motion modes
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-c22.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-c22.html examples/book-ad-systems/index-e12-c22-v2.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-c22-v2.html examples/book-ad-systems/index-e17-c22.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-c22.html examples/book-ad-systems/index-e17-e14-c22.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-c22.html examples/book-ad-systems/index-e18-c22.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-c22.html examples/book-ad-systems/index-c20-c22.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-c22.html examples/book-ad-systems/index-c22-final.html
+          node .agents/skills/framewright/scripts/make-c22-motion-fixtures.mjs examples/book-ad-systems/generated-c22
+      - name: Audit temporal motion concentration
+        env:
+          HTML: examples/book-ad-systems/index-c22-final.html
+          MANIFEST: examples/book-ad-systems/generated-c22/manifest.json
+          AUDIT_REPORT: artifacts/c22/motion-audit.json
+        run: node .agents/skills/framewright/scripts/c22-motion-audit.mjs
+      - name: Render 10 strict E12 active vs C22 choreography pairs
+        env:
+          HTML: examples/book-ad-systems/index-c22-final.html
+          MANIFEST: examples/book-ad-systems/generated-c22/manifest.json
+          OUT_DIR: artifacts/c22/videos
+          REPORT: artifacts/c22/batch.json
+          PRESET: veryfast
+          CRF: '22'
+        run: node .agents/skills/framewright/scripts/node-canvas-profile-batch.mjs
+      - name: Enforce C22 cost and layout gates
+        run: node .agents/skills/framewright/scripts/c22-summarize.mjs artifacts/c22/batch.json examples/book-ad-systems/generated-c22/manifest.json artifacts/c22/motion-audit.json artifacts/c22/summary.json
+      - name: Build choreography review sheets
+        run: node .agents/skills/framewright/scripts/c22-review-sheets.mjs artifacts/c22/batch.json examples/book-ad-systems/generated-c22/manifest.json artifacts/c22/review
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c22-motion-quality
+          path: artifacts/c22/
+          retention-days: 14
