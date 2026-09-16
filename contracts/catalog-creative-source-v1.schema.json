@@ -39,7 +39,7 @@
         "alt_titles": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "genres": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "tags": {"type": "array", "items": {"type": "string", "minLength": 1}},
-        "fandoms": {"type": "array", ""items": {"type": "string", "minLength": 1}},
+        "fandoms": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "age_rating": {"type": "string"},
         "status_label": {"type": "string"},
         "total_chapters": {"type": ["integer", "null"], "minimum": 0},
