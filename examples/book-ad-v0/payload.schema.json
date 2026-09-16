@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://framewright.local/schemas/book-ad-payload-v0.json",
+  "title": "BookAdPayload v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["book_id", "title", "author", "hook", "cta", "cover_url"],
+  "properties": {
+    "book_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "title": {"type": "string", "minLength": 1, "maxLength": 180},
+    "author": {"type": "string", "minLength": 1, "maxLength": 120},
+    "hook": {"type": "string", "minLength": 1, "maxLength": 260},
+    "cta": {"type": "string", "minLength": 1, "maxLength": 80},
+    "eyebrow": {"type": "string", "maxLength": 80},
+    "brand": {"type": "string", "maxLength": 80},
+    "cover_url": {"type": "string", "minLength": 1, "maxLength": 2048},
+    "accent": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+    "background": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+    "ink": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"}
+  }
+}
