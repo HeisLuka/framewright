@@ -1,0 +1,64 @@
+name: Lab E18 Responsive Variants
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs'
+      - '.agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/e18-review-sheets.mjs'
+      - '.github/workflows/lab-e18-responsive-variants.yml'
+  workflow_dispatch:
+
+jobs:
+  responsive-variants:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install pinned worker dependencies
+        run: npm install --no-save @napi-rs/canvas@1.0.9
+      - name: Install FFmpeg + pinned fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs
+          node --check .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/e18-review-sheets.mjs
+      - name: Prepare responsive structural-variant template + fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-e18.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-e18.html examples/book-ad-systems/index-e17-for-e18.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-e18.html examples/book-ad-systems/index-e17-e14.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14.html examples/book-ad-systems/index-e18.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-e18
+      - name: Render 3 books x 4 variants x 3 profiles
+        env:
+          HTML: examples/book-ad-systems/index-e18.html
+          MANIFEST: examples/book-ad-systems/generated-e18/manifest.json
+          OUT_DIR: artifacts/e18/videos
+          REPORT: artifacts/e18/batch.json
+          PRESET: veryfast
+          CRF: '22'
+        run: node .agents/skills/framewright/scripts/node-canvas-profile-batch.mjs
+      - name: Validate responsive variant matrix
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');const b=JSON.parse(fs.readFileSync('artifacts/e18/batch.json','utf8'));
+          if(b.count!==36)throw new Error(`expected 36 videos, got ${b.count}`);if(b.layoutWarningGroups!==0)throw new Error(`layout warnings ${b.layoutWarningGroups}`);
+          const books=['river-station','city-seven','long-title'],profiles=['vertical','square','landscape'],variants=['hook-first','cover-first','title-first','hook-title'];
+          const dims={vertical:[1080,1920],square:[1080,1080],landscape:[1920,1080]};
+          for(const book of books){const all=b.results.filter(x=>x.bookId===book);if(all.length!==12)throw new Error(`${book}: expected 12 renders`);if(new Set(all.map(x=>x.seed)).size!==1)throw new Error(`${book}: seed drift`);if(new Set(all.map(x=>x.style)).size!==1)throw new Error(`${book}: style drift`);for(const p of profiles)for(const v of variants){const x=all.find(r=>r.profile===p&&r.variant===v);if(!x)throw new Error(`${book}: missing ${p}/${v}`);const d=dims[p];if(x.width!==d[0]||x.height!==d[1])throw new Error(`${x.id}: bad dimensions`);}}
+          console.log({videos:b.count,layoutWarnings:b.layoutWarningGroups,videosPerHour:b.videosPerHour});
+          NODE
+      - name: Build responsive-variant review sheets
+        run: node .agents/skills/framewright/scripts/e18-review-sheets.mjs artifacts/e18/batch.json artifacts/e18/review
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e18-responsive-variants
+          path: artifacts/e18/
+          retention-days: 14
