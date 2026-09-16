@@ -258,6 +258,42 @@ export const installRisoBridge = ({ runtime, canvas, defaultWidth = 1080, defaul
       runtime.render(frame, width, seed);
       return canvas.toDataURL("image/png");
     },
+    contact(count = 24, cellWidth = 360, seed = defaultSeed) {
+      const n = Math.max(1, Math.round(Number(count) || 24));
+      const width = Math.max(96, Math.round(Number(cellWidth) || 360));
+      const cellHeight = Math.round(width / runtime.plan.aspect);
+      const columns = runtime.plan.aspect < 1 ? 4 : 6;
+      const rows = Math.ceil(n / columns);
+      const gap = 8;
+      const labelHeight = 28;
+      const sheet = document.createElement("canvas");
+      sheet.width = columns * (width + gap) + gap;
+      sheet.height = rows * (cellHeight + labelHeight + gap) + gap;
+      const context = sheet.getContext("2d", { alpha: false });
+      context.fillStyle = "#181818";
+      context.fillRect(0, 0, sheet.width, sheet.height);
+      for (let index = 0; index < n; index += 1) {
+        const frame = n === 1
+          ? 0
+          : Math.round(index * (runtime.plan.totalFrames - 1) / (n - 1));
+        const state = runtime.render(frame, width, seed);
+        const x = gap + (index % columns) * (width + gap);
+        const y = gap + Math.floor(index / columns) * (cellHeight + labelHeight + gap);
+        context.drawImage(canvas, x, y, width, cellHeight);
+        context.fillStyle = "#ddd";
+        context.font = "12px Menlo, monospace";
+        context.textBaseline = "top";
+        context.fillText(
+          `f=${frame} ${state.scene.id} t=${state.progress.toFixed(2)}`,
+          x + 2,
+          y + cellHeight + 6,
+        );
+      }
+      canvas.width = sheet.width;
+      canvas.height = sheet.height;
+      canvas.getContext("2d", { alpha: false }).drawImage(sheet, 0, 0);
+      return canvas.toDataURL("image/png");
+    },
   };
   window.RISO = bridge;
   return bridge;
