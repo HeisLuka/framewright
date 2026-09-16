@@ -1,0 +1,52 @@
+name: Lab I08 Publication Attribution Round Trip
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - '.agents/skills/framewright/scripts/c30-campaign-learning.mjs'
+      - '.agents/skills/framewright/scripts/c31-platform-export-ingestion.mjs'
+      - '.agents/skills/framewright/scripts/c34-exploration-holdout-selector.mjs'
+      - '.agents/skills/framewright/scripts/i08-publication-attribution-roundtrip.mjs'
+      - '.agents/skills/framewright/scripts/i08-publication-attribution-roundtrip-audit.mjs'
+      - 'docs/i08-publication-attribution-roundtrip.md'
+      - '.github/workflows/lab-i08-publication-attribution-roundtrip.yml'
+  workflow_dispatch:
+
+jobs:
+  attribution-roundtrip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Syntax check C30/C31/C34/I08
+        run: |
+          node --check .agents/skills/framewright/scripts/c30-campaign-learning.mjs
+          node --check .agents/skills/framewright/scripts/c31-platform-export-ingestion.mjs
+          node --check .agents/skills/framewright/scripts/c34-exploration-holdout-selector.mjs
+          node --check .agents/skills/framewright/scripts/i08-publication-attribution-roundtrip.mjs
+          node --check .agents/skills/framewright/scripts/i08-publication-attribution-roundtrip-audit.mjs
+      - name: Re-run canonical C30 contract
+        run: node .agents/skills/framewright/scripts/c30-campaign-learning-audit.mjs artifacts/c30
+      - name: Re-run canonical C31 ingestion contract
+        run: node .agents/skills/framewright/scripts/c31-platform-export-ingestion-audit.mjs artifacts/c31
+      - name: Re-run canonical C34 selector contract
+        run: node .agents/skills/framewright/scripts/c34-exploration-holdout-selector-audit.mjs artifacts/c34
+      - name: Audit I08 publication attribution round-trip
+        run: node .agents/skills/framewright/scripts/i08-publication-attribution-roundtrip-audit.mjs artifacts/i08
+      - name: Show I08 summary
+        run: cat artifacts/i08/summary.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i08-publication-attribution-roundtrip
+          path: |
+            artifacts/c30/
+            artifacts/c31/
+            artifacts/c34/
+            artifacts/i08/
+          retention-days: 14
