@@ -6,6 +6,7 @@ on:
     paths:
       - '.agents/skills/framewright/scripts/i05-compiler-ownership-scout.mjs'
       - '.agents/skills/framewright/scripts/i05-c27-c26-parity.mjs'
+      - '.agents/skills/framewright/scripts/i05-c27-delivery-matrix.mjs'
       - 'examples/book-ad-systems/platform-ui-profiles.v1.json'
       - 'docs/i05-compiler-ownership-scout.md'
       - '.github/workflows/lab-i05-compiler-ownership.yml'
@@ -58,10 +59,13 @@ jobs:
           mkdir -p artifacts/i05/c27-source
           git show "$C27_EXPECTED_SHA":.agents/skills/framewright/scripts/c27-narrative-plan.mjs > artifacts/i05/c27-source/c27-narrative-plan.mjs
           git show "$C27_EXPECTED_SHA":.agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs > artifacts/i05/c27-source/prepare-c27-narrative-template.mjs
+          git show "$C27_EXPECTED_SHA":.agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs > artifacts/i05/c27-source/make-c27-narrative-fixtures.mjs
           printf '%s\n' "$C27_EXPECTED_SHA" > artifacts/i05/c27-source/commit.txt
           node --check artifacts/i05/c27-source/c27-narrative-plan.mjs
           node --check artifacts/i05/c27-source/prepare-c27-narrative-template.mjs
+          node --check artifacts/i05/c27-source/make-c27-narrative-fixtures.mjs
           node --check .agents/skills/framewright/scripts/i05-c27-c26-parity.mjs
+          node --check .agents/skills/framewright/scripts/i05-c27-delivery-matrix.mjs
       - name: Prepare current C26 baseline
         run: |
           node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-i05.html
@@ -87,9 +91,19 @@ jobs:
           PARITY_REPORT: artifacts/i05/c27-c26-parity.json
           PARITY_WIDTH: '540'
         run: node .agents/skills/framewright/scripts/i05-c27-c26-parity.mjs
-      - name: Print translation result
+      - name: Generate pinned C27 verified narrative fixtures
+        run: node artifacts/i05/c27-source/make-c27-narrative-fixtures.mjs /tmp/c27-fixtures
+      - name: Cross visual systems and platform delivery profiles
+        env:
+          C27_HTML: examples/book-ad-systems/index-c27-i05.html
+          C27_FIXTURES: /tmp/c27-fixtures
+          DELIVERY_REPORT: artifacts/i05/c27-delivery-matrix.json
+          MATRIX_WIDTH: '540'
+        run: node .agents/skills/framewright/scripts/i05-c27-delivery-matrix.mjs
+      - name: Print I05 translation results
         run: |
           node -e "const r=require('./artifacts/i05/c27-c26-parity.json'); console.log(JSON.stringify({scenes:r.scenes,checkpoints:r.checkpointCount,pixelExact:r.pixelExact,pixelExactRatio:r.pixelExactRatio,revealStartDriftFrames:r.revealStartDriftFrames,bookSettledPreserved:r.bookSettledPreserved,safeViolations:r.safeViolations,translationGatePassed:r.translationGatePassed,errors:r.errors.length},null,2))"
+          node -e "const r=require('./artifacts/i05/c27-delivery-matrix.json'); console.log(JSON.stringify({sourcePlan:r.sourcePlan,scenes:r.scenes,coverage:r.coverage,sampledFrames:r.sampledFrames,totalEvents:r.totalEvents,safeViolations:r.safeViolations,passed:r.passed,errors:r.errors.length},null,2))"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
