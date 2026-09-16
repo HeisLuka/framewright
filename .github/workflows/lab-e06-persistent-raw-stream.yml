@@ -1,0 +1,100 @@
+name: Lab E06 Persistent Raw Stream
+
+on:
+  push:
+    branches:
+      - lab/e06-persistent-raw-stream
+  pull_request:
+    branches:
+      - lab/e02-book-ad-v0
+  workflow_dispatch:
+
+jobs:
+  persistent-raw-stream:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/raw-stream-persistent.mjs
+
+      - name: PNG baseline render
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+        run: |
+          rm -rf frames-e06 artifacts/e06
+          mkdir -p artifacts/e06
+          start=$(date +%s%N)
+          node .agents/skills/framewright/scripts/render.mjs frames-e06 7 1080 1
+          end=$(date +%s%N)
+          node -e "require('fs').writeFileSync('artifacts/e06/png-render-ms.txt', String((${end}-${start})/1000000))"
+          du -sb frames-e06 | cut -f1 > artifacts/e06/png-frame-bytes.txt
+
+      - name: Encode PNG baseline
+        run: |
+          start=$(date +%s%N)
+          ffmpeg -hide_banner -loglevel error -y -framerate 30 -i frames-e06/f%05d.png -c:v libx264 -preset veryfast -crf 22 -maxrate 14M -bufsize 28M -pix_fmt yuv420p -movflags +faststart artifacts/e06/png-reference.mp4
+          end=$(date +%s%N)
+          node -e "require('fs').writeFileSync('artifacts/e06/png-encode-ms.txt', String((${end}-${start})/1000000))"
+
+      - name: Persistent raw RGBA stream to FFmpeg
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+          REPORT: artifacts/e06/raw-stream-persistent.json
+          PRESET: veryfast
+          CRF: '22'
+        run: node .agents/skills/framewright/scripts/raw-stream-persistent.mjs artifacts/e06/raw-stream-persistent.mp4 7 1080
+
+      - name: Compare decoded output
+        run: |
+          ffmpeg -hide_banner -i artifacts/e06/png-reference.mp4 -i artifacts/e06/raw-stream-persistent.mp4 -lavfi "[0:v]setpts=PTS-STARTPTS[ref];[1:v]setpts=PTS-STARTPTS[test];[ref][test]ssim" -f null - 2> artifacts/e06/ssim.txt
+          ffmpeg -hide_banner -i artifacts/e06/png-reference.mp4 -i artifacts/e06/raw-stream-persistent.mp4 -lavfi "[0:v]setpts=PTS-STARTPTS[ref];[1:v]setpts=PTS-STARTPTS[test];[ref][test]psnr" -f null - 2> artifacts/e06/psnr.txt
+          ffprobe -v error -show_entries format=duration,size -show_entries stream=codec_name,width,height,nb_frames,color_range,color_primaries,color_transfer -of json artifacts/e06/raw-stream-persistent.mp4 > artifacts/e06/raw-probe.json
+
+      - name: Summary
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const raw=JSON.parse(fs.readFileSync('artifacts/e06/raw-stream-persistent.json','utf8'));
+          const pngRender=+fs.readFileSync('artifacts/e06/png-render-ms.txt','utf8');
+          const pngEncode=+fs.readFileSync('artifacts/e06/png-encode-ms.txt','utf8');
+          const pngBytes=+fs.readFileSync('artifacts/e06/png-frame-bytes.txt','utf8');
+          const ssimText=fs.readFileSync('artifacts/e06/ssim.txt','utf8');
+          const psnrText=fs.readFileSync('artifacts/e06/psnr.txt','utf8');
+          const ssim=ssimText.match(/All:([0-9.]+)/)?.[1]||null;
+          const psnr=psnrText.match(/average:(inf|[0-9.]+)/)?.[1]||null;
+          const out={png:{renderMs:pngRender,encodeMs:pngEncode,totalMs:pngRender+pngEncode,tempBytes:pngBytes},raw:{...raw.summary,tempBytes:0},quality:{ssim:ssim?+ssim:null,psnr:psnr==='inf'?'inf':(psnr?+psnr:null)}};
+          out.speedup=+(out.png.totalMs/out.raw.totalMs).toFixed(3);
+          fs.writeFileSync('artifacts/e06/summary.json',JSON.stringify(out,null,2));
+          let md=`| path | render/stream s | encode | total s | temp MiB |\n|---|---:|---:|---:|---:|\n`;
+          md+=`| PNG → disk → x264 | ${(pngRender/1000).toFixed(3)} | ${(pngEncode/1000).toFixed(3)} s | ${((pngRender+pngEncode)/1000).toFixed(3)} | ${(pngBytes/1024/1024).toFixed(2)} |\n`;
+          md+=`| persistent raw RGBA → x264 stdin | ${(raw.summary.loopMs/1000).toFixed(3)} | concurrent | ${(raw.summary.totalMs/1000).toFixed(3)} | 0 |\n\n`;
+          md+=`End-to-end speedup vs PNG baseline: **${out.speedup}×**. SSIM: **${out.quality.ssim}**. PSNR: **${out.quality.psnr}**.\n\n`;
+          md+=`Raw details: ${(raw.summary.fps).toFixed(3)} fps; ${(raw.summary.receivedBytes/1024/1024/1024).toFixed(3)} GiB streamed; ${raw.summary.pauseCount} FFmpeg backpressure pauses; ${(raw.summary.drainWaitMs/1000).toFixed(3)} s total drain wait.\n`;
+          fs.writeFileSync('artifacts/e06/summary.md',md); console.log(md);
+          NODE
+          rm -rf frames-e06
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: e06-persistent-raw-stream
+          path: artifacts/e06/
+          if-no-files-found: error
+          retention-days: 14
