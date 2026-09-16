@@ -6,6 +6,8 @@ export const C27_DURATION_PROFILES=[3,5,7,9,12,15];
 export const C27_ANGLE_TYPES=['premise','conflict','identity','emotion','question','world','character','thesis','quote','recommendation_context'];
 export const C27_REVEAL_TIMINGS=['early','mid','late'];
 export const C27_CTA_TREATMENTS=['none','soft_reveal','intent','direct','qr_slot'];
+const REVEAL_FRACTION={early:.22,mid:.40,late:.57};
+const CTA_START_FRACTION=.82;
 
 function sortValue(value){
   if(Array.isArray(value))return value.map(sortValue);
@@ -51,7 +53,6 @@ function copyAtom(source,book){
   return {text,source:structuredClone(source)};
 }
 function field(field){return {kind:'book_payload_field',field,selector:{kind:'full'}};}
-
 function roleSpec(role,atoms,minSeconds,weight){return{role,atoms,minSeconds,weight};}
 
 function semanticRoles({book,angle,durationSeconds,revealTiming,ctaTreatment}){
@@ -71,30 +72,51 @@ function semanticRoles({book,angle,durationSeconds,revealTiming,ctaTreatment}){
   } else roles=[hook,...middle,reveal];
 
   if(['intent','direct','qr_slot'].includes(ctaTreatment)){
-    const atoms=[];
-    if(ctaTreatment!=='qr_slot')atoms.push(copyAtom(field('cta'),book));
-    else atoms.push({text:'',source:{kind:'reserved_affordance',slot:'qr'}});
+    const atoms=ctaTreatment==='qr_slot'?[{text:'',source:{kind:'reserved_affordance',slot:'qr'}}]:[copyAtom(field('cta'),book)];
     roles.push(roleSpec('cta',atoms,1.3,.8));
   }
   return roles;
 }
 
-function allocateFrames(roles,totalFrames,fps){
+function minFrames(roles,fps){return roles.reduce((sum,r)=>sum+Math.round(r.minSeconds*fps),0);}
+function allocateCounts(roles,totalFrames,fps){
+  if(!roles.length){if(totalFrames!==0)throw new Error(`cannot allocate ${totalFrames} frames to empty role segment`);return[];}
   const mins=roles.map(r=>Math.round(r.minSeconds*fps));
   const minTotal=mins.reduce((a,b)=>a+b,0);
-  if(minTotal>totalFrames)throw new Error(`role minimums ${minTotal} exceed totalFrames ${totalFrames}`);
-  const extra=totalFrames-minTotal;
-  const weightTotal=roles.reduce((s,r)=>s+r.weight,0);
-  const exact=roles.map(r=>extra*r.weight/weightTotal);
-  const extras=exact.map(Math.floor);
+  if(minTotal>totalFrames)throw new Error(`role minimums ${minTotal} exceed segment ${totalFrames}`);
+  const extra=totalFrames-minTotal,weightTotal=roles.reduce((s,r)=>s+r.weight,0);
+  const exact=roles.map(r=>extra*r.weight/weightTotal),extras=exact.map(Math.floor);
   let remainder=extra-extras.reduce((a,b)=>a+b,0);
   const order=exact.map((x,i)=>({i,frac:x-Math.floor(x)})).sort((a,b)=>b.frac-a.frac||a.i-b.i);
   for(let k=0;k<remainder;k++)extras[order[k%order.length].i]++;
-  let cursor=0;
-  return roles.map((r,i)=>{
-    const frames=mins[i]+extras[i],out={role:r.role,start_frame:cursor,end_frame:cursor+frames,frames,atoms:r.atoms};
-    cursor+=frames;return out;
-  });
+  return roles.map((_,i)=>mins[i]+extras[i]);
+}
+function assignSpans(roles,counts,start=0){
+  let cursor=start;
+  return roles.map((r,i)=>{const frames=counts[i],out={role:r.role,start_frame:cursor,end_frame:cursor+frames,frames,atoms:r.atoms};cursor+=frames;return out;});
+}
+function allocateTimeline(roles,totalFrames,fps,durationSeconds,revealTiming){
+  if(durationSeconds<7){const counts=allocateCounts(roles,totalFrames,fps);return assignSpans(roles,counts);}
+  const revealIndex=roles.findIndex(r=>r.role==='book_reveal');
+  if(revealIndex<0)throw new Error('full grammar requires book_reveal');
+  const ctaIndex=roles.findIndex(r=>r.role==='cta');
+  const middleEnd=ctaIndex>=0?ctaIndex:roles.length;
+  const pre=roles.slice(0,revealIndex),middle=roles.slice(revealIndex,middleEnd),cta=ctaIndex>=0?roles.slice(ctaIndex):[];
+  const minPre=minFrames(pre,fps),minMiddle=minFrames(middle,fps),minCta=minFrames(cta,fps);
+  const desiredCtaStart=cta.length?Math.round(totalFrames*CTA_START_FRACTION):totalFrames;
+  const ctaStart=Math.max(minPre+minMiddle,Math.min(totalFrames-minCta,desiredCtaStart));
+  const desiredReveal=Math.round(totalFrames*REVEAL_FRACTION[revealTiming]);
+  const maxReveal=ctaStart-minMiddle;
+  if(maxReveal<minPre)throw new Error(`no feasible reveal window: minPre=${minPre}, maxReveal=${maxReveal}`);
+  const revealStart=Math.max(minPre,Math.min(maxReveal,desiredReveal));
+  const preCounts=allocateCounts(pre,revealStart,fps);
+  const middleCounts=allocateCounts(middle,ctaStart-revealStart,fps);
+  const ctaCounts=allocateCounts(cta,totalFrames-ctaStart,fps);
+  return[
+    ...assignSpans(pre,preCounts,0),
+    ...assignSpans(middle,middleCounts,revealStart),
+    ...assignSpans(cta,ctaCounts,ctaStart)
+  ];
 }
 
 function identityInput(plan){const {narrative_plan_id,...rest}=plan;return rest;}
@@ -113,34 +135,23 @@ export function planNarrative(input){
   if(!Number.isInteger(fps)||fps<=0)throw new Error('fps must be a positive integer');
   if(!C27_REVEAL_TIMINGS.includes(revealTiming))throw new Error(`unsupported reveal_timing: ${revealTiming}`);
   if(!C27_CTA_TREATMENTS.includes(ctaTreatment))throw new Error(`unsupported cta_treatment: ${ctaTreatment}`);
-  if(durationSeconds>=7&&(!angle.tension||!angle.payoff))throw new Error('7s+ full grammar requires verified tension and payoff copy sources');
+  if(durationSeconds>=7&&!angle.tension)throw new Error('7s+ full grammar requires a verified tension copy source');
   if(durationSeconds===3&&ctaTreatment!=='none')throw new Error('3s teaser forces cta_treatment=none');
   if(durationSeconds===5&&!['none','soft_reveal'].includes(ctaTreatment))throw new Error('5s profile supports only none/soft_reveal CTA treatment');
 
   const totalFrames=durationSeconds*fps;
   const specs=semanticRoles({book,angle,durationSeconds,revealTiming,ctaTreatment});
-  const roles=allocateFrames(specs,totalFrames,fps);
-  const reveal=roles.find(x=>x.role==='book_reveal');
-  const cta=roles.find(x=>x.role==='cta');
+  const roles=allocateTimeline(specs,totalFrames,fps,durationSeconds,revealTiming);
+  const reveal=roles.find(x=>x.role==='book_reveal'),cta=roles.find(x=>x.role==='cta');
   const plan={
-    schema:'framewright-c27-narrative-plan-v1',
-    policy_version:C27_POLICY_VERSION,
+    schema:'framewright-c27-narrative-plan-v1',policy_version:C27_POLICY_VERSION,
     book_id:String(book.book_id||book.id||''),
     angle:{id:angle.id,type:angle.type,label:angle.label||angle.id,source:angle.source||null},
-    duration_seconds:durationSeconds,
-    fps,
-    total_frames:totalFrames,
+    duration_seconds:durationSeconds,fps,total_frames:totalFrames,
     reveal_timing:durationSeconds===3?'none':revealTiming,
     cta_treatment:durationSeconds<=5?(durationSeconds===3?'none':ctaTreatment):ctaTreatment,
-    seed:Number.isInteger(input.seed)?input.seed:0,
-    roles,
-    checkpoints:{
-      hook:0,
-      pre_reveal:reveal?Math.max(0,reveal.start_frame-1):null,
-      reveal:reveal?.start_frame??null,
-      cta:cta?.start_frame??null,
-      end:totalFrames-1
-    }
+    seed:Number.isInteger(input.seed)?input.seed:0,roles,
+    checkpoints:{hook:0,pre_reveal:reveal?Math.max(0,reveal.start_frame-1):null,reveal:reveal?.start_frame??null,cta:cta?.start_frame??null,end:totalFrames-1}
   };
   plan.narrative_plan_id=computeNarrativePlanId(plan);
   assertNarrativePlan(plan);
@@ -168,7 +179,12 @@ export function assertNarrativePlan(plan){
   }
   if(cursor!==plan.total_frames)throw new Error('timeline does not cover exact total_frames');
   if(plan.roles[0].role!=='hook'||plan.roles[0].start_frame!==0)throw new Error('hook must begin on frame 0');
-  const names=plan.roles.map(r=>r.role);
+  const names=plan.roles.map(r=>r.role),revealIndex=names.indexOf('book_reveal');
+  if(revealIndex>=0){
+    for(const r of plan.roles.slice(0,revealIndex))for(const atom of r.atoms||[]){
+      if(atom.source?.kind==='book_payload_field'&&['title','author'].includes(atom.source.field))throw new Error(`book identity leaked before book_reveal via ${atom.source.field}`);
+    }
+  }
   if(plan.duration_seconds===3&&stableStringify(names)!==stableStringify(['hook']))throw new Error('3s grammar must be hook-only');
   if(plan.duration_seconds===5){
     if(stableStringify(names)!==stableStringify(['hook','book_reveal']))throw new Error('5s grammar must be hook -> book_reveal');
