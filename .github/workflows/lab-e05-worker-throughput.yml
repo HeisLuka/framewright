@@ -1,9 +1,6 @@
 name: Lab E05 Worker Throughput
 
 on:
-  push:
-    branches:
-      - lab/e05-worker-throughput
   workflow_dispatch:
 
 jobs:
