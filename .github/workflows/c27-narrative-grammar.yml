@@ -5,38 +5,91 @@ on:
     branches:
       - lab/framewright-research
     paths:
-      - '.agents/skills/framewright/scripts/c27-narrative-*.mjs'
-      - '.agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/c27-*.mjs'
+      - '.agents/skills/framewright/scripts/make-c27-*.mjs'
+      - '.agents/skills/framewright/scripts/prepare-c27-*.mjs'
+      - 'examples/book-ad-systems/platform-ui-profiles.v1.json'
       - 'docs/c27-viral-narrative-grammar.md'
       - '.github/workflows/c27-narrative-grammar.yml'
   workflow_dispatch:
 
 jobs:
-  narrative-contract:
+  narrative-contract-and-render:
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20.20.2
-      - name: Syntax check
+      - name: Syntax check C27
         run: |
           node --check .agents/skills/framewright/scripts/c27-narrative-plan.mjs
           node --check .agents/skills/framewright/scripts/c27-narrative-selftest.mjs
           node --check .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs
           node --check .agents/skills/framewright/scripts/c27-narrative-audit.mjs
+          node --check .agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs
+          node --check .agents/skills/framewright/scripts/make-c27-render-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/c27-render-audit.mjs
+          node --check .agents/skills/framewright/scripts/c27-summarize.mjs
+          node --check .agents/skills/framewright/scripts/c27-review-sheets.mjs
       - name: Standalone planner self-test
         run: node .agents/skills/framewright/scripts/c27-narrative-selftest.mjs
       - name: Build exact E08 narrative matrix
         run: node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs artifacts/c27/fixtures
       - name: Audit semantic contract
         run: node .agents/skills/framewright/scripts/c27-narrative-audit.mjs artifacts/c27/fixtures artifacts/c27/audit.json
-      - name: Show audit
-        run: cat artifacts/c27/audit.json
+      - name: Install pinned renderer dependencies
+        run: npm install --no-save @napi-rs/canvas@1.0.9
+      - name: Install FFmpeg and pinned fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Prepare current C20-C26 stack plus C27 NarrativePlan adapter
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-c27.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-c27.html examples/book-ad-systems/index-c22-c27.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-c22-c27.html examples/book-ad-systems/index-e17-c27.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-c27.html examples/book-ad-systems/index-e17-e14-c27.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-c27.html examples/book-ad-systems/index-e18-c27.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-c27.html examples/book-ad-systems/index-c20-c27.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-c27.html examples/book-ad-systems/index-c21-c27.html
+          node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c21-c27.html examples/book-ad-systems/index-c23-c27.html
+          node .agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs examples/book-ad-systems/index-c23-c27.html examples/book-ad-systems/index-c24-c27.html
+          node .agents/skills/framewright/scripts/prepare-c25-typography-axis.mjs examples/book-ad-systems/index-c24-c27.html examples/book-ad-systems/index-c25-c27.html
+          node .agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs examples/book-ad-systems/index-c25-c27.html examples/book-ad-systems/index-c26-c27.html examples/book-ad-systems/platform-ui-profiles.v1.json
+          node .agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs examples/book-ad-systems/index-c26-c27.html examples/book-ad-systems/index-c27.html
+          node .agents/skills/framewright/scripts/make-c27-render-fixtures.mjs artifacts/c27/fixtures examples/book-ad-systems/generated-c27-render
+      - name: Audit renderer schedule and inherited safe zones
+        env:
+          HTML: examples/book-ad-systems/index-c27.html
+          MANIFEST: examples/book-ad-systems/generated-c27-render/manifest.json
+          RENDER_AUDIT: artifacts/c27/render-audit.json
+        run: node .agents/skills/framewright/scripts/c27-render-audit.mjs
+      - name: Render 36 controlled narrative videos
+        env:
+          HTML: examples/book-ad-systems/index-c27.html
+          MANIFEST: examples/book-ad-systems/generated-c27-render/manifest.json
+          OUT_DIR: artifacts/c27/videos
+          REPORT: artifacts/c27/batch.json
+          PRESET: veryfast
+          CRF: '22'
+        run: node .agents/skills/framewright/scripts/node-canvas-profile-batch.mjs
+      - name: Enforce semantic, layout and final-artifact gates
+        run: node .agents/skills/framewright/scripts/c27-summarize.mjs artifacts/c27/batch.json artifacts/c27/audit.json artifacts/c27/render-audit.json examples/book-ad-systems/generated-c27-render/manifest.json artifacts/c27/summary.json
+      - name: Build human-review narrative sheets
+        run: node .agents/skills/framewright/scripts/c27-review-sheets.mjs artifacts/c27/batch.json examples/book-ad-systems/generated-c27-render/manifest.json artifacts/c27/review
+      - name: Show C27 summary
+        run: cat artifacts/c27/summary.json
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: c27-narrative-contract
+          name: c27-narrative-grammar
           path: |
             artifacts/c27/audit.json
+            artifacts/c27/render-audit.json
+            artifacts/c27/summary.json
+            artifacts/c27/batch.json
+            artifacts/c27/review/
+            artifacts/c27/videos/
             artifacts/c27/fixtures/manifest.json
+            examples/book-ad-systems/generated-c27-render/manifest.json
           retention-days: 14
