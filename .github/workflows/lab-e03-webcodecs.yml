@@ -1,0 +1,32 @@
+name: Lab E03 WebCodecs Probe
+
+on:
+  push:
+    branches:
+      - lab/e03-webcodecs-stream
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Probe browser encoders
+        run: |
+          mkdir -p artifacts
+          node --check .agents/skills/framewright/scripts/webcodecs-probe.mjs
+          node .agents/skills/framewright/scripts/webcodecs-probe.mjs artifacts/webcodecs-probe.json
+      - name: Upload probe
+        uses: actions/upload-artifact@v4
+        with:
+          name: e03-webcodecs-probe
+          path: artifacts/webcodecs-probe.json
+          if-no-files-found: error
+          retention-days: 14
