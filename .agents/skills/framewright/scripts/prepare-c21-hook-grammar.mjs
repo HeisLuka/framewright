@@ -15,10 +15,11 @@ const OPENING_GRAMMARS=new Set(['hook-led','cover-led','title-led','progressive-
 const ACTIVE_OPENING_GRAMMAR=OPENING_GRAMMARS.has(OPENING_GRAMMAR)?OPENING_GRAMMAR:'hook-led';
 
 function __c21Bg(g,S,style){
-  if(typeof __profileBg==='function')return __profileBg(g,S,style,'c21-opening');
-  if(style==='swiss')return swissBg(g,S.seed,'c21-opening');
-  if(style==='newspaper')return newspaperBg(g,S.seed,'c21-opening');
-  return paperBg(g,S.seed,'c21-opening');
+  // Keep the exact baseline hook background/motif. C21 is allowed to change foreground hierarchy and timing only.
+  if(typeof __profileBg==='function')return __profileBg(g,S,style,'hook');
+  if(style==='swiss')return swissBg(g,S.seed,'hook');
+  if(style==='newspaper')return newspaperBg(g,S.seed,'hook');
+  return paperBg(g,S.seed,'hook');
 }
 function __c21Header(g,style){if(typeof __profileHeader==='function')return __profileHeader(g,style);}
 function __c21Fade(S){return 1-easeIO(span(S.t,.52,.72));}
