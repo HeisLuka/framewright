@@ -86,9 +86,10 @@ async function imageMetric(kind, ref, cand) {
   const { stderr } = await run(process.env.FFMPEG || 'ffmpeg', [
     '-hide_banner','-loglevel','info','-i',ref,'-i',cand,'-lavfi',filter,'-f','null','-',
   ]);
-  const re = kind === 'ssim' ? /All:([0-9.]+)/g : /average:([0-9.]+)/g;
+  const re = kind === 'ssim' ? /All:([0-9.]+)/g : /average:(inf|[0-9.]+)/gi;
   const match = [...stderr.matchAll(re)].at(-1);
   if (!match) throw new Error(`unable to parse ${kind} metric`);
+  if (kind === 'psnr' && match[1].toLowerCase() === 'inf') return Infinity;
   return Number(match[1]);
 }
 
