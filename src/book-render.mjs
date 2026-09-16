@@ -88,6 +88,9 @@ export const newbooBookToRenderPayload = (input, options = {}) => {
     options.genre || genres[0] || book.catalog_section || tags[0] || "BOOK",
   );
   const cta = nonEmpty(options.cta || "READ NOW");
+  const year = book.year != null && book.year !== "" && Number.isFinite(Number(book.year))
+    ? Number(book.year)
+    : undefined;
 
   const asset = selectedCover.id && storageBookId
     ? newbooCoverAsset({
@@ -126,7 +129,7 @@ export const newbooBookToRenderPayload = (input, options = {}) => {
       originalTitle: nonEmpty(book.original_title),
       languageOriginal: nonEmpty(book.language_original),
       languageTranslation: nonEmpty(book.language_translation),
-      year: Number.isFinite(Number(book.year)) ? Number(book.year) : undefined,
+      year,
       catalogSection: nonEmpty(book.catalog_section),
       ageRating: nonEmpty(book.age_rating),
       statusLabel: nonEmpty(book.status_label),
