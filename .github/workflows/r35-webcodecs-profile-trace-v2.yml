@@ -1,0 +1,67 @@
+name: R35 WebCodecs Profile Trace Corrected
+
+on:
+  push:
+    branches: [lab/r35-webcodecs-profile-trace]
+    paths:
+      - '.agents/skills/framewright/scripts/r35-webcodecs-profile-trace.mjs'
+      - '.github/workflows/r35-webcodecs-profile-trace-v2.yml'
+  workflow_dispatch:
+
+jobs:
+  corrected-profile-content-trace:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r35-webcodecs-profile-trace.mjs
+      - name: Prepare exact C18 fixture
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r35.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r35.html examples/book-ad-systems/index-e17-for-r35.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r35.html examples/book-ad-systems/index-e17-e14-for-r35.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r35.html examples/book-ad-systems/index-e18-for-r35.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r35
+      - name: Run corrected profile content-hint and trace scout
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r35.html
+          MANIFEST: examples/book-ad-systems/generated-r35/manifest.json
+          OUT_DIR: artifacts/r35
+          REPORT: artifacts/r35/report.json
+        run: node .agents/skills/framewright/scripts/r35-webcodecs-profile-trace.mjs
+      - name: Validate corrected report
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r35/report.json','utf8'));
+          const need=['baseline-default-realtime-3m','baseline-default-quality-3m','high-default-realtime-3m','high-default-quality-3m','high-text-realtime-3m','high-text-quality-3m'];
+          for(const id of need) if(!r.rows.some(x=>x.id===id)) throw new Error(`missing ${id}`);
+          for(const b of [2250000,2500000,2750000]) {
+            const id=`baseline-default-realtime-${b/1000000}m`;
+            if(!r.rows.some(x=>x.id===id)) throw new Error(`missing fine ${id}`);
+          }
+          if(r.trace?.spec?.profile!=='baseline'||r.trace?.spec?.hint||r.trace?.spec?.latencyMode!=='realtime') throw new Error('trace is not production anchor');
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - name: Show corrected result
+        if: always()
+        run: test -f artifacts/r35/summary.md && cat artifacts/r35/summary.md || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r35-webcodecs-profile-trace-corrected
+          path: |
+            artifacts/r35/report.json
+            artifacts/r35/summary.md
+            artifacts/r35/trace-summary.json
+            artifacts/r35/*.mp4
+          retention-days: 14
