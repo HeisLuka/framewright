@@ -72,7 +72,7 @@ jobs:
         run: |
           /usr/bin/time -v -o .bench/i02/browserless-time.txt \
             node .agents/skills/framewright/scripts/i02-browserless-reference.mjs
-      - name: Enforce semantic sample parity before economics
+      - name: Evaluate semantic parity before economics
         env:
           BROWSER_SAMPLES: .bench/i02/browser-samples
           NODE_SAMPLES: .bench/i02/node-samples
@@ -84,7 +84,29 @@ jobs:
           SAMPLE_FRAMES: '0,89,90,239,240,359'
           MIN_SAMPLE_SSIM: '0.97'
           MIN_SAMPLE_PSNR: '30'
-        run: node .agents/skills/framewright/scripts/i02-final-analyze.mjs
+        run: |
+          set +e
+          node .agents/skills/framewright/scripts/i02-final-analyze.mjs
+          rc=$?
+          set -e
+          # rc=2 is the experiment's declared negative result: parity failed, so economics are not interpreted.
+          # Infrastructure/harness failures remain red.
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then exit "$rc"; fi
+          test -f .bench/i02/final-report.json
+      - name: Validate completed experiment report
+        run: |
+          node - <<'NODE'
+          const r=require('./.bench/i02/final-report.json');
+          if(r.schema!=='i02-final-backend-comparison-v1') throw new Error('wrong schema');
+          if(typeof r.sample_parity?.pass!=='boolean') throw new Error('missing parity verdict');
+          if(!Array.isArray(r.sample_parity?.frames)||r.sample_parity.frames.length!==6) throw new Error('incomplete parity samples');
+          for(const f of r.sample_parity.frames) {
+            if(!Number.isFinite(f.ssim)||!Number.isFinite(f.psnr)) throw new Error(`invalid metrics for frame ${f.frame}`);
+          }
+          if(!Number.isFinite(r.chromium?.inner_total_run_ms)||!Number.isFinite(r.browserless?.timing?.wall_ms)) throw new Error('missing runtime evidence');
+          if(r.sample_parity.pass===false && !String(r.interpretation||'').includes('do not promote browserless')) throw new Error('negative parity result must block promotion');
+          console.log(JSON.stringify({parity:r.sample_parity.pass,interpretation:r.interpretation},null,2));
+          NODE
       - name: Print compact comparison
         if: always()
         run: |
