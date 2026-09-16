@@ -1,6 +1,6 @@
 # Render pipeline v0: PNG reference vs raw RGBA stream
 
-`video-engine-v0` now keeps two render paths side by side.
+`video-engine-v0` keeps two render paths side by side.
 
 The old path remains the reference implementation:
 
@@ -14,13 +14,13 @@ Canvas
   -> MP4
 ```
 
-The new experimental production path is:
+The production experiment is:
 
 ```text
 Canvas
   -> getImageData RGBA
   -> same-origin localhost POST
-  -> ordered bounded receiver in Node
+  -> ordered bounded sink in Node
   -> ffmpeg stdin rawvideo
   -> MP4
 ```
@@ -31,13 +31,13 @@ Nothing about scene timing, geometry, typography, deterministic RNG, book payloa
 
 A raw ffmpeg stream has to receive frames in strict order. Framewright normally renders with several Chromium pages, and those pages do not finish frames in order.
 
-`render-raw.mjs` therefore uses an acknowledgement/backpressure rule:
+`render-raw.mjs` therefore uses `ordered-frame-sink.mjs` with an acknowledgement/backpressure rule:
 
 1. each Chromium worker renders one frame;
 2. it POSTs the RGBA bytes to the local render server;
-3. Node buffers the frame by frame number;
-4. Node writes consecutive frames to ffmpeg only when the next required frame is available;
-5. the HTTP request is acknowledged only after that frame has been written;
+3. the sink buffers the frame by frame number;
+4. consecutive frames are written to ffmpeg only when the next required frame is available;
+5. the HTTP request is acknowledged only after that frame has actually been written;
 6. only then can that worker request another frame.
 
 This keeps the reorder buffer bounded to roughly:
@@ -47,6 +47,8 @@ tabs * width * height * 4 bytes
 ```
 
 For 1920x1080 RGBA with five workers that is about 39.6 MiB of frame payload, rather than an unbounded queue.
+
+The sink is unit-tested separately from Puppeteer. If the encoder pipe fails, the current write and every buffered acknowledgement are rejected. `render-raw.mjs` converts those failures into HTTP errors for waiting workers and tears down Chromium/ffmpeg/server resources instead of leaving workers blocked on orphaned requests.
 
 ## Commands
 
@@ -68,7 +70,7 @@ npm run book-ad -- video-raw \
   --out out/book-ad-raw.mp4
 ```
 
-The existing reference command is still available:
+The reference command is still available:
 
 ```bash
 npm run book-ad -- video \
@@ -80,7 +82,7 @@ npm run book-ad -- video \
 
 ## Benchmark harness
 
-Run both paths on the same HTML, seed, range, width, worker count and x264 settings:
+Run both paths on the same HTML, seed, actual range, width, worker count and encoder settings:
 
 ```bash
 npm run bench:render -- \
@@ -93,8 +95,10 @@ npm run bench:render -- \
 Arguments are:
 
 ```text
-html frames width tabs outBase
+html requestedFrames width tabs outBase
 ```
+
+The PNG reference renderer runs first and reports the actual clamped range. The raw renderer is then forced to that exact range. This matters when `requestedFrames` is longer than the video.
 
 Every run gets a unique directory under `.bench/render/` and writes:
 
@@ -109,19 +113,47 @@ benchmark.json
 
 `benchmark.json` contains wall-clock timing for reference frame rendering, reference ffmpeg build, direct raw render+encode, effective FPS, intermediate PNG bytes, MP4 sizes, speedup, PSNR and SSIM.
 
-The encoder settings are intentionally shared by both paths and can be changed with the same environment variables:
+The encoder settings are intentionally shared by `build.sh` and `render-raw.mjs`:
 
-```bash
-PRESET=medium CRF=22 MAXRATE=14M npm run bench:render -- examples/ris-tv/index.html 300 720 5
+```text
+VIDEO_CODEC=libx264
+PRESET=slow
+CRF=22
+MAXRATE=14M
+BUFSIZE=28M
 ```
 
-Do not use a faster preset in only one side of the comparison; that would mix renderer transport speed with encoder speed.
+For example:
+
+```bash
+PRESET=medium CRF=22 MAXRATE=14M \
+npm run bench:render -- examples/ris-tv/index.html 300 720 5
+```
+
+Do not use a faster preset on only one side of the comparison; that mixes renderer transport speed with encoder speed.
 
 ## Asset handling
 
 The raw renderer serves the render page from localhost instead of `file://` so the browser can POST binary frames to the same origin without CORS hacks.
 
-When `FW_QUERY` contains a staged `file://` book cover, `render-raw.mjs` exposes that exact file as a same-origin local asset route before frame 0. S3 credentials still stay in the Node orchestration process and never enter browser code.
+When `FW_QUERY` contains a staged `file://` book cover, `render-raw.mjs` exposes that exact file as a same-origin local asset route before frame 0. S3 credentials stay in the Node orchestration process and never enter browser code.
+
+## Metrics
+
+`render.mjs` writes reference metrics when `METRICS_OUT` is set, including frame-render wall time and total PNG bytes.
+
+`render-raw.mjs` writes raw metrics including:
+
+```text
+frames / seconds / framesPerSecond
+bytesPerFrame
+peakReorderBytesUpperBound
+rawBytes
+outputBytes
+encoder settings
+```
+
+These files are intended to be joined later with a concrete machine/cloud SKU price to derive dollars per video and dollars per 1k/100k creatives.
 
 ## Current limit
 
