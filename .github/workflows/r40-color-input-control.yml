@@ -5,12 +5,14 @@ on:
     branches: [lab/r40-color-input-control]
     paths:
       - '.agents/skills/framewright/scripts/r40-color-input-control.mjs'
+      - '.agents/skills/framewright/scripts/r40-normalize-decision.mjs'
       - '.github/workflows/r40-color-input-control.yml'
       - 'docs/r40-color-input-control.md'
   pull_request:
     branches: [lab/framewright-research]
     paths:
       - '.agents/skills/framewright/scripts/r40-color-input-control.mjs'
+      - '.agents/skills/framewright/scripts/r40-normalize-decision.mjs'
       - '.github/workflows/r40-color-input-control.yml'
       - 'docs/r40-color-input-control.md'
   workflow_dispatch:
@@ -30,7 +32,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg fonts-dejavu-core
       - name: Syntax check
-        run: node --check .agents/skills/framewright/scripts/r40-color-input-control.mjs
+        run: |
+          node --check .agents/skills/framewright/scripts/r40-color-input-control.mjs
+          node --check .agents/skills/framewright/scripts/r40-normalize-decision.mjs
       - name: Prepare exact C18 fixture
         run: |
           node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r40.html
@@ -44,7 +48,9 @@ jobs:
           MANIFEST: examples/book-ad-systems/generated-r40/manifest.json
           OUT_DIR: artifacts/r40
           REPORT: artifacts/r40/report.json
-        run: node .agents/skills/framewright/scripts/r40-color-input-control.mjs
+        run: |
+          node .agents/skills/framewright/scripts/r40-color-input-control.mjs
+          REPORT=artifacts/r40/report.json node .agents/skills/framewright/scripts/r40-normalize-decision.mjs
       - name: Validate report completeness
         run: |
           node --input-type=module <<'NODE'
