@@ -41,7 +41,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
-      C27_EXPECTED_SHA: c716807b6d8f7508bcf24e52137aa339c816b8ab
+      C27_EXPECTED_SHA: 853a3c30a6c31afd5ef6f84e2ae20eda76fcef07
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -53,11 +53,11 @@ jobs:
         run: sudo apt-get update -qq && sudo apt-get install -y fonts-dejavu-core
       - name: Pin real C27 planner and adapter
         run: |
-          git fetch origin pull/52/head --depth=1
-          test "$(git rev-parse FETCH_HEAD)" = "$C27_EXPECTED_SHA"
+          git fetch origin pull/52/head --depth=100
+          git cat-file -e "$C27_EXPECTED_SHA^{commit}"
           mkdir -p artifacts/i05/c27-source
-          git show FETCH_HEAD:.agents/skills/framewright/scripts/c27-narrative-plan.mjs > artifacts/i05/c27-source/c27-narrative-plan.mjs
-          git show FETCH_HEAD:.agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs > artifacts/i05/c27-source/prepare-c27-narrative-template.mjs
+          git show "$C27_EXPECTED_SHA":.agents/skills/framewright/scripts/c27-narrative-plan.mjs > artifacts/i05/c27-source/c27-narrative-plan.mjs
+          git show "$C27_EXPECTED_SHA":.agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs > artifacts/i05/c27-source/prepare-c27-narrative-template.mjs
           printf '%s\n' "$C27_EXPECTED_SHA" > artifacts/i05/c27-source/commit.txt
           node --check artifacts/i05/c27-source/c27-narrative-plan.mjs
           node --check artifacts/i05/c27-source/prepare-c27-narrative-template.mjs
