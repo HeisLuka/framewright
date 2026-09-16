@@ -22,7 +22,7 @@ jobs:
           node --version
           npm install
           npm install --no-save @napi-rs/canvas@1.0.9 @napi-rs/webcodecs@1.4.0
-          node -e "console.log(require('@napi-rs/webcodecs/package.json').version)"
+          npm ls @napi-rs/webcodecs --depth=0
       - name: Prepare exact C18 scene
         run: |
           node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-i02.html
