@@ -31,10 +31,27 @@ function __c25Opts(o={}){
   if(o.lineHeight)n.lineHeight=Math.max(.80,Math.min(1.26,o.lineHeight+__c25Policy.line));
   return n;
 }
+let __c25Capture=false,__c25Events=[];
+function __c25AlignedBox(x,y,w,h,align){let left=x;if(align==='center')left=x-w/2;else if(align==='right')left=x-w;return{x:Math.round(left-8),y:Math.round(y-8),w:Math.round(w+16),h:Math.round(h+16)};}
+function __c25Record(e){if(__c25Capture)__c25Events.push(e);}
 const __c25TextBlock=textBlock,__c25Label=label,__c25Track=track;
-textBlock=function(g,text,o={}){return __c25TextBlock(g,text,__c25Opts(o));};
-label=function(g,text,x,y,o={}){return __c25Label(g,text,x,y,__c25Opts(o));};
-track=function(g,text,x,y,spacing,o={}){const n=__c25Opts(o);return __c25Track(g,text,x,y,spacing*__c25Policy.track,n);};
+textBlock=function(g,text,o={}){
+  const role=__c25Role(o),n=__c25Opts(o),b=__c25TextBlock(g,text,n),lines=b.lines.length,baseY=(n.y||0)-(n.centerBlock?((lines-1)*b.lh)/2:0),boxW=Math.max(1,n.maxW||Math.max(1,...b.lines.map(line=>g.measureText(line).width))),boxH=Math.max(b.size,b.height+b.size*.25),box=__c25AlignedBox(n.x||0,baseY-b.size,boxW,boxH,n.align||'left');
+  __c25Record({kind:'textBlock',role,sourceSize:o.size||null,requestedSize:n.size||null,finalSize:b.size,weight:n.weight||700,lines,maxW:n.maxW||null,lineHeight:n.lineHeight||null,box});
+  return b;
+};
+label=function(g,text,x,y,o={}){
+  const role=__c25Role(o),n=__c25Opts(o),size=__c25Label(g,text,x,y,n),measured=Math.max(1,g.measureText(String(text)).width),box=__c25AlignedBox(x,y-size,measured,size*1.3,n.align||'left');
+  __c25Record({kind:'label',role,sourceSize:o.size||null,requestedSize:n.size||null,finalSize:size,weight:n.weight||700,lines:1,maxW:n.maxW||null,lineHeight:null,box});
+  return size;
+};
+track=function(g,text,x,y,spacing,o={}){
+  const role=__c25Role(o),n=__c25Opts(o),sp=spacing*__c25Policy.track,width=__c25Track(g,text,x,y,sp,n),size=n.size||24,box=__c25AlignedBox(x,y-size,width,size*1.3,'left');
+  __c25Record({kind:'track',role,sourceSize:o.size||null,requestedSize:n.size||null,finalSize:size,weight:n.weight||700,lines:1,maxW:null,lineHeight:null,tracking:+sp.toFixed(3),box});
+  return width;
+};
+window.__C25_BEGIN_CAPTURE=()=>{__c25Events=[];__c25Capture=true;};
+window.__C25_END_CAPTURE=()=>{__c25Capture=false;return __c25Events.map(e=>({...e,box:{...e.box}}));};
 window.__C25_TYPOGRAPHY=()=>({system:ACTIVE_TYPOGRAPHY_SYSTEM,policy:{...__c25Policy}});
 `;
 html=html.replace(marker,injection+'\n'+marker);
