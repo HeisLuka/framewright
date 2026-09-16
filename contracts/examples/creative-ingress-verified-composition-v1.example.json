@@ -1,0 +1,44 @@
+{
+  "schema": "newboo-creative-ingress-v1",
+  "mode": "verified_composition",
+  "context_pack_id": "ctx_example_account_revision_1",
+  "context_hash": "5961044fafce498e72fe3e527f94a3a3a897e690b8404afab097796c50bba331",
+  "payload": {
+    "copy_language_id": "copylang_example_account_revision_1",
+    "copy_language_hash": "f0bb2911320683771ece937eaa2291e5abe6a13ec10a47e3fb53067ddefa9920",
+    "account_id": "account_example",
+    "book_id": "book_example",
+    "narrative": {
+      "angle_type": "conflict",
+      "hook": {
+        "template_id": "tpl_hook_what_if",
+        "bindings": [
+          {"slot_id": "premise", "form_id": "form_premise_alt_clause"}
+        ]
+      },
+      "tension": {
+        "template_id": "tpl_tension_then",
+        "bindings": [
+          {"slot_id": "conflict", "form_id": "form_conflict_clause"}
+        ]
+      },
+      "payoff": {
+        "template_id": "tpl_payoff_question",
+        "bindings": [
+          {"slot_id": "question", "form_id": "form_promise_question_body"}
+        ]
+      },
+      "reveal_timing": "late",
+      "cta_treatment": "intent",
+      "cta_id": "cta_read"
+    },
+    "presentation": {
+      "duration_seconds": 9,
+      "fps": 30,
+      "visual_system": "swiss",
+      "delivery_profile": "youtube_shorts",
+      "seed": 17
+    },
+    "selected_asset_ids": ["asset_cover"]
+  }
+}

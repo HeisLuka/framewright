@@ -1,0 +1,27 @@
+{
+  "schema": "newboo-creative-ingress-v1",
+  "mode": "trusted_atoms",
+  "context_pack_id": "ctx_example_account_revision_1",
+  "context_hash": "5961044fafce498e72fe3e527f94a3a3a897e690b8404afab097796c50bba331",
+  "payload": {
+    "account_id": "account_example",
+    "book_id": "book_example",
+    "narrative": {
+      "angle_type": "conflict",
+      "hook_atom_id": "atom_hook",
+      "tension_atom_id": "atom_tension",
+      "payoff_atom_id": "atom_payoff",
+      "reveal_timing": "late",
+      "cta_treatment": "intent",
+      "cta_id": "cta_read"
+    },
+    "presentation": {
+      "duration_seconds": 9,
+      "fps": 30,
+      "visual_system": "newspaper",
+      "delivery_profile": "instagram_reels",
+      "seed": 17
+    },
+    "selected_asset_ids": ["asset_cover"]
+  }
+}
