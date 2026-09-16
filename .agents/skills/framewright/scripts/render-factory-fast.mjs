@@ -33,7 +33,6 @@ function int(v, fallback, label) {
   if (!Number.isInteger(n) || n < 0) throw new Error(`${label} must be a non-negative integer`);
   return n;
 }
-
 async function sha256File(filename) {
   const hash = createHash('sha256');
   await new Promise((resolve, reject) => {
@@ -44,7 +43,6 @@ async function sha256File(filename) {
   });
   return hash.digest('hex');
 }
-
 function run(command, args, env = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd: ROOT, env: { ...process.env, ...env }, stdio: 'inherit' });
@@ -52,7 +50,6 @@ function run(command, args, env = {}) {
     child.once('exit', (code, signal) => code === 0 ? resolve() : reject(new Error(`${command} exited with ${code ?? signal}`)));
   });
 }
-
 function runCapture(command, args) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -63,7 +60,6 @@ function runCapture(command, args) {
     child.once('exit', (code, signal) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error(`${command} exited with ${code ?? signal}: ${stderr.slice(-2000)}`)));
   });
 }
-
 async function atomicJson(filename, value) {
   await fsp.mkdir(path.dirname(filename), { recursive: true });
   const tmp = `${filename}.tmp-${process.pid}`;
@@ -76,16 +72,10 @@ const bundlePath = path.resolve(INVOCATION_CWD, String(options.bundle || process
 if (!bundlePath || !fs.existsSync(bundlePath)) throw new Error('--bundle or FACTORY_BUNDLE must point to a factory bundle JSON');
 const bundle = JSON.parse(await fsp.readFile(bundlePath, 'utf8'));
 const plan = compileRuntimeExecutionPlan(bundle);
-
-if (flag(options['plan-only'])) {
-  process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`);
-  process.exit(0);
-}
+if (flag(options['plan-only'])) { process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`); process.exit(0); }
 
 const ratio = plan.delivery.width / plan.delivery.height;
-if (Math.abs(ratio - 9 / 16) > 1e-6) {
-  throw new Error(`current Chromium FAST executor supports vertical 9:16 only; got ${plan.delivery.width}x${plan.delivery.height}`);
-}
+if (Math.abs(ratio - 9 / 16) > 1e-6) throw new Error(`current Chromium FAST executor supports vertical 9:16 only; got ${plan.delivery.width}x${plan.delivery.height}`);
 
 const out = path.resolve(INVOCATION_CWD, String(options.out || 'factory-fast.mp4'));
 const receiptPath = path.resolve(INVOCATION_CWD, String(options['receipt-out'] || `${out}.factory.json`));
@@ -100,7 +90,7 @@ if (artifactDir) await fsp.mkdir(artifactDir, { recursive: true });
 if (!force && artifactMp4 && artifactReceipt && fs.existsSync(artifactMp4) && fs.existsSync(artifactReceipt)) {
   const cached = JSON.parse(await fsp.readFile(artifactReceipt, 'utf8'));
   if (cached.render_spec_id === plan.render_spec_id && cached.output?.sha256 === await sha256File(artifactMp4)) {
-    await fsp.copyFile(artifactMp4, out);
+    if (path.resolve(artifactMp4) !== out) await fsp.copyFile(artifactMp4, out);
     const receipt = { ...cached, invocation: { ...cached.invocation, cache_hit: true, output: out, at: new Date().toISOString() } };
     await atomicJson(receiptPath, receipt);
     console.log(`factory FAST cache hit ${plan.render_spec_id}`);
@@ -121,14 +111,16 @@ const rawVideo = plan.audio ? `${out}.video-only.mp4` : out;
 const innerReport = `${rawVideo}.report.json`;
 const innerEnv = {
   REPORT_OUT: innerReport,
-  WEBCODECS_BITRATE: String(plan.video.bitrate_bps),
+  WEBCODECS_CODEC: plan.video.codec,
+  WEBCODECS_LATENCY_MODE: 'realtime',
 };
 if (process.env.HTML) innerEnv.HTML = process.env.HTML;
 if (process.env.PAYLOAD) innerEnv.PAYLOAD = process.env.PAYLOAD;
 if (process.env.CI) innerEnv.CI = process.env.CI;
 
-let lastError = null;
+let lastError = null, attemptsUsed = 0;
 for (let attempt = 0; attempt <= retries; attempt += 1) {
+  attemptsUsed = attempt + 1;
   try {
     await run(process.execPath, [INNER_RENDERER, rawVideo, String(bundle.creative.seed), String(plan.delivery.width), String(plan.video.bitrate_bps)], innerEnv);
     lastError = null;
@@ -142,27 +134,19 @@ for (let attempt = 0; attempt <= retries; attempt += 1) {
 if (lastError) throw lastError;
 
 const inner = JSON.parse(await fsp.readFile(innerReport, 'utf8'));
-const observedFrames = Number(inner.browser?.total);
-const observedFps = Number(inner.browser?.fps);
-assertRuntimeObservedTimeline(plan, { frame_count: observedFrames, fps: observedFps });
-if (Number(inner.browser?.height) !== plan.delivery.height) {
-  throw new Error(`runtime height mismatch: expected ${plan.delivery.height}, got ${inner.browser?.height}`);
+assertRuntimeObservedTimeline(plan, { frame_count: Number(inner.browser?.total), fps: Number(inner.browser?.fps) });
+if (Number(inner.browser?.height) !== plan.delivery.height) throw new Error(`runtime height mismatch: expected ${plan.delivery.height}, got ${inner.browser?.height}`);
+if (String(inner.browser?.codec?.codec || '').toLowerCase() !== String(plan.video.codec).toLowerCase()) {
+  throw new Error(`runtime codec mismatch: expected ${plan.video.codec}, got ${inner.browser?.codec?.codec}`);
 }
 
 if (plan.audio) {
   const ffmpeg = process.env.FFMPEG || 'ffmpeg';
-  const seconds = (plan.delivery.duration_ms / 1000).toFixed(3);
-  await run(ffmpeg, [
-    '-hide_banner', '-loglevel', process.env.FFMPEG_LOGLEVEL || 'error', '-y',
-    '-i', rawVideo, '-i', canonicalAudioPath,
-    '-map', '0:v:0', '-map', '1:a:0', '-c:v', 'copy', '-c:a', 'copy',
-    '-t', seconds, '-movflags', '+faststart', out,
-  ]);
+  await run(ffmpeg, ['-hide_banner','-loglevel',process.env.FFMPEG_LOGLEVEL||'error','-y','-i',rawVideo,'-i',canonicalAudioPath,'-map','0:v:0','-map','1:a:0','-c:v','copy','-c:a','copy','-t',(plan.delivery.duration_ms/1000).toFixed(3),'-movflags','+faststart',out]);
   await fsp.rm(rawVideo, { force: true });
 }
 
-const ffprobe = process.env.FFPROBE || 'ffprobe';
-const probe = await runCapture(ffprobe, ['-v', 'error', '-count_frames', '-show_entries', 'format=duration,size:stream=codec_type,codec_name,width,height,avg_frame_rate,nb_read_frames', '-of', 'json', out]);
+const probe = await runCapture(process.env.FFPROBE || 'ffprobe', ['-v','error','-count_frames','-show_entries','format=duration,size:stream=codec_type,codec_name,width,height,avg_frame_rate,nb_read_frames','-of','json',out]);
 const media = JSON.parse(probe.stdout);
 const video = (media.streams || []).find(s => s.codec_type === 'video');
 const audio = (media.streams || []).find(s => s.codec_type === 'audio') || null;
@@ -170,34 +154,22 @@ if (Number(video?.nb_read_frames) !== plan.delivery.frame_count) throw new Error
 if (plan.audio && !audio) throw new Error('RenderSpec declares audio but final MP4 has no audio stream');
 if (!plan.audio && audio) throw new Error('silent RenderSpec unexpectedly produced an audio stream');
 
-const outputSha256 = await sha256File(out);
 const receipt = {
   schema: 'newboo-render-artifact-v1',
   render_spec_id: plan.render_spec_id,
-  output: {
-    sha256: outputSha256,
-    bytes: (await fsp.stat(out)).size,
-    mime_type: 'video/mp4',
-    duration_ms: Number(media.format?.duration || 0) * 1000,
-    frame_count: Number(video.nb_read_frames),
-    storage_uri: artifactMp4 || out,
-  },
-  qa: {
-    status: 'pass',
-    checks: [
-      { id: 'factory-identity', status: 'pass', details: { render_spec_id: plan.render_spec_id } },
-      { id: 'frame-count', status: 'pass', details: { expected: plan.delivery.frame_count, actual: Number(video.nb_read_frames) } },
-      { id: 'audio-stream', status: 'pass', details: { expected: Boolean(plan.audio), present: Boolean(audio), audio_spec_id: plan.audio?.audio_spec_id || null } },
-    ],
-  },
+  output: { sha256: await sha256File(out), bytes: (await fsp.stat(out)).size, mime_type: 'video/mp4', duration_ms: Number(media.format?.duration || 0) * 1000, frame_count: Number(video.nb_read_frames), storage_uri: artifactMp4 || out },
+  qa: { status: 'pass', checks: [
+    { id: 'factory-identity', status: 'pass', details: { render_spec_id: plan.render_spec_id } },
+    { id: 'runtime-codec', status: 'pass', details: { expected: plan.video.codec, actual: inner.browser.codec.codec } },
+    { id: 'frame-count', status: 'pass', details: { expected: plan.delivery.frame_count, actual: Number(video.nb_read_frames) } },
+    { id: 'audio-stream', status: 'pass', details: { expected: Boolean(plan.audio), present: Boolean(audio), audio_spec_id: plan.audio?.audio_spec_id || null } },
+  ]},
   metrics: { inner_total_run_ms: inner.totalRunMs || null },
-  invocation: { cache_hit: false, attempts: retries + 1, runtime_plan_schema: plan.schema },
+  invocation: { cache_hit: false, attempts: attemptsUsed, runtime_plan_schema: plan.schema },
 };
-
 if (artifactMp4 && artifactReceipt) {
-  await fsp.copyFile(out, artifactMp4);
-  const canonicalReceipt = { ...receipt, output: { ...receipt.output, storage_uri: artifactMp4 } };
-  await atomicJson(artifactReceipt, canonicalReceipt);
+  if (path.resolve(out) !== path.resolve(artifactMp4)) await fsp.copyFile(out, artifactMp4);
+  await atomicJson(artifactReceipt, { ...receipt, output: { ...receipt.output, storage_uri: artifactMp4 } });
 }
 await atomicJson(receiptPath, receipt);
 await fsp.rm(innerReport, { force: true });
