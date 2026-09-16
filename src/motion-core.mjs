@@ -157,6 +157,32 @@ export const createFrameState = (plan, frame, seed = 7) => {
   });
 };
 
+const plainObject = (value) => (
+  value && typeof value === "object" && !Array.isArray(value) ? value : null
+);
+
+export const normalizeFrameControls = (recipeResult) => {
+  const controlsSource = plainObject(recipeResult)?.controls;
+  const controls = plainObject(controlsSource) || {};
+  const postSource = plainObject(controls.post) || {};
+  return Object.freeze({
+    ...controls,
+    post: Object.freeze({ ...postSource }),
+  });
+};
+
+export const compactFrameState = (state) => Object.freeze({
+  frame: state.frame,
+  localFrame: state.localFrame,
+  progress: state.progress,
+  time: state.time,
+  localTime: state.localTime,
+  fps: state.fps,
+  seed: state.seed,
+  sceneId: state.scene?.id || state.sceneId || "",
+  controls: state.controls || Object.freeze({ post: Object.freeze({}) }),
+});
+
 export const windowedProgress = (progress, start = 0, end = 1, ease = "linear") => {
   const span = Math.max(1e-9, end - start);
   const raw = clamp((progress - start) / span);
@@ -213,9 +239,9 @@ export const createMotionRuntime = ({ canvas, plan: sourcePlan, recipes, afterSc
   const plan = sourcePlan?.totalFrames ? sourcePlan : compileRenderPlan(sourcePlan);
   const recipeMap = recipes instanceof Map ? recipes : new Map(Object.entries(recipes || {}));
   const render = (frame, outputWidth = 1080, seed = 7) => {
-    const state = createFrameState(plan, frame, seed);
-    const recipe = recipeMap.get(state.scene.recipe);
-    if (typeof recipe !== "function") throw new Error(`unknown recipe: ${state.scene.recipe}`);
+    const baseState = createFrameState(plan, frame, seed);
+    const recipe = recipeMap.get(baseState.scene.recipe);
+    if (typeof recipe !== "function") throw new Error(`unknown recipe: ${baseState.scene.recipe}`);
     const width = Math.max(64, Math.round(Number(outputWidth) || 1080));
     let height = Math.round(width / plan.aspect);
     if (height % 2) height += 1;
@@ -230,7 +256,7 @@ export const createMotionRuntime = ({ canvas, plan: sourcePlan, recipes, afterSc
     context.globalCompositeOperation = "source-over";
     context.fillStyle = plan.background;
     context.fillRect(0, 0, plan.logicalWidth, plan.logicalHeight);
-    recipe(context, state, state.scene.params, {
+    const recipeResult = recipe(context, baseState, baseState.scene.params, {
       clamp,
       lerp,
       easing,
@@ -238,6 +264,10 @@ export const createMotionRuntime = ({ canvas, plan: sourcePlan, recipes, afterSc
       createRng,
       hash,
       strokePolylineProgress,
+    });
+    const state = Object.freeze({
+      ...baseState,
+      controls: normalizeFrameControls(recipeResult),
     });
     if (typeof afterScene === "function") afterScene(context, state);
     drawTransition(context, state);
@@ -248,17 +278,24 @@ export const createMotionRuntime = ({ canvas, plan: sourcePlan, recipes, afterSc
 };
 
 export const installRisoBridge = ({ runtime, canvas, defaultWidth = 1080, defaultSeed = 7 }) => {
+  let lastFrame = null;
+  const renderAndRemember = (frame, width = defaultWidth, seed = defaultSeed) => {
+    const state = runtime.render(frame, width, seed);
+    lastFrame = compactFrameState(state);
+    return state;
+  };
   const bridge = {
     fps: runtime.plan.fps,
     get total() { return runtime.plan.totalFrames; },
     get plates() {
       return runtime.plan.scenes.map((scene) => ({ name: scene.id, len: scene.durationFrames }));
     },
+    get lastFrame() { return lastFrame; },
     render(frame, width = defaultWidth, seed = defaultSeed) {
-      return runtime.render(frame, width, seed);
+      return renderAndRemember(frame, width, seed);
     },
     frame(frame, width = defaultWidth, seed = defaultSeed) {
-      runtime.render(frame, width, seed);
+      renderAndRemember(frame, width, seed);
       return canvas.toDataURL("image/png");
     },
     contact(count = 24, cellWidth = 360, seed = defaultSeed) {
