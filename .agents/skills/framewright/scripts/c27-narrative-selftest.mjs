@@ -14,8 +14,8 @@ const title=()=>({kind:'book_payload_field',field:'title',selector:{kind:'full'}
 let plans=0,copyAtoms=0;const matrix=[];
 for(let bi=0;bi<books.length;bi++){
   const book=books[bi],sentenceCount=book.hook.split('.').filter(Boolean).length;
-  const angleA={id:'a',type:'premise',hook:sentence(0),tension:sentence(1),payoff:sentenceCount>=3?sentence(2):title()};
-  const angleB={id:'b',type:'conflict',hook:sentence(sentenceCount>=3?2:1),tension:sentence(0),payoff:sentenceCount>=3?sentence(1):title()};
+  const angleA={id:'a',type:'premise',hook:sentence(0),tension:sentence(1),...(sentenceCount>=3?{payoff:sentence(2)}:{})};
+  const angleB={id:'b',type:'conflict',hook:sentence(sentenceCount>=3?2:1),tension:sentence(0),...(sentenceCount>=3?{payoff:sentence(1)}:{})};
   for(const angle of [angleA,angleB])for(const reveal_timing of ['early','mid','late']){
     const input={book,angle,duration_seconds:9,fps:30,reveal_timing,cta_treatment:'soft_reveal',seed:bi+1};
     const p=planNarrative(input);assertNarrativePlan(p);const replay=planNarrative(input);
@@ -35,4 +35,9 @@ for(const seconds of [3,5,7,9,12,15]){
   const cta=seconds===3?'none':seconds===5?'soft_reveal':'direct';
   assertNarrativePlan(planNarrative({...representative,duration_seconds:seconds,fps:30,reveal_timing:'mid',cta_treatment:cta,seed:seconds}));
 }
-console.log(JSON.stringify({ok:true,plans,copyAtoms,durationProfiles:6,revealOrderGroups:12},null,2));
+let identityLeakRejected=false;
+try{
+  planNarrative({book:books[1],angle:{id:'leak',type:'premise',hook:sentence(0),tension:sentence(1),payoff:title()},duration_seconds:9,fps:30,reveal_timing:'late',cta_treatment:'none'});
+}catch(e){identityLeakRejected=/identity leaked/.test(String(e.message));}
+if(!identityLeakRejected)throw new Error('pre-reveal book identity leak was not rejected');
+console.log(JSON.stringify({ok:true,plans,copyAtoms,durationProfiles:6,revealOrderGroups:12,identityLeakRejected},null,2));
