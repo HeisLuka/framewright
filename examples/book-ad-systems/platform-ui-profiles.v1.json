@@ -1,0 +1,70 @@
+{
+  "schema": "framewright-platform-ui-profiles-v1",
+  "version": "c26-ui-safe-v1-2026-09-17",
+  "canvas": { "width": 1080, "height": 1920 },
+  "policyNote": "These numeric rectangles are conservative Framewright policy, not official permanent platform pixel specifications. Platform UI varies by device, app version, caption length and interactive surface. Re-validate periodically and keep the source/date with every profile version.",
+  "profiles": {
+    "generic": {
+      "safeRect": { "x": 76, "y": 288, "w": 928, "h": 1248 },
+      "occlusionZones": [],
+      "basis": "Existing Framewright vertical semantic safe area; control only."
+    },
+    "youtube_shorts": {
+      "safeRect": { "x": 76, "y": 288, "w": 814, "h": 1248 },
+      "occlusionZones": [
+        { "id": "top-ui-policy", "x": 0, "y": 0, "w": 1080, "h": 288 },
+        { "id": "right-action-rail-policy", "x": 890, "y": 288, "w": 190, "h": 1248 },
+        { "id": "bottom-description-nav-policy", "x": 0, "y": 1536, "w": 1080, "h": 384 }
+      ],
+      "basis": "YouTube documents dynamic visual guides/non-safe areas around viewer controls; numeric insets are our conservative policy, not official pixels."
+    },
+    "instagram_reels": {
+      "safeRect": { "x": 76, "y": 288, "w": 834, "h": 1248 },
+      "occlusionZones": [
+        { "id": "top-ui-policy", "x": 0, "y": 0, "w": 1080, "h": 288 },
+        { "id": "right-action-rail-policy", "x": 910, "y": 288, "w": 170, "h": 1248 },
+        { "id": "bottom-caption-nav-policy", "x": 0, "y": 1536, "w": 1080, "h": 384 }
+      ],
+      "basis": "Meta recommends keeping key Reels elements in a safe zone and provides a checker; public guidance does not expose one permanent organic pixel rectangle. Numeric insets are our conservative policy."
+    },
+    "tiktok": {
+      "safeRect": { "x": 76, "y": 288, "w": 804, "h": 1248 },
+      "occlusionZones": [
+        { "id": "top-ui-policy", "x": 0, "y": 0, "w": 1080, "h": 288 },
+        { "id": "right-action-rail-policy", "x": 880, "y": 288, "w": 200, "h": 1248 },
+        { "id": "bottom-caption-nav-policy", "x": 0, "y": 1536, "w": 1080, "h": 384 }
+      ],
+      "basis": "TikTok documents fixed FYP UI occlusion and provides UI/device simulation; numeric insets are our conservative policy, not official pixels."
+    }
+  },
+  "sources": [
+    {
+      "platform": "youtube_shorts",
+      "kind": "official-organic-editor-guidance",
+      "retrieved": "2026-09-17",
+      "url": "https://support.google.com/youtube/answer/16215842",
+      "evidence": "Shorts visual guides show where like, comments and description may appear; near-edge overlays can be marked non-safe and partially hidden on some devices."
+    },
+    {
+      "platform": "tiktok",
+      "kind": "official-ui-preview-guidance",
+      "retrieved": "2026-09-17",
+      "url": "https://effecthouse.tiktok.com/learn/guides/publishing/preview-in-effect-house",
+      "evidence": "TikTok UI simulation is provided to test safe-zone area, with separate device-resolution simulation."
+    },
+    {
+      "platform": "tiktok",
+      "kind": "official-creative-guidance",
+      "retrieved": "2026-09-17",
+      "url": "https://ads.tiktok.com/business/creativecenter/quicktok/online/tiktok_creative_accelerator/pc/en",
+      "evidence": "FYP fixed UI elements can block creative; important elements should stay in the safe zone. Used for UI topology, not numeric organic pixel dimensions."
+    },
+    {
+      "platform": "instagram_reels",
+      "kind": "official-reels-guidance",
+      "retrieved": "2026-09-17",
+      "url": "https://www.facebook.com/business/ads/facebook-instagram-reels-ads",
+      "evidence": "Meta recommends 9:16 Reels with key creative elements in the safe zone and provides a safe-zone checker. Used for safe-zone principle, not a claimed permanent organic pixel rectangle."
+    }
+  ]
+}
