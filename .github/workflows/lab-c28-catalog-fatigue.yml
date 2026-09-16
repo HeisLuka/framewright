@@ -5,25 +5,56 @@ on:
     branches: [lab/framewright-research]
     paths:
       - '.agents/skills/framewright/scripts/c28-catalog-fatigue.mjs'
+      - '.agents/skills/framewright/scripts/make-c28-visual-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/c28-visual-fatigue.mjs'
       - '.github/workflows/lab-c28-catalog-fatigue.yml'
   workflow_dispatch:
 
 jobs:
-  semantic-fatigue:
+  catalog-fatigue:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20.20.2'
+      - name: Install pinned sampled-frame renderer
+        run: npm install --no-save @napi-rs/canvas@1.0.9
+      - name: Install pinned fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y fonts-dejavu-core
       - name: Syntax check
-        run: node --check .agents/skills/framewright/scripts/c28-catalog-fatigue.mjs
-      - name: Measure naive catalog and fatigue-aware reranker
+        run: |
+          node --check .agents/skills/framewright/scripts/c28-catalog-fatigue.mjs
+          node --check .agents/skills/framewright/scripts/make-c28-visual-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/c28-visual-fatigue.mjs
+      - name: Measure semantic fatigue on valid candidate axes
         run: node .agents/skills/framewright/scripts/c28-catalog-fatigue.mjs artifacts/c28/semantic-report.json
+      - name: Prepare canonical C20-C26 creative stack and real-cover corpus
+        run: |
+          node .agents/skills/framewright/scripts/make-c20-fixtures.mjs examples/book-ad-systems/generated-c20
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-c28.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-c28.html examples/book-ad-systems/index-c22-c28.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-c22-c28.html examples/book-ad-systems/index-e17-c28.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-c28.html examples/book-ad-systems/index-e17-e14-c28.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-c28.html examples/book-ad-systems/index-e18-c28.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-c28.html examples/book-ad-systems/index-c20-c28.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-c28.html examples/book-ad-systems/index-c21-c28.html
+          node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c21-c28.html examples/book-ad-systems/index-c23-c28.html
+          node .agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs examples/book-ad-systems/index-c23-c28.html examples/book-ad-systems/index-c24-c28.html
+          node .agents/skills/framewright/scripts/prepare-c25-typography-axis.mjs examples/book-ad-systems/index-c24-c28.html examples/book-ad-systems/index-c25-c28.html
+          node .agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs examples/book-ad-systems/index-c25-c28.html examples/book-ad-systems/index-c28.html examples/book-ad-systems/platform-ui-profiles.v1.json
+          node .agents/skills/framewright/scripts/make-c28-visual-fixtures.mjs artifacts/c28/semantic-report.json examples/book-ad-systems/generated-c20 examples/book-ad-systems/generated-c28
+      - name: Compare naive vs fatigue-aware sampled visual catalog
+        env:
+          HTML: examples/book-ad-systems/index-c28.html
+          MANIFEST: examples/book-ad-systems/generated-c28/manifest.json
+          OUT_DIR: artifacts/c28/visual
+          REPORT: artifacts/c28/visual-report.json
+        run: node .agents/skills/framewright/scripts/c28-visual-fatigue.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: c28-catalog-fatigue-semantic
+          name: c28-catalog-fatigue
           path: artifacts/c28/
           retention-days: 14
