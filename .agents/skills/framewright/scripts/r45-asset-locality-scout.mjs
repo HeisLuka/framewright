@@ -57,25 +57,31 @@ function sceneUrl(profile,idx,cacheable){
   u.searchParams.set('profile',profile);u.searchParams.set('fixture',idx);u.searchParams.set('f','0');u.searchParams.set('w',String(e.width));u.searchParams.set('h',String(e.height));u.searchParams.set('s',String(e.seed));u.searchParams.set('r45cache',cacheable?'1':'0');
   return u.href;
 }
+function coverRequestDelta(before,after){
+  let total=0; const paths={};
+  for(const [p,n] of after){
+    if(!/cover|generated-e08/i.test(p)) continue;
+    const d=n-(before.get(p)||0); if(d>0){total+=d;paths[p]=d;}
+  }
+  return {total,paths};
+}
 async function runScenario(profile,cacheable,kind){
   const browser=await puppeteer.launch({headless:true,protocolTimeout:600000,args:['--no-sandbox','--disable-setuid-sandbox']}),page=await browser.newPage();
   const rows=[],seq=order(kind,iterations),before=new Map(requestCounts);
   try{
     for(let idx=0;idx<3;idx++){
-      const t=performance.now();await page.goto(sceneUrl(profile,idx,cacheable),{waitUntil:'load',timeout:120000});await page.waitForFunction('window.__ready===true',{timeout:120000});
-      if(performance.now()-t>120000) throw new Error('warm navigation timeout');
+      await page.goto(sceneUrl(profile,idx,cacheable),{waitUntil:'load',timeout:120000});await page.waitForFunction('window.__ready===true',{timeout:120000});
     }
     for(let j=0;j<seq.length;j++){
       const idx=seq[j],e=entries[profile][idx],t=performance.now();
       await page.goto(sceneUrl(profile,idx,cacheable),{waitUntil:'load',timeout:120000});await page.waitForFunction('window.__ready===true',{timeout:120000});
-      const metrics=await page.evaluate(()=>{const rs=performance.getEntriesByType('resource');const cover=rs.find(x=>/cover|generated-e08/i.test(x.name))||rs[rs.length-1];return cover?{transferSize:cover.transferSize||0,encodedBodySize:cover.encodedBodySize||0,decodedBodySize:cover.decodedBodySize||0,duration:cover.duration||0}:null;});
-      rows.push({j,idx,bookId:e.bookId,loadMs:performance.now()-t,resource:metrics});
+      const resources=await page.evaluate(()=>performance.getEntriesByType('resource').filter(x=>/cover|generated-e08/i.test(x.name)).map(x=>({name:x.name,initiatorType:x.initiatorType,transferSize:x.transferSize||0,encodedBodySize:x.encodedBodySize||0,decodedBodySize:x.decodedBodySize||0,duration:x.duration||0})));
+      rows.push({j,idx,bookId:e.bookId,loadMs:performance.now()-t,resources});
     }
   }finally{await page.close().catch(()=>{});await browser.close();}
-  const after=new Map(requestCounts),coverPaths=[...new Set(entries[profile].map(e=>new URL(e.payload.cover_url,origin).pathname))];
-  const coverRequests=coverPaths.reduce((s,p)=>s+(after.get(p)||0)-(before.get(p)||0),0);
-  const loads=q(rows.map(x=>x.loadMs)),resourceDur=q(rows.map(x=>x.resource?.duration||0)),transfers=rows.map(x=>x.resource?.transferSize||0);
-  return{profile,cacheable,order:kind,jobs:rows.length,loadMs:loads,resourceDurationMs:resourceDur,coverRequests,zeroTransferRate:transfers.filter(x=>x===0).length/Math.max(1,transfers.length),rows};
+  const after=new Map(requestCounts),req=coverRequestDelta(before,after),loads=q(rows.map(x=>x.loadMs));
+  const coverResources=rows.flatMap(x=>x.resources),dur=q(coverResources.map(x=>x.duration)),transfers=coverResources.map(x=>x.transferSize);
+  return{profile,cacheable,order:kind,jobs:rows.length,loadMs:loads,resourceDurationMs:dur,coverRequests:req.total,coverRequestPaths:req.paths,coverResourceNames:[...new Set(coverResources.map(x=>x.name))],coverInitiatorTypes:[...new Set(coverResources.map(x=>x.initiatorType))],zeroTransferRate:transfers.filter(x=>x===0).length/Math.max(1,transfers.length),rows};
 }
 try{
   const results=[];
@@ -85,10 +91,14 @@ try{
     }
   }
   const by=(p,c,o)=>results.find(x=>x.profile===p&&x.cacheable===c&&x.order===o),summary={};
-  for(const p of profiles){const n=by(p,false,'random'),r=by(p,true,'random'),g=by(p,true,'grouped');summary[p]={noStoreMeanLoadMs:n.loadMs.mean,cacheableRandomMeanLoadMs:r.loadMs.mean,cacheableGroupedMeanLoadMs:g.loadMs.mean,httpCacheGain:r.loadMs.mean/n.loadMs.mean-1,groupingGain:g.loadMs.mean/r.loadMs.mean-1,noStoreCoverRequests:n.coverRequests,cacheableRandomCoverRequests:r.coverRequests,cacheableGroupedCoverRequests:g.coverRequests,cacheableRandomZeroTransferRate:r.zeroTransferRate,cacheableGroupedZeroTransferRate:g.zeroTransferRate};}
+  for(const p of profiles){
+    const n=by(p,false,'random'),r=by(p,true,'random'),g=by(p,true,'grouped');
+    summary[p]={noStoreMeanLoadMs:n.loadMs.mean,cacheableRandomMeanLoadMs:r.loadMs.mean,cacheableGroupedMeanLoadMs:g.loadMs.mean,httpCacheGain:r.loadMs.mean/n.loadMs.mean-1,groupingGain:g.loadMs.mean/r.loadMs.mean-1,groupingSavedMs:r.loadMs.mean-g.loadMs.mean,noStoreCoverRequests:n.coverRequests,cacheableRandomCoverRequests:r.coverRequests,cacheableGroupedCoverRequests:g.coverRequests,cacheableRandomZeroTransferRate:r.zeroTransferRate,cacheableGroupedZeroTransferRate:g.zeroTransferRate,coverResourceNames:r.coverResourceNames,coverInitiatorTypes:r.coverInitiatorTypes};
+  }
   const mean=k=>profiles.reduce((s,p)=>s+summary[p][k],0)/profiles.length;
-  const aggregate={noStoreMeanLoadMs:mean('noStoreMeanLoadMs'),cacheableRandomMeanLoadMs:mean('cacheableRandomMeanLoadMs'),cacheableGroupedMeanLoadMs:mean('cacheableGroupedMeanLoadMs'),httpCacheGain:mean('httpCacheGain'),groupingGain:mean('groupingGain')};
-  const report={schema:'nightwill-r45-asset-locality-scout-v1',method:'fresh browser per scenario; all three covers warmed once; then navigation-to-__ready timing under no-store random, cacheable random, and cacheable grouped order',iterationsPerScenario:iterations,results,summary,aggregate};
+  const aggregate={noStoreMeanLoadMs:mean('noStoreMeanLoadMs'),cacheableRandomMeanLoadMs:mean('cacheableRandomMeanLoadMs'),cacheableGroupedMeanLoadMs:mean('cacheableGroupedMeanLoadMs'),httpCacheGain:mean('httpCacheGain'),groupingGain:mean('groupingGain'),groupingSavedMs:mean('groupingSavedMs')};
+  aggregate.groupingUpperBoundVs2000msJob=aggregate.groupingSavedMs/2000;
+  const report={schema:'nightwill-r45-asset-locality-scout-v2',method:'fresh browser per scenario; all three covers warmed once; then navigation-to-__ready timing under no-store random, cacheable random, and cacheable grouped order',iterationsPerScenario:iterations,results,summary,aggregate};
   await fsp.mkdir(path.dirname(reportPath),{recursive:true});await fsp.writeFile(reportPath,JSON.stringify(report,null,2)+'\n');
   console.log(JSON.stringify({aggregate,summary},null,2));
 }finally{await new Promise(ok=>server.close(ok));}
