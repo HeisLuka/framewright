@@ -1,0 +1,29 @@
+name: Lab C28 Catalog Fatigue
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/c28-catalog-fatigue.mjs'
+      - '.github/workflows/lab-c28-catalog-fatigue.yml'
+  workflow_dispatch:
+
+jobs:
+  semantic-fatigue:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/c28-catalog-fatigue.mjs
+      - name: Measure naive catalog and fatigue-aware reranker
+        run: node .agents/skills/framewright/scripts/c28-catalog-fatigue.mjs artifacts/c28/semantic-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c28-catalog-fatigue-semantic
+          path: artifacts/c28/
+          retention-days: 14
