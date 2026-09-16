@@ -1,0 +1,43 @@
+name: Lab E09 Book Ad QA
+
+on:
+  push:
+    branches:
+      - lab/e09-plate-aware-qa
+  pull_request:
+    branches:
+      - lab/e06-repro-worker
+  workflow_dispatch:
+
+jobs:
+  book-ad-qa:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build pinned worker
+        run: docker build --pull=false -f Dockerfile.worker-lab -t framewright-worker:e09 .
+
+      - name: Prepare artifacts
+        run: |
+          rm -rf artifacts/e09
+          mkdir -p artifacts/e09
+          chmod 0777 artifacts/e09
+
+      - name: Run plate-aware text QA
+        run: |
+          docker run --rm \
+            -e CI=true \
+            -v "$PWD/artifacts/e09:/artifacts" \
+            framewright-worker:e09 \
+            node .agents/skills/framewright/scripts/qa-book-ad.mjs /artifacts
+
+      - name: Upload E09 artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e09-book-ad-qa
+          path: artifacts/e09/
+          if-no-files-found: error
+          retention-days: 14
