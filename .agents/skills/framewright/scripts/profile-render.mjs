@@ -1,25 +1,34 @@
 #!/usr/bin/env node
 // Stage-profiler variant of render.mjs. It does not modify the video HTML.
 // node profile-render.mjs [dir=frames] [seed=7] [width=1920] [tabs=5]
-// Env: HTML, AR, START, END, RESUME, PROFILE_OUT=render-profile.json
+// Env: HTML, PAYLOAD(optional JSON), AR, START, END, RESUME, PROFILE_OUT=render-profile.json
 import puppeteer from 'puppeteer';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { createHash } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 
 const [,, dir='frames', seedS='7', widthS='1920', tabsS='5'] = process.argv;
 const seed=+seedS, width=+widthS, tabs=Math.max(1,+tabsS);
 const html=path.resolve(process.env.HTML || 'index.html');
+const payloadPath=process.env.PAYLOAD ? path.resolve(process.env.PAYLOAD) : null;
 const profileOut=path.resolve(process.env.PROFILE_OUT || 'render-profile.json');
 if(!fs.existsSync(html)){ console.error(`no such file: ${html} (set HTML=path)`); process.exit(1); }
+let injectedPayload=null,payloadSha256=null;
+if(payloadPath){
+  if(!fs.existsSync(payloadPath)){ console.error(`no such payload: ${payloadPath}`); process.exit(1); }
+  const raw=fs.readFileSync(payloadPath,'utf8');
+  try{injectedPayload=JSON.parse(raw);}catch(e){console.error(`bad payload JSON: ${e.message}`);process.exit(1);}
+  payloadSha256=createHash('sha256').update(raw).digest('hex');
+}
 fs.mkdirSync(dir,{recursive:true});
 const url='file://'+html+`?f=0&w=320&s=${seed}`+(process.env.AR?`&ar=${process.env.AR}`:'');
 const runT0=performance.now(), usage0=process.resourceUsage();
 
 const profile={
   schema:'framewright-render-profile-v1', createdAt:new Date().toISOString(),
-  config:{html,dir:path.resolve(dir),seed,width,tabs,ar:process.env.AR||null,start:+(process.env.START||0),endRequested:process.env.END==null?null:+process.env.END,resume:Boolean(process.env.RESUME)},
+  config:{html,payloadPath,payloadSha256,dir:path.resolve(dir),seed,width,tabs,ar:process.env.AR||null,start:+(process.env.START||0),endRequested:process.env.END==null?null:+process.env.END,resume:Boolean(process.env.RESUME)},
   host:{platform:process.platform,arch:process.arch,node:process.version,cpus:os.cpus().length,cpuModel:os.cpus()[0]?.model||null,totalMemoryBytes:os.totalmem()},
   startup:{chromeLaunchMs:0,metadataPageMs:0,workerPageMs:[]}, samples:[]
 };
@@ -50,20 +59,31 @@ async function installProfiler(p){
 let t=performance.now();
 const b=await puppeteer.launch({headless:true,protocolTimeout:600000,args:['--allow-file-access-from-files']});
 profile.startup.chromeLaunchMs=+(performance.now()-t).toFixed(3);
+async function preparedPage(){
+  const p=await b.newPage();
+  p.on('pageerror',e=>console.error('PAGE ERROR',e.message));
+  if(injectedPayload!==null) await p.evaluateOnNewDocument(v=>{window.FRAMEWRIGHT_PAYLOAD=v;},injectedPayload);
+  return p;
+}
+async function loadPreparedPage(){
+  const p=await preparedPage();
+  await p.goto(url,{waitUntil:'load',timeout:120000});
+  await p.waitForFunction('window.__ready===true',{timeout:120000});
+  const bootError=await p.evaluate(()=>window.__bootError||null); if(bootError) throw new Error(bootError);
+  return p;
+}
 t=performance.now();
-const p0=await b.newPage(); await p0.goto(url,{waitUntil:'load',timeout:120000}); await p0.waitForFunction('window.__ready===true',{timeout:120000});
-const total=await p0.evaluate(()=>window.RISO.total), plates=await p0.evaluate(()=>window.RISO.plates); await p0.close();
+const p0=await loadPreparedPage();
+const meta=await p0.evaluate(()=>({total:window.RISO.total,fps:window.RISO.fps||30,plates:window.RISO.plates})); await p0.close();
 profile.startup.metadataPageMs=+(performance.now()-t).toFixed(3);
-const START=+(process.env.START||0), END=Math.min(total,+(process.env.END||total)), count=END-START;
-Object.assign(profile.config,{total,end:END,count}); profile.plates=plates;
-console.log(`frames ${total} (${(total/30).toFixed(1)} s), rendering ${START}..${END-1}, tabs ${tabs}, width ${width}, seed ${seed}`);
-console.log(plates.map(p=>`${p.name}:${p.len}`).join('  '));
+const START=+(process.env.START||0), END=Math.min(meta.total,+(process.env.END||meta.total)), count=END-START;
+Object.assign(profile.config,{total:meta.total,fps:meta.fps,end:END,count}); profile.plates=meta.plates;
+console.log(`frames ${meta.total} (${(meta.total/meta.fps).toFixed(1)} s), rendering ${START}..${END-1}, tabs ${tabs}, width ${width}, seed ${seed}`);
+console.log(meta.plates.map(p=>`${p.name}:${p.len}`).join('  '));
 
 let next=START,done=0,failed=0; const renderT0=performance.now();
 async function worker(workerId){
-  const initT0=performance.now(), p=await b.newPage();
-  p.on('pageerror',e=>console.error('PAGE ERROR',e.message));
-  await p.goto(url,{waitUntil:'load',timeout:120000}); await p.waitForFunction('window.__ready===true',{timeout:120000});
+  const initT0=performance.now(), p=await loadPreparedPage();
   const postFunctions=await installProfiler(p); profile.startup.workerPageMs.push({workerId,ms:+(performance.now()-initT0).toFixed(3),postFunctions});
   while(true){
     const n=next++; if(n>=END) break; const out=path.join(dir,`f${String(n).padStart(5,'0')}.png`);
