@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { assertAudioSpecId } from './audio-identity-v1.mjs';
 
 function stable(value) {
   if (Array.isArray(value)) return value.map(stable);
@@ -53,6 +54,29 @@ export function computeRenderSpecId(spec) {
   return `nvr1_${sha256Canonical(renderIdentityInput(spec))}`;
 }
 
+function assertRenderDuration(render) {
+  if (!Number.isInteger(render.duration_ms) || render.duration_ms <= 0) {
+    throw new Error(`render.duration_ms must be a positive integer, got ${render.duration_ms}`);
+  }
+  if (render.delivery?.duration_ms !== render.duration_ms) {
+    throw new Error(`duration mismatch: render.duration_ms ${render.duration_ms} != delivery.duration_ms ${render.delivery?.duration_ms}`);
+  }
+  if (!render.audio) return;
+  const audioDuration = render.audio.spec?.timing?.duration_ms;
+  const muxDuration = render.audio.spec?.timing?.final_mux_duration_ms;
+  if (audioDuration !== render.duration_ms || muxDuration !== render.duration_ms) {
+    throw new Error(`audio duration mismatch: render=${render.duration_ms}, audio=${audioDuration}, final_mux=${muxDuration}`);
+  }
+}
+
+function assertRenderAudio(render) {
+  if (!render.audio) return;
+  const audioSpecId = assertAudioSpecId(render.audio.spec);
+  if (render.audio.artifact && render.audio.artifact.audio_spec_id !== audioSpecId) {
+    throw new Error(`audio artifact identity mismatch: expected ${audioSpecId}, got ${render.audio.artifact.audio_spec_id}`);
+  }
+}
+
 export function assertFactoryIds({ creative, render }) {
   const creativeId = computeCreativeId(creative);
   if (creative.creative_id !== creativeId) {
@@ -61,6 +85,8 @@ export function assertFactoryIds({ creative, render }) {
   if (render.creative_id !== creative.creative_id) {
     throw new Error(`render.creative_id ${render.creative_id} does not match creative.creative_id ${creative.creative_id}`);
   }
+  assertRenderDuration(render);
+  assertRenderAudio(render);
   const renderSpecId = computeRenderSpecId(render);
   if (render.render_spec_id !== renderSpecId) {
     throw new Error(`render_spec_id mismatch: expected ${renderSpecId}, got ${render.render_spec_id}`);
