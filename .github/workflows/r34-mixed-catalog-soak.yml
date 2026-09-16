@@ -48,8 +48,8 @@ jobs:
           REPORT: artifacts/r34/report.json
           JOBS: '180'
           BITRATE: '3000000'
-          WINDOW_SIZE: '30'
-          WARMUP_JOBS: '20'
+          WINDOW_SIZE: '36'
+          WARMUP_JOBS: '36'
         run: node .agents/skills/framewright/scripts/r34-mixed-catalog-soak.mjs
       - name: Validate scout completeness
         run: |
@@ -60,6 +60,7 @@ jobs:
           if(r.fixtureSet?.entries?.length!==36) throw new Error('expected 36 fixtures');
           if((r.result.successfulJobs+r.result.failedJobs)!==r.config.jobsRequested) throw new Error('incomplete job accounting');
           if(!r.result.windows?.length) throw new Error('missing soak windows');
+          if(r.config.windowSize!==36 || r.config.warmupJobs!==36) throw new Error('canonical R34 windows must equal one full 36-fixture catalog cycle');
           console.log(JSON.stringify(r.decision,null,2));
           NODE
       - name: Show result
