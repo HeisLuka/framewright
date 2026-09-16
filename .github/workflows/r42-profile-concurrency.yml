@@ -54,11 +54,11 @@ jobs:
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
           const r=JSON.parse(fs.readFileSync('artifacts/r42/report.json','utf8'));
-          if(r.schema!=='nightwill-r42-profile-concurrency-v1') throw new Error('wrong schema');
+          if(r.schema!=='nightwill-r42-profile-concurrency-v2') throw new Error('wrong schema');
           if(r.results.length!==12) throw new Error(`expected 12 scenarios, got ${r.results.length}`);
           for(const x of r.results){
             if(x.jobs!==12) throw new Error(`incomplete ${x.profile} c${x.concurrency}`);
-            if(x.failures.length || !x.allParity) throw new Error(`correctness failed ${x.profile} c${x.concurrency}`);
+            if(x.failures.length || !x.preflightParity) throw new Error(`correctness failed ${x.profile} c${x.concurrency}`);
           }
           console.log(JSON.stringify(r.decisions,null,2));
           NODE
