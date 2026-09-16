@@ -1,0 +1,53 @@
+name: R45 Asset Locality Scout
+
+on:
+  pull_request:
+    paths:
+      - '.agents/skills/framewright/scripts/r45-asset-locality-scout.mjs'
+      - '.github/workflows/r45-asset-locality-scout.yml'
+      - 'docs/r45-asset-locality-scout.md'
+  workflow_dispatch:
+
+jobs:
+  asset-locality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Install dependencies
+        run: npm install
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r45-asset-locality-scout.mjs
+      - name: Prepare responsive fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r45.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r45.html examples/book-ad-systems/index-e17-for-r45.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r45.html examples/book-ad-systems/index-e17-e14-for-r45.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r45.html examples/book-ad-systems/index-e18-for-r45.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r45
+      - name: Run navigation/cache locality scout
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r45.html
+          MANIFEST: examples/book-ad-systems/generated-r45/manifest.json
+          REPORT: artifacts/r45/report.json
+          ITERATIONS: 60
+        run: node .agents/skills/framewright/scripts/r45-asset-locality-scout.mjs
+      - name: Evaluate opportunity bound
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r45/report.json','utf8'));
+          if(r.schema!=='nightwill-r45-asset-locality-scout-v1') throw new Error('wrong schema');
+          const a=r.aggregate;
+          console.log(JSON.stringify(a,null,2));
+          console.log(`cacheable vs no-store navigation delta: ${(a.httpCacheGain*100).toFixed(1)}%`);
+          console.log(`grouped vs cacheable-random navigation delta: ${(a.groupingGain*100).toFixed(1)}%`);
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r45-asset-locality-scout
+          path: artifacts/r45/report.json
+          retention-days: 14
