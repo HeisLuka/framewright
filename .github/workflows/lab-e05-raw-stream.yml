@@ -1,0 +1,98 @@
+name: Lab E05 Raw Stream
+
+on:
+  push:
+    branches:
+      - lab/e05-raw-stream
+  pull_request:
+    branches:
+      - lab/e02-book-ad-v0
+  workflow_dispatch:
+
+jobs:
+  raw-stream:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/raw-stream.mjs
+
+      - name: PNG baseline render
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+        run: |
+          rm -rf frames-e05 artifacts/e05
+          mkdir -p artifacts/e05
+          start=$(date +%s%N)
+          node .agents/skills/framewright/scripts/render.mjs frames-e05 7 1080 1
+          end=$(date +%s%N)
+          node -e "require('fs').writeFileSync('artifacts/e05/png-render-ms.txt', String((${end}-${start})/1000000))"
+          du -sb frames-e05 | cut -f1 > artifacts/e05/png-frame-bytes.txt
+
+      - name: Encode PNG baseline with current candidate profile
+        run: |
+          start=$(date +%s%N)
+          ffmpeg -hide_banner -loglevel error -y -framerate 30 -i frames-e05/f%05d.png -c:v libx264 -preset veryfast -crf 22 -maxrate 14M -bufsize 28M -pix_fmt yuv420p -movflags +faststart artifacts/e05/png-reference.mp4
+          end=$(date +%s%N)
+          node -e "require('fs').writeFileSync('artifacts/e05/png-encode-ms.txt', String((${end}-${start})/1000000))"
+
+      - name: Raw RGBA binary stream to FFmpeg
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+          REPORT: artifacts/e05/raw-stream.json
+          PRESET: veryfast
+          CRF: '22'
+        run: |
+          node .agents/skills/framewright/scripts/raw-stream.mjs artifacts/e05/raw-stream.mp4 7 1080
+
+      - name: Compare decoded output
+        run: |
+          ffmpeg -hide_banner -i artifacts/e05/png-reference.mp4 -i artifacts/e05/raw-stream.mp4 -lavfi "[0:v]setpts=PTS-STARTPTS[ref];[1:v]setpts=PTS-STARTPTS[test];[ref][test]ssim" -f null - 2> artifacts/e05/ssim.txt
+          ffmpeg -hide_banner -i artifacts/e05/png-reference.mp4 -i artifacts/e05/raw-stream.mp4 -lavfi "[0:v]setpts=PTS-STARTPTS[ref];[1:v]setpts=PTS-STARTPTS[test];[ref][test]psnr" -f null - 2> artifacts/e05/psnr.txt
+          ffprobe -v error -show_entries format=duration,size -show_entries stream=codec_name,width,height,nb_frames -of json artifacts/e05/raw-stream.mp4 > artifacts/e05/raw-probe.json
+          grep -E 'All:|average:' artifacts/e05/ssim.txt artifacts/e05/psnr.txt || true
+
+      - name: Summary
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const raw=JSON.parse(fs.readFileSync('artifacts/e05/raw-stream.json','utf8'));
+          const pngRender=+fs.readFileSync('artifacts/e05/png-render-ms.txt','utf8');
+          const pngEncode=+fs.readFileSync('artifacts/e05/png-encode-ms.txt','utf8');
+          const pngBytes=+fs.readFileSync('artifacts/e05/png-frame-bytes.txt','utf8');
+          const ssim=fs.readFileSync('artifacts/e05/ssim.txt','utf8').match(/All:([0-9.]+)/)?.[1]||null;
+          const psnr=fs.readFileSync('artifacts/e05/psnr.txt','utf8').match(/average:([0-9.]+)/)?.[1]||null;
+          const out={png:{renderMs:pngRender,encodeMs:pngEncode,totalMs:pngRender+pngEncode,tempBytes:pngBytes},raw:{...raw.summary,tempBytes:0},quality:{ssim:ssim?+ssim:null,psnr:psnr?+psnr:null}};
+          out.speedup=+(out.png.totalMs/out.raw.totalMs).toFixed(3);
+          fs.writeFileSync('artifacts/e05/summary.json',JSON.stringify(out,null,2));
+          let md=`| path | render/stream s | encode s | total s | temp MiB |\n|---|---:|---:|---:|---:|\n`;
+          md+=`| PNG → disk → x264 | ${(pngRender/1000).toFixed(3)} | ${(pngEncode/1000).toFixed(3)} | ${((pngRender+pngEncode)/1000).toFixed(3)} | ${(pngBytes/1024/1024).toFixed(2)} |\n`;
+          md+=`| raw RGBA → HTTP binary → x264 stdin | ${(raw.summary.loopMs/1000).toFixed(3)} | concurrent | ${(raw.summary.totalMs/1000).toFixed(3)} | 0 |\n\nSpeedup end-to-end: **${out.speedup}×**. SSIM: **${out.quality.ssim}**. PSNR: **${out.quality.psnr}**.\n`;
+          fs.writeFileSync('artifacts/e05/summary.md',md); console.log(md);
+          NODE
+          rm -rf frames-e05
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: e05-raw-stream
+          path: artifacts/e05/
+          if-no-files-found: error
+          retention-days: 14
