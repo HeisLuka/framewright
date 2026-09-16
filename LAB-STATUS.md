@@ -21,7 +21,8 @@ Historical `Exx` names remain valid aliases and are not renumbered. Independent 
 7. E16 — reject raster-only multi-format adaptation
 8. E17 — responsive semantic delivery profiles
 9. C18 / historical E18 — responsive coverage across all structural variants
-10. **C20 — deterministic cover-adaptive art direction**
+10. C20 — deterministic cover-adaptive art direction
+11. **C21 — deterministic opening grammar / causal isolation**
 
 ## Product results that matter
 
@@ -33,7 +34,8 @@ Historical `Exx` names remain valid aliases and are not renumbered. Independent 
 - E16: post-raster `contain` / `cover` is not a production multi-format solution.
 - E17: semantic reflow works for `vertical / square / landscape`, including long-title stress cases.
 - C18: all four structural variants work across all three profiles: `36/36`, zero layout warnings. It also exposed and fixed a provenance bug where `variant` was rendered but omitted from the batch report.
-- **C20:** cover palette + luminance + entropy + edge evidence can drive contrast-safe, visual-system-specific art direction without AI. Final verification run `35133994670`: `72/72`, zero layout warnings, 36/36 unique palette signatures, no extraction failures, mean adaptive/generic cost ratio `1.0131`, p95 `1.0391`, peak RSS `779.9 MiB`. Manual review led to a Newspaper-specific refinement rather than globally forcing more colour. Result: `LAB-C20-COVER-ADAPTIVE-ART-DIRECTION-RESULTS.md`.
+- C20: cover palette + luminance + entropy + edge evidence can drive contrast-safe, visual-system-specific art direction without AI. Final verification run `35133994670`: `72/72`, zero layout warnings, 36/36 unique palette signatures, no extraction failures, mean adaptive/generic cost ratio `1.0131`, p95 `1.0391`, peak RSS `779.9 MiB`. Manual review led to a Newspaper-specific refinement rather than globally forcing more colour. Result: `LAB-C20-COVER-ADAPTIVE-ART-DIRECTION-RESULTS.md`.
+- **C21:** four no-AI opening grammars (`hook-led / cover-led / title-led / progressive-hook`) materially diverge during the first ~2 seconds and then exactly reconverge at 2.4s. Final run `35135829034`: `40/40`, zero layout warnings, mean opening distance `0.092093`, minimum `0.037693`, convergence difference `0`, mean alternate-grammar cost ratio `1.0293`, p95 `1.0707`, peak RSS `781.6 MiB`. Exploratory background-RNG contamination was rejected; the final transition also replaced text crossfade with a readable geometric wipe. Result: `LAB-C21-OPENING-GRAMMAR-RESULTS.md`.
 
 ## Runtime direction
 
@@ -74,17 +76,18 @@ output_sha256    = exact stored MP4 bytes
 
 Lossy H.264 does not need byte-for-byte repeatability. If a canonical artifact already exists for a `render_spec_id`, reuse it rather than re-encoding to chase the same SHA.
 
-Creative semantics such as `art_direction`, verified hook provenance and motion profile belong in `CreativeSpec`; Runtime must not re-route or reinterpret them.
+Creative semantics such as `art_direction`, verified hook/opening provenance and motion profile belong in `CreativeSpec`; Runtime must not re-route or reinterpret them.
 
 ## Current priority
 
-**C21 — deterministic hook/opening grammar** is the next Creative/Product experiment.
+**C22 — motion quality v2** is the next Creative/Product experiment.
 
-Goal: produce materially different first 1.5–2.5 seconds without AI or invented factual claims. Separate content provenance from presentation grammar; use only verified/human-authored candidate copy or deterministic, meaning-preserving extraction from allowed payload fields. The rest of the creative stays controlled so opening quality is an attributable axis.
+Goal: improve perceived motion quality without heavy full-frame effects or indiscriminate movement. Isolate choreography from layout/copy/art direction: coherent easing, stagger/reveal timing, one focal motion event at a time, deliberate settle windows, scene continuity and CTA emphasis.
+
+Beat/onset synchronization, if tested, stays a separate controlled axis so its contribution is attributable rather than mixed into every motion change.
 
 Then:
 
-- C22 — motion quality v2: easing, choreography, focal emphasis and optional deterministic beat alignment.
 - C19 — bounded selected campaign -> requested delivery profiles (P2; packaging, not the current quality bottleneck).
 - I02 — apples-to-apples FAST backend comparison once the stable production workload is ready.
 - I03 — one end-to-end factory request -> campaign package -> requested renders -> stored artifacts -> QA/provenance.
