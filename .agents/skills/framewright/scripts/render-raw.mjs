@@ -14,9 +14,9 @@
 //
 // The browser never returns PNG/base64 through CDP. Each worker renders a
 // deterministic frame, reads Canvas RGBA once, and POSTs the bytes to a local
-// same-origin endpoint. The Node receiver only acknowledges a worker after its
-// frame has been written to ffmpeg in frame order. Therefore out-of-order
-// buffering is bounded by roughly tabs * bytesPerFrame.
+// same-origin endpoint. A producer is acknowledged only after its frame has
+// actually been written to ffmpeg in frame order. With one in-flight frame per
+// worker, out-of-order buffering is bounded by roughly tabs * bytesPerFrame.
 import puppeteer from "puppeteer";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -26,6 +26,8 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { OrderedFrameSink } from "./ordered-frame-sink.mjs";
+
 const [,, outS = "out.mp4", seedS = "7", widthS = "1920", tabsS = "5"] = process.argv;
 const out = path.resolve(outS);
 const seed = Number(seedS);
@@ -34,7 +36,9 @@ const tabs = Math.max(1, Math.round(Number(tabsS) || 5));
 const root = path.resolve(process.env.FW_ROOT || process.cwd());
 const html = path.resolve(process.env.HTML || path.join(root, "index.html"));
 const start = Math.max(0, Math.trunc(Number(process.env.START) || 0));
-const requestedEnd = process.env.END == null ? null : Math.max(start, Math.trunc(Number(process.env.END)));
+const requestedEnd = process.env.END == null
+  ? null
+  : Math.max(start, Math.trunc(Number(process.env.END)));
 const preset = String(process.env.PRESET || "slow");
 const crf = String(process.env.CRF || "22");
 const maxrate = String(process.env.MAXRATE || "14M");
@@ -53,7 +57,9 @@ let stagedCoverPath = null;
 const queryCoverUrl = fwQuery.get("coverUrl") || "";
 if (queryCoverUrl.startsWith("file:")) {
   stagedCoverPath = fileURLToPath(queryCoverUrl);
-  if (!fs.existsSync(stagedCoverPath)) throw new Error(`staged cover not found: ${stagedCoverPath}`);
+  if (!fs.existsSync(stagedCoverPath)) {
+    throw new Error(`staged cover not found: ${stagedCoverPath}`);
+  }
   fwQuery.set("coverUrl", "/__fw_asset/cover");
   fwQuery.set("coverCrossOrigin", "off");
 }
@@ -77,40 +83,51 @@ const contentType = (filename) => {
 };
 
 let expectedFrameBytes = null;
-let nextWrite = start;
+let frameSink = null;
+let browser = null;
 let ffmpeg = null;
-let flushPromise = Promise.resolve();
-const pending = new Map();
+let ffmpegExited = false;
+let ffmpegInputEnded = false;
+let fatalError = null;
 let receivedFrames = 0;
 let writtenFrames = 0;
 let rawBytes = 0;
 
-const streamWrite = async (stream, buffer) => {
-  if (stream.destroyed) throw new Error("ffmpeg stdin is closed");
-  if (stream.write(buffer)) return;
-  await once(stream, "drain");
+const asError = (value) => (
+  value instanceof Error ? value : new Error(String(value || "raw render failed"))
+);
+const failRender = (error) => {
+  const failure = asError(error);
+  if (!fatalError) fatalError = failure;
+  if (frameSink) frameSink.fail(fatalError);
+  return fatalError;
 };
 
-const flushPending = () => {
-  flushPromise = flushPromise.then(async () => {
-    while (pending.has(nextWrite)) {
-      const item = pending.get(nextWrite);
-      pending.delete(nextWrite);
-      try {
-        await streamWrite(ffmpeg.stdin, item.buffer);
-        rawBytes += item.buffer.length;
-        writtenFrames += 1;
-        item.response.writeHead(204, { "Cache-Control": "no-store" });
-        item.response.end();
-        nextWrite += 1;
-      } catch (error) {
-        item.response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-        item.response.end(String(error.message || error));
-        throw error;
-      }
-    }
-  });
-  return flushPromise;
+const waitForDrain = (stream) => new Promise((resolve, reject) => {
+  const cleanup = () => {
+    stream.off("drain", onDrain);
+    stream.off("error", onError);
+    stream.off("close", onClose);
+  };
+  const onDrain = () => { cleanup(); resolve(); };
+  const onError = (error) => { cleanup(); reject(error); };
+  const onClose = () => { cleanup(); reject(new Error("ffmpeg stdin closed before drain")); };
+  stream.once("drain", onDrain);
+  stream.once("error", onError);
+  stream.once("close", onClose);
+});
+
+const streamWrite = async (stream, buffer) => {
+  if (!stream || stream.destroyed || stream.writableEnded) {
+    throw new Error("ffmpeg stdin is closed");
+  }
+  let accepted;
+  try {
+    accepted = stream.write(buffer);
+  } catch (error) {
+    throw asError(error);
+  }
+  if (!accepted) await waitForDrain(stream);
 };
 
 const staticPath = (pathname) => {
@@ -127,79 +144,103 @@ const server = http.createServer((request, response) => {
   if (request.method === "POST" && requestUrl.pathname === "/__fw_frame") {
     const frame = Number(requestUrl.searchParams.get("n"));
     if (!Number.isInteger(frame) || frame < start) {
-      response.writeHead(400); response.end("invalid frame"); return;
+      response.writeHead(400);
+      response.end("invalid frame");
+      return;
     }
+    if (!frameSink) {
+      response.writeHead(503);
+      response.end("encoder not ready");
+      return;
+    }
+
     const chunks = [];
     let size = 0;
-    request.on("data", (chunk) => { chunks.push(chunk); size += chunk.length; });
-    request.on("error", (error) => {
-      response.writeHead(400); response.end(String(error.message || error));
+    let requestFailed = false;
+    request.on("data", (chunk) => {
+      if (requestFailed) return;
+      chunks.push(chunk);
+      size += chunk.length;
+      if (expectedFrameBytes != null && size > expectedFrameBytes) {
+        requestFailed = true;
+        response.writeHead(413);
+        response.end(`frame ${frame} exceeds ${expectedFrameBytes} bytes`);
+        request.destroy();
+      }
     });
-    request.on("end", () => {
+    request.on("error", (error) => {
+      requestFailed = true;
+      if (!response.headersSent) response.writeHead(400);
+      if (!response.writableEnded) response.end(String(error.message || error));
+    });
+    request.on("end", async () => {
+      if (requestFailed) return;
       if (expectedFrameBytes != null && size !== expectedFrameBytes) {
         response.writeHead(400);
         response.end(`frame ${frame}: expected ${expectedFrameBytes} bytes, got ${size}`);
         return;
       }
-      if (pending.has(frame) || frame < nextWrite) {
-        response.writeHead(409); response.end(`duplicate frame ${frame}`); return;
-      }
-      pending.set(frame, { buffer: Buffer.concat(chunks, size), response });
       receivedFrames += 1;
-      flushPending().catch((error) => {
-        console.error("raw frame flush failed:", error.stack || error);
-      });
+      try {
+        await frameSink.submit(frame, Buffer.concat(chunks, size));
+        response.writeHead(204, { "Cache-Control": "no-store" });
+        response.end();
+      } catch (error) {
+        const failure = asError(error);
+        if (!response.headersSent) {
+          response.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
+        }
+        if (!response.writableEnded) response.end(failure.message);
+      }
     });
     return;
   }
 
   if ((request.method === "GET" || request.method === "HEAD") && requestUrl.pathname === "/__fw_asset/cover") {
-    if (!stagedCoverPath) { response.writeHead(404); response.end(); return; }
+    if (!stagedCoverPath) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
     response.writeHead(200, {
       "Content-Type": contentType(stagedCoverPath),
       "Cache-Control": "public, max-age=31536000, immutable",
     });
-    if (request.method === "HEAD") { response.end(); return; }
+    if (request.method === "HEAD") {
+      response.end();
+      return;
+    }
     fs.createReadStream(stagedCoverPath).pipe(response);
     return;
   }
 
   if (request.method !== "GET" && request.method !== "HEAD") {
-    response.writeHead(405); response.end(); return;
+    response.writeHead(405);
+    response.end();
+    return;
   }
   const filename = staticPath(requestUrl.pathname);
-  if (!filename) { response.writeHead(403); response.end(); return; }
+  if (!filename) {
+    response.writeHead(403);
+    response.end();
+    return;
+  }
   fs.stat(filename, (statError, stat) => {
-    if (statError || !stat.isFile()) { response.writeHead(404); response.end(); return; }
+    if (statError || !stat.isFile()) {
+      response.writeHead(404);
+      response.end();
+      return;
+    }
     response.writeHead(200, {
       "Content-Type": contentType(filename),
       "Cache-Control": "no-store",
     });
-    if (request.method === "HEAD") { response.end(); return; }
+    if (request.method === "HEAD") {
+      response.end();
+      return;
+    }
     fs.createReadStream(filename).pipe(response);
   });
-});
-server.listen(0, "127.0.0.1");
-await once(server, "listening");
-const address = server.address();
-if (!address || typeof address === "string") throw new Error("could not start local render server");
-const origin = `http://127.0.0.1:${address.port}`;
-const htmlRelative = path.relative(root, html).split(path.sep).map(encodeURIComponent).join("/");
-
-const buildPageUrl = () => {
-  const url = new URL(`/${htmlRelative}`, origin);
-  url.searchParams.set("f", "0");
-  url.searchParams.set("w", "320");
-  url.searchParams.set("s", String(seed));
-  if (process.env.AR) url.searchParams.set("ar", process.env.AR);
-  for (const [key, value] of fwQuery) url.searchParams.set(key, value);
-  return url.href;
-};
-const pageUrl = buildPageUrl();
-
-const browser = await puppeteer.launch({
-  headless: true,
-  protocolTimeout: 600000,
 });
 
 const renderIntoCanvas = async (page, frame) => page.evaluate(({ frame, width, seed }) => {
@@ -224,7 +265,9 @@ const postCanvas = async (page, frame) => page.evaluate(async (frame) => {
     method: "POST",
     body: rgba,
   });
-  if (!response.ok) throw new Error(`frame upload ${response.status}: ${await response.text()}`);
+  if (!response.ok) {
+    throw new Error(`frame upload ${response.status}: ${await response.text()}`);
+  }
 }, frame);
 
 let total;
@@ -232,24 +275,51 @@ let fps;
 let frameWidth;
 let frameHeight;
 let plates;
+
 try {
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("could not start local render server");
+  }
+  const origin = `http://127.0.0.1:${address.port}`;
+  const htmlRelative = path.relative(root, html).split(path.sep).map(encodeURIComponent).join("/");
+  const pageUrl = (() => {
+    const url = new URL(`/${htmlRelative}`, origin);
+    url.searchParams.set("f", "0");
+    url.searchParams.set("w", "320");
+    url.searchParams.set("s", String(seed));
+    if (process.env.AR) url.searchParams.set("ar", process.env.AR);
+    for (const [key, value] of fwQuery) url.searchParams.set(key, value);
+    return url.href;
+  })();
+
+  browser = await puppeteer.launch({
+    headless: true,
+    protocolTimeout: 600000,
+  });
+
   const probe = await browser.newPage();
   probe.on("pageerror", (error) => console.error("PAGE ERROR", error.message));
-  await probe.goto(pageUrl, { waitUntil: "load", timeout: 120000 });
-  await probe.waitForFunction("window.__ready===true", { timeout: 120000 });
-  const info = await probe.evaluate(() => ({
-    total: window.RISO?.total,
-    fps: window.RISO?.fps,
-    plates: window.RISO?.plates,
-  }));
-  total = Math.max(1, Math.trunc(Number(info.total) || 1));
-  fps = Math.max(1, Number(process.env.FPS || info.fps || 30));
-  plates = Array.isArray(info.plates) ? info.plates : [];
-  const dimensions = await renderIntoCanvas(probe, start);
-  frameWidth = dimensions.width;
-  frameHeight = dimensions.height;
-  expectedFrameBytes = frameWidth * frameHeight * 4;
-  await probe.close();
+  try {
+    await probe.goto(pageUrl, { waitUntil: "load", timeout: 120000 });
+    await probe.waitForFunction("window.__ready===true", { timeout: 120000 });
+    const info = await probe.evaluate(() => ({
+      total: window.RISO?.total,
+      fps: window.RISO?.fps,
+      plates: window.RISO?.plates,
+    }));
+    total = Math.max(1, Math.trunc(Number(info.total) || 1));
+    fps = Math.max(1, Number(process.env.FPS || info.fps || 30));
+    plates = Array.isArray(info.plates) ? info.plates : [];
+    const dimensions = await renderIntoCanvas(probe, start);
+    frameWidth = dimensions.width;
+    frameHeight = dimensions.height;
+    expectedFrameBytes = frameWidth * frameHeight * 4;
+  } finally {
+    await probe.close();
+  }
 
   const end = Math.min(total, requestedEnd == null ? total : requestedEnd);
   if (end <= start) throw new Error(`empty frame range ${start}..${end}`);
@@ -274,24 +344,60 @@ try {
     "-pix_fmt", "yuv420p",
     "-movflags", "+faststart",
   );
-  if (hasTrack) ffmpegArgs.push("-c:a", "aac", "-b:a", process.env.AUDIO_BITRATE || "192k", "-shortest");
+  if (hasTrack) {
+    ffmpegArgs.push("-c:a", "aac", "-b:a", process.env.AUDIO_BITRATE || "192k", "-shortest");
+  }
   ffmpegArgs.push(out);
 
   ffmpeg = spawn(process.env.FFMPEG || "ffmpeg", ffmpegArgs, {
     cwd: root,
     stdio: ["pipe", "inherit", "inherit"],
   });
-  const ffmpegExit = new Promise((resolve, reject) => {
-    ffmpeg.once("error", reject);
+  frameSink = new OrderedFrameSink({
+    start,
+    write: async (_frame, buffer) => {
+      await streamWrite(ffmpeg.stdin, buffer);
+      rawBytes += buffer.length;
+      writtenFrames += 1;
+    },
+  });
+  const ffmpegExit = new Promise((resolve) => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    ffmpeg.once("error", (error) => {
+      ffmpegExited = true;
+      const failure = failRender(error);
+      finish({ ok: false, error: failure });
+    });
     ffmpeg.once("exit", (code, signal) => {
-      if (code === 0) resolve();
-      else reject(new Error(`ffmpeg exited with ${code ?? signal}`));
+      ffmpegExited = true;
+      if (code === 0 && ffmpegInputEnded) {
+        finish({ ok: true });
+        return;
+      }
+      const failure = failRender(new Error(
+        code === 0
+          ? "ffmpeg exited before raw input completed"
+          : `ffmpeg exited with ${code ?? signal}`,
+      ));
+      finish({ ok: false, error: failure });
     });
   });
 
-  console.log(`raw render ${start}..${end - 1}/${total - 1}  ${frameWidth}x${frameHeight} @ ${fps} fps  tabs ${tabs}`);
-  if (plates.length) console.log(plates.map((plate) => `${plate.name}:${plate.len}`).join("  "));
-  console.log(`raw frame ${(expectedFrameBytes / 1024 / 1024).toFixed(2)} MiB; bounded reorder <= ~${(expectedFrameBytes * tabs / 1024 / 1024).toFixed(1)} MiB`);
+  console.log(
+    `raw render ${start}..${end - 1}/${total - 1}  ${frameWidth}x${frameHeight} @ ${fps} fps  tabs ${tabs}`,
+  );
+  if (plates.length) {
+    console.log(plates.map((plate) => `${plate.name}:${plate.len}`).join("  "));
+  }
+  console.log(
+    `raw frame ${(expectedFrameBytes / 1024 / 1024).toFixed(2)} MiB; `
+    + `bounded reorder <= ~${(expectedFrameBytes * tabs / 1024 / 1024).toFixed(1)} MiB`,
+  );
 
   let nextFrame = start;
   let completed = 0;
@@ -299,15 +405,17 @@ try {
   const worker = async (workerIndex) => {
     const page = await browser.newPage();
     page.on("pageerror", (error) => console.error(`PAGE ${workerIndex} ERROR`, error.message));
-    await page.goto(pageUrl, { waitUntil: "load", timeout: 120000 });
-    await page.waitForFunction("window.__ready===true", { timeout: 120000 });
     try {
-      while (true) {
+      await page.goto(pageUrl, { waitUntil: "load", timeout: 120000 });
+      await page.waitForFunction("window.__ready===true", { timeout: 120000 });
+      while (!fatalError) {
         const frame = nextFrame++;
         if (frame >= end) break;
         const dimensions = await renderIntoCanvas(page, frame);
         if (dimensions.width !== frameWidth || dimensions.height !== frameHeight) {
-          throw new Error(`frame ${frame} changed dimensions to ${dimensions.width}x${dimensions.height}`);
+          throw new Error(
+            `frame ${frame} changed dimensions to ${dimensions.width}x${dimensions.height}`,
+          );
         }
         await postCanvas(page, frame);
         completed += 1;
@@ -317,18 +425,29 @@ try {
           console.log(`${completed}/${count}  ${seconds.toFixed(1)} s  ${rate.toFixed(1)} fps`);
         }
       }
+      if (fatalError) throw fatalError;
     } finally {
       await page.close();
     }
   };
 
-  await Promise.all(Array.from({ length: tabs }, (_, index) => worker(index + 1)));
-  await flushPromise;
-  if (writtenFrames !== count || receivedFrames !== count || pending.size) {
-    throw new Error(`raw stream incomplete: received=${receivedFrames} written=${writtenFrames} expected=${count} pending=${pending.size}`);
+  try {
+    await Promise.all(Array.from({ length: tabs }, (_, index) => worker(index + 1)));
+    await frameSink.finish(end);
+  } catch (error) {
+    throw failRender(error);
   }
+
+  if (writtenFrames !== count || receivedFrames !== count) {
+    throw failRender(new Error(
+      `raw stream incomplete: received=${receivedFrames} written=${writtenFrames} expected=${count}`,
+    ));
+  }
+
+  ffmpegInputEnded = true;
   ffmpeg.stdin.end();
-  await ffmpegExit;
+  const ffmpegResult = await ffmpegExit;
+  if (!ffmpegResult.ok) throw ffmpegResult.error;
 
   const elapsedSeconds = (performance.now() - t0) / 1000;
   const outputBytes = (await fsp.stat(out)).size;
@@ -345,8 +464,9 @@ try {
     end,
     frames: count,
     seconds: elapsedSeconds,
-    framesPerSecond: count / elapsedSeconds,
+    framesPerSecond: count / Math.max(elapsedSeconds, 1e-9),
     bytesPerFrame: expectedFrameBytes,
+    peakReorderBytesUpperBound: expectedFrameBytes * tabs,
     rawBytes,
     outputBytes,
     preset,
@@ -360,7 +480,21 @@ try {
     await fsp.writeFile(metricsOut, `${JSON.stringify(metrics, null, 2)}\n`, "utf8");
   }
 } finally {
-  try { if (ffmpeg?.stdin && !ffmpeg.stdin.destroyed) ffmpeg.stdin.destroy(); } catch {}
-  try { await browser.close(); } catch {}
-  await new Promise((resolve) => server.close(resolve));
+  if (!ffmpegInputEnded && frameSink && !frameSink.failed) {
+    frameSink.fail(fatalError || new Error("raw render terminated before completion"));
+  }
+  try {
+    if (ffmpeg?.stdin && !ffmpeg.stdin.destroyed && !ffmpeg.stdin.writableEnded) {
+      ffmpeg.stdin.destroy();
+    }
+  } catch {}
+  try {
+    if (ffmpeg && !ffmpegExited) ffmpeg.kill("SIGTERM");
+  } catch {}
+  try {
+    if (browser) await browser.close();
+  } catch {}
+  if (server.listening) {
+    await new Promise((resolve) => server.close(resolve));
+  }
 }
