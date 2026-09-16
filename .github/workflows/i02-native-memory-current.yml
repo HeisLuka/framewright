@@ -1,0 +1,63 @@
+name: I02 Native WebCodecs Current Memory Probe
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/i02-native-memory-probe.mjs'
+      - '.github/workflows/i02-native-memory-current.yml'
+  workflow_dispatch:
+
+jobs:
+  memory-current:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install current native dependencies
+        run: |
+          node --version
+          npm install
+          npm install --no-save @napi-rs/canvas@1.0.9 @napi-rs/webcodecs@1.4.0
+          node -e "console.log(require('@napi-rs/webcodecs/package.json').version)"
+      - name: Prepare exact C18 scene
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-i02.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-i02.html examples/book-ad-systems/index-e17-for-i02.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-i02.html examples/book-ad-systems/index-e17-e14-for-i02.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-i02.html examples/book-ad-systems/index-e18-for-i02.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-i02
+      - name: Run current-version isolated modes
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-i02.html
+          MANIFEST: examples/book-ad-systems/generated-i02/manifest.json
+          OUT_DIR: artifacts/i02-memory-current
+          BOOK_ID: river-station
+          VARIANT: hook-first
+          PROFILE: vertical
+          BITRATE: '2000000'
+          QUEUE: '8'
+        run: |
+          mkdir -p artifacts/i02-memory-current
+          for mode in frame-only encode-drop; do
+            echo "=== current $mode ==="
+            MODE="$mode" node --expose-gc .agents/skills/framewright/scripts/i02-native-memory-probe.mjs
+          done
+      - name: Summarize current version
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          for (const mode of ['frame-only','encode-drop']) {
+            const r=JSON.parse(fs.readFileSync(`artifacts/i02-memory-current/${mode}.json`));
+            console.log(`${mode}: wall=${(r.wallMs/1000).toFixed(3)}s start=${r.startRssMiB}MiB end=${r.endRssMiB}MiB peak=${r.peakRssMiB}MiB growth=${r.growthMiB}MiB (${r.growthMiBPerFrame} MiB/frame) queue=${r.maxEncodeQueue}`);
+            console.log('  checkpoints:', r.checkpoints.map(x=>`${x.frame}:${x.rssMiB}`).join(' '));
+          }
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: i02-native-memory-current
+          path: artifacts/i02-memory-current/
+          retention-days: 14
