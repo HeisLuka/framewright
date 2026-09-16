@@ -29,9 +29,10 @@ const ctype=f=>({'.html':'text/html; charset=utf-8','.json':'application/json','
 const server=http.createServer((req,res)=>{
   const u=new URL(req.url||'/','http://127.0.0.1');
   if(u.pathname==='/examples/book-ad-systems/__r45_scene.html'){
-    const profile=u.searchParams.get('profile'),idx=Number(u.searchParams.get('fixture')),e=entries[profile]?.[idx];
+    const profile=u.searchParams.get('profile'),idx=Number(u.searchParams.get('fixture')),e=entries[profile]?.[idx],cacheable=u.searchParams.get('r45cache')==='1';
     if(!e){res.writeHead(404);res.end();return;}
-    const injected=html.replace('<script>',`<script>window.FRAMEWRIGHT_PAYLOAD=${JSON.stringify(e.payload)};<\/script>\n<script>`);
+    const payload={...e.payload,cover_url:e.payload.cover_url+(e.payload.cover_url.includes('?')?'&':'?')+`r45cache=${cacheable?'1':'0'}`};
+    const injected=html.replace('<script>',`<script>window.FRAMEWRIGHT_PAYLOAD=${JSON.stringify(payload)};<\/script>\n<script>`);
     res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'});res.end(injected);return;
   }
   const rel=decodeURIComponent(u.pathname).replace(/^\/+/,''),file=path.resolve(root,rel||'.');
@@ -54,15 +55,12 @@ function order(kind,n){
 function sceneUrl(profile,idx,cacheable){
   const e=entries[profile][idx],u=new URL('/examples/book-ad-systems/__r45_scene.html',origin);
   u.searchParams.set('profile',profile);u.searchParams.set('fixture',idx);u.searchParams.set('f','0');u.searchParams.set('w',String(e.width));u.searchParams.set('h',String(e.height));u.searchParams.set('s',String(e.seed));u.searchParams.set('r45cache',cacheable?'1':'0');
-  // Append the cache marker to the cover URL without changing the fixture payload identity.
-  e.payload={...e.payload,cover_url:e.payload.cover_url+(e.payload.cover_url.includes('?')?'&':'?')+`r45cache=${cacheable?'1':'0'}`};
   return u.href;
 }
 async function runScenario(profile,cacheable,kind){
   const browser=await puppeteer.launch({headless:true,protocolTimeout:600000,args:['--no-sandbox','--disable-setuid-sandbox']}),page=await browser.newPage();
   const rows=[],seq=order(kind,iterations),before=new Map(requestCounts);
   try{
-    // Warm all three identities once. Timed evidence starts only after every cover has been seen.
     for(let idx=0;idx<3;idx++){
       const t=performance.now();await page.goto(sceneUrl(profile,idx,cacheable),{waitUntil:'load',timeout:120000});await page.waitForFunction('window.__ready===true',{timeout:120000});
       if(performance.now()-t>120000) throw new Error('warm navigation timeout');
