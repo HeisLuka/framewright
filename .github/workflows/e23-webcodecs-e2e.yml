@@ -1,0 +1,72 @@
+name: E23 WebCodecs end-to-end
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/scripts/bench-webcodecs-e2e.mjs"
+      - ".github/workflows/e23-webcodecs-e2e.yml"
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Syntax and tests
+        run: |
+          node --check .agents/skills/framewright/scripts/bench-webcodecs-e2e.mjs
+          npm test
+      - name: End-to-end 720
+        env:
+          E23_DIR: .bench/e23-720
+          PRESET: slow
+          CRF: "22"
+          WEBCODECS_BITRATE: "4000000"
+        run: |
+          mkdir -p artifacts
+          node .agents/skills/framewright/scripts/bench-webcodecs-e2e.mjs artifacts/e23-720.json 720 450 2
+      - name: End-to-end 1080
+        env:
+          E23_DIR: .bench/e23-1080
+          PRESET: slow
+          CRF: "22"
+          WEBCODECS_BITRATE: "8000000"
+        run: node .agents/skills/framewright/scripts/bench-webcodecs-e2e.mjs artifacts/e23-1080.json 1080 450 2
+      - name: Summary
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const profiles = ['720','1080'].map((size) => JSON.parse(fs.readFileSync(`artifacts/e23-${size}.json`, 'utf8')));
+          const summary = {
+            experiment: 'E23-webcodecs-e2e-summary',
+            profiles: profiles.map((p) => ({
+              width: p.width,
+              height: p.height,
+              frames: p.frames,
+              directWebCodecs: p.directWebCodecs,
+              rawReference: p.rawReference,
+              speedup: p.speedup,
+              visualComparison: p.visualComparison,
+              hypothesis: p.hypothesis,
+              caveat: p.caveat,
+            })),
+          };
+          fs.writeFileSync('artifacts/e23-summary.json', JSON.stringify(summary, null, 2) + '\n');
+          console.log(JSON.stringify(summary, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e23-webcodecs-e2e
+          path: |
+            artifacts/e23-720.json
+            artifacts/e23-1080.json
+            artifacts/e23-summary.json
