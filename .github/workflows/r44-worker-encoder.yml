@@ -1,0 +1,84 @@
+name: R44 Worker Encoder Scout
+
+on:
+  push:
+    branches: [lab/r44-worker-encoder]
+    paths:
+      - '.agents/skills/framewright/scripts/r44-worker-encoder.mjs'
+      - '.github/workflows/r44-worker-encoder.yml'
+      - 'docs/r44-worker-encoder.md'
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r44-worker-encoder.mjs'
+      - '.github/workflows/r44-worker-encoder.yml'
+      - 'docs/r44-worker-encoder.md'
+  workflow_dispatch:
+
+jobs:
+  worker-encoder:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r44-worker-encoder.mjs
+      - name: Prepare exact C18 fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r44.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r44.html examples/book-ad-systems/index-e17-for-r44.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r44.html examples/book-ad-systems/index-e17-e14-for-r44.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r44.html examples/book-ad-systems/index-e18-for-r44.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r44
+      - name: Build cached AAC track
+        run: |
+          mkdir -p artifacts/r44
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=48000:cl=stereo -t 12 -c:a aac -b:a 128k artifacts/r44/track.m4a
+      - name: Run main vs Worker ABBA scout
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r44.html
+          MANIFEST: examples/book-ad-systems/generated-r44/manifest.json
+          OUT_DIR: artifacts/r44
+          REPORT: artifacts/r44/report.json
+          AUDIO: artifacts/r44/track.m4a
+          JOBS: '18'
+          BITRATE: '3000000'
+        run: node .agents/skills/framewright/scripts/r44-worker-encoder.mjs
+      - name: Validate report completeness
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r44/report.json','utf8'));
+          if(r.schema!=='framewright-r44-worker-encoder-v1') throw new Error('wrong schema');
+          if(r.scenarios?.length!==4) throw new Error(`expected 4 ABBA scenarios, got ${r.scenarios?.length}`);
+          if(r.config?.order?.join(',')!=='main,worker,worker,main') throw new Error('wrong ABBA order');
+          for(const m of ['main','worker']) {
+            const a=r.aggregates?.[m];
+            if(!a||a.occurrences!==2||!(a.videosPerHour>0)||!(a.cpuMsPerVideo>0)||!(a.peakRssBytes>0)) throw new Error(`${m}: incomplete aggregate`);
+          }
+          if(!r.quality?.modes?.main||!r.quality?.modes?.worker||typeof r.quality?.comparison?.pass!=='boolean') throw new Error('missing quality gate');
+          for(const k of ['correctnessPass','qualityPass','throughputGate','efficiencyGate','encoderWorkerPromoted']) if(typeof r.decision?.[k]!=='boolean') throw new Error(`missing decision ${k}`);
+          if(r.decision.encoderWorkerPromoted && !(r.decision.throughputGate||r.decision.efficiencyGate)) throw new Error('promotion without performance gate');
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - name: Show result
+        if: always()
+        run: test -f artifacts/r44/summary.md && cat artifacts/r44/summary.md || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r44-worker-encoder
+          path: |
+            artifacts/r44/report.json
+            artifacts/r44/summary.md
+            artifacts/r44/quality-refs/*.png
+            artifacts/r44/quality-decoded/*.png
+          retention-days: 14
