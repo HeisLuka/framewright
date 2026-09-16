@@ -1,0 +1,59 @@
+name: R51 Replicated Codec Acceptance
+
+on:
+  pull_request:
+    paths:
+      - '.agents/skills/framewright/scripts/r51-replicated-codec-acceptance.mjs'
+      - '.agents/skills/framewright/scripts/make-r51-codec-acceptance-fixtures.mjs'
+      - '.github/workflows/r51-replicated-codec-acceptance.yml'
+      - 'docs/r51-replicated-codec-acceptance.md'
+  workflow_dispatch:
+
+jobs:
+  replicated-acceptance:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/make-r51-codec-acceptance-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/r51-replicated-codec-acceptance.mjs
+      - name: Prepare fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r51.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r51.html examples/book-ad-systems/index-e17-for-r51.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r51.html examples/book-ad-systems/index-e17-e14-for-r51.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r51.html examples/book-ad-systems/index-e18-for-r51.html
+          node .agents/skills/framewright/scripts/make-r51-codec-acceptance-fixtures.mjs examples/book-ad-systems/generated-r51
+      - name: Run replicated acceptance candidate
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r51.html
+          MANIFEST: examples/book-ad-systems/generated-r51/manifest.json
+          OUT_DIR: artifacts/r51
+          REPORT: artifacts/r51/report.json
+        run: node .agents/skills/framewright/scripts/r51-replicated-codec-acceptance.mjs
+      - name: Validate fixed experiment shape
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r51/report.json','utf8'));
+          if(r.schema!=='nightwill-r51-replicated-codec-acceptance-v1') throw new Error('wrong schema');
+          if(r.fixtures.length!==10) throw new Error(`expected 10 fixtures, got ${r.fixtures.length}`);
+          if(r.manifest.heldOut.join(',')!=='salt,winter-map,quotes,zero-hour') throw new Error('held-out set changed');
+          for(const f of r.fixtures) if(f.runs.length!==3) throw new Error(`${f.bookId}: expected 3 repeats`);
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r51-replicated-codec-acceptance
+          path: artifacts/r51
+          retention-days: 14
