@@ -10,20 +10,14 @@
       "version": "e18",
       "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
     },
-    "visual_system": {
-      "id": "swiss",
-      "version": "v1"
-    },
+    "visual_system": { "id": "swiss", "version": "v1" },
     "structural_variant": "hook-first",
     "hook": {
       "source": "human_verified",
       "text": "A city with seven doors. Only one opens twice.",
       "source_ref": "campaign-copy:v3"
     },
-    "motion": {
-      "profile": "active",
-      "version": "e12-v1"
-    },
+    "motion": { "profile": "active", "version": "e12-v1" },
     "art_direction": {
       "mode": "cover-derived",
       "algorithm": "cover-palette-v1",
@@ -60,8 +54,9 @@
   },
   "render": {
     "schema": "newboo-render-spec-v1",
-    "render_spec_id": "nvr1_c34de9df55a936ed2269a405e5c949a4174ce36fa78785e5a79086cb5236238e",
+    "render_spec_id": "nvr1_c008fd2e5f871ded5fc2c4d3a89e751242fa98a1f9c03702bd84028f37153cfb",
     "creative_id": "nvc1_acda813a67f904ee65b73fa06c3aebae3588c04a9b94b252d3f9b738bcaca42e",
+    "duration_ms": 12000,
     "delivery": {
       "id": "vertical-1080x1920-v1",
       "width": 1080,
@@ -74,28 +69,47 @@
       "class": "FAST",
       "scene_contract_version": "canvas-scene-v1",
       "environment_id": "video-worker-chromium-v1",
-      "renderer": {
-        "id": "webcodecs-h264",
-        "version": "v1"
-      },
+      "renderer": { "id": "webcodecs-h264", "version": "v1" },
       "encoder": {
         "video_codec": "avc1.42001f",
         "bitrate_bps": 2000000,
         "pixel_format": "yuv420p"
       },
-      "muxer": {
-        "id": "ffmpeg-stream-copy-aac",
-        "version": "6.1.1"
+      "muxer": { "id": "ffmpeg-stream-copy-aac", "version": "6.1.1" }
+    },
+    "assets": [],
+    "audio": {
+      "spec": {
+        "schema": "framewright-audio-spec-v1",
+        "audio_spec_id": "fwa1_8034471da9ff0768c6fcbbe4c50d7f599162a8a449ea67069c28245abf86b1ae",
+        "version": 1,
+        "source_sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+        "timing": {
+          "trim_start_ms": 0,
+          "duration_ms": 12000,
+          "final_mux_duration_ms": 12000
+        },
+        "mix": { "gain_db": 0, "fades": null },
+        "codec": {
+          "name": "aac",
+          "bitrate_bps": 192000,
+          "container": "m4a",
+          "policy": "aac-lc-ffmpeg-192k-v2-explicit-duration"
+        }
+      },
+      "artifact": {
+        "schema": "framewright-canonical-audio-v1",
+        "audio_spec_id": "fwa1_8034471da9ff0768c6fcbbe4c50d7f599162a8a449ea67069c28245abf86b1ae",
+        "sha256": "7777777777777777777777777777777777777777777777777777777777777777",
+        "bytes": 192000,
+        "media_type": "audio/mp4",
+        "storage_uri": "s3://example-bucket/audio/fwa1_8034471da9ff0768c6fcbbe4c50d7f599162a8a449ea67069c28245abf86b1ae.m4a",
+        "provenance": {
+          "encoder": "ffmpeg-6.1.1",
+          "policy": "aac-lc-ffmpeg-192k-v2-explicit-duration"
+        }
       }
     },
-    "assets": [
-      {
-        "role": "audio",
-        "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
-        "media_type": "audio/wav",
-        "uri": "s3://example-bucket/audio/campaign-01.wav"
-      }
-    ],
     "artifact_policy": {
       "reuse": "prefer-existing",
       "canonical_key": "render_spec_id"
@@ -103,14 +117,14 @@
   },
   "artifact": {
     "schema": "newboo-render-artifact-v1",
-    "render_spec_id": "nvr1_c34de9df55a936ed2269a405e5c949a4174ce36fa78785e5a79086cb5236238e",
+    "render_spec_id": "nvr1_c008fd2e5f871ded5fc2c4d3a89e751242fa98a1f9c03702bd84028f37153cfb",
     "output": {
       "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
       "bytes": 1220892,
       "mime_type": "video/mp4",
       "duration_ms": 12006.6,
       "frame_count": 360,
-      "storage_uri": "s3://example-bucket/video/nvr1_c34de9df55a936ed2269a405e5c949a4174ce36fa78785e5a79086cb5236238e.mp4"
+      "storage_uri": "s3://example-bucket/video/nvr1_c008fd2e5f871ded5fc2c4d3a89e751242fa98a1f9c03702bd84028f37153cfb.mp4"
     },
     "qa": {
       "status": "pass",
@@ -120,14 +134,7 @@
         { "id": "audio-stream", "status": "pass", "details": { "present": true } }
       ]
     },
-    "metrics": {
-      "wall_ms": 4400.7,
-      "encode_ms": 1322.9,
-      "mux_ms": 828.1
-    },
-    "invocation": {
-      "cache_hit": false,
-      "attempts": 1
-    }
+    "metrics": { "wall_ms": 4400.7, "encode_ms": 1322.9, "mux_ms": 828.1 },
+    "invocation": { "cache_hit": false, "attempts": 1 }
   }
 }
