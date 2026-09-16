@@ -21,7 +21,7 @@ const sourcePack=makeCreativeSourcePack({book,blocks:[
     kind:'publisher_synopsis',
     verification_id:'catalog-feed-2026-09-17:future-letters',
     spoiler_level:0,
-    text:'Every evening he receives a letter written by himself tomorrow. The city has no record of the sender. Before sunrise he must decide whether to trust the warning.'
+    text:'Every evening he receives a letter written by himself tomorrow. The city has no record of the sender. The city rewrites its records each midnight. Before sunrise he must decide whether to trust the warning.'
   },
   {
     id:'excerpt-safe-boundary',
@@ -55,7 +55,7 @@ const replay=buildAutoCreativeInputs({
 });
 if(stableStringify(first)!==stableStringify(replay))throw new Error('auto creative deterministic replay drift');
 
-if(first.evidence.items.length!==8)throw new Error(`expected 8 distinct evidence atoms, got ${first.evidence.items.length}`);
+if(first.evidence.items.length!==9)throw new Error(`expected 9 distinct evidence atoms, got ${first.evidence.items.length}`);
 const duplicatePremise=first.evidence.items.filter(item=>resolveCopySource(item.source,book).startsWith('Every evening he receives'));
 if(duplicatePremise.length!==1)throw new Error('duplicate synopsis/payload sentence was not deduplicated');
 
