@@ -1,4 +1,4 @@
-name: Lab E03 WebCodecs Probe
+name: Lab E03 WebCodecs Stream
 
 on:
   push:
@@ -7,26 +7,81 @@ on:
   workflow_dispatch:
 
 jobs:
-  probe:
+  benchmark:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: npm
+
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: Syntax checks
+        run: |
+          node --check .agents/skills/framewright/scripts/webcodecs-probe.mjs
+          node --check .agents/skills/framewright/scripts/render-webcodecs.mjs
+          node --check .agents/skills/framewright/scripts/profile-render.mjs
+          node --check .agents/skills/framewright/scripts/benchmark.mjs
+
       - name: Probe browser encoders
         run: |
           mkdir -p artifacts
-          node --check .agents/skills/framewright/scripts/webcodecs-probe.mjs
           node .agents/skills/framewright/scripts/webcodecs-probe.mjs artifacts/webcodecs-probe.json
-      - name: Upload probe
+
+      - name: E02 baseline on same runner
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+          FRAMES_DIR: frames-baseline
+          VIDEO_OUT: artifacts/baseline.mp4
+          RENDER_PROFILE_OUT: artifacts/baseline-render.json
+          KEEP_FRAMES: '1'
+        run: |
+          node .agents/skills/framewright/scripts/benchmark.mjs artifacts/baseline.json 7 1080 5
+
+      - name: E03 WebCodecs repetitions
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+        run: |
+          for i in 1 2 3; do
+            REPORT_OUT="artifacts/webcodecs-${i}.json" node .agents/skills/framewright/scripts/render-webcodecs.mjs "artifacts/webcodecs-${i}.mp4" 7 1080 2500000
+          done
+
+      - name: Quality and visual checks
+        run: |
+          ffmpeg -hide_banner -y -i artifacts/webcodecs-1.mp4 -i artifacts/baseline.mp4 -lavfi "[0:v][1:v]ssim=stats_file=artifacts/ssim.log;[0:v][1:v]psnr=stats_file=artifacts/psnr.log" -f null - 2> artifacts/quality.txt
+          ffmpeg -hide_banner -loglevel error -y -i artifacts/webcodecs-1.mp4 -vf "select='not(mod(n,30))',scale=270:-1,tile=4x3" -frames:v 1 artifacts/webcodecs-contact.png
+          ffmpeg -hide_banner -loglevel error -y -framerate 30 -pattern_type glob -i 'frames-baseline/f*.png' -vf "select='not(mod(n,30))',scale=270:-1,tile=4x3" -frames:v 1 artifacts/baseline-contact.png
+          rm -rf frames-baseline
+
+      - name: Summarize E03
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const base=JSON.parse(fs.readFileSync('artifacts/baseline.json','utf8'));
+          const runs=[1,2,3].map(i=>JSON.parse(fs.readFileSync(`artifacts/webcodecs-${i}.json`,'utf8')));
+          const summary={
+            baseline:{totalMs:base.wall.totalMs,renderMs:base.wall.renderMs,buildMs:base.wall.buildMs,mp4Bytes:base.output.videoBytes,tempFrameBytes:base.intermediates.frameBytes},
+            webcodecs:runs.map((r,i)=>({run:i+1,totalMs:r.totalRunMs,browserWallMs:r.browser.browserWallMs,renderMs:r.browser.renderMs,videoFrameMs:r.browser.videoFrameMs,enqueueMs:r.browser.enqueueMs,encodedBytes:r.browser.encodedBytes,finalCdpTransferApproxMs:r.node.finalCdpTransferApproxMs,muxMs:r.node.muxMs,mp4Bytes:r.output.mp4Bytes,codec:r.browser.codec.codec,frames:r.output.ffprobe.streams?.[0]?.nb_frames,duration:r.output.ffprobe.format?.duration})),
+          };
+          const vals=summary.webcodecs.map(r=>r.totalMs).sort((a,b)=>a-b);summary.webcodecsMedianTotalMs=vals[1];summary.speedupVsBaseline=base.wall.totalMs/vals[1];
+          fs.writeFileSync('artifacts/e03-summary.json',JSON.stringify(summary,null,2));console.log(JSON.stringify(summary,null,2));
+          NODE
+
+      - name: Upload E03 artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: e03-webcodecs-probe
-          path: artifacts/webcodecs-probe.json
+          name: e03-webcodecs-stream
+          path: artifacts/
           if-no-files-found: error
           retention-days: 14
