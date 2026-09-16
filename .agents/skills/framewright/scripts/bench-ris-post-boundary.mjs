@@ -19,7 +19,11 @@ await fsp.access(html);
 
 const query = new URLSearchParams({ f: "0", w: "320", s: String(seed), ar: aspect });
 const pageUrl = `${pathToFileURL(html).href}?${query}`;
-const browser = await puppeteer.launch({ headless: true, protocolTimeout: 600000 });
+const browser = await puppeteer.launch({
+  headless: true,
+  protocolTimeout: 600000,
+  args: process.env.CI ? ["--no-sandbox", "--disable-setuid-sandbox"] : [],
+});
 
 const openPage = async () => {
   const page = await browser.newPage();
