@@ -1,4 +1,4 @@
-name: Lab C24 Reading Pacing
+name: Lab C24 Organic Duration
 
 on:
   pull_request:
@@ -13,9 +13,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  reading-pacing:
+  organic-duration:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,7 +32,7 @@ jobs:
           node --check .agents/skills/framewright/scripts/c24-pacing-audit.mjs
           node --check .agents/skills/framewright/scripts/c24-summarize.mjs
           node --check .agents/skills/framewright/scripts/c24-review-sheets.mjs
-      - name: Prepare current creative stack and pacing fixtures
+      - name: Prepare current creative stack and duration fixtures
         run: |
           node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-c24.html
           node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-c24.html examples/book-ad-systems/index-e12-c24-v2.html
@@ -44,13 +44,13 @@ jobs:
           node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c21-c24.html examples/book-ad-systems/index-c23-c24.html
           node .agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs examples/book-ad-systems/index-c23-c24.html examples/book-ad-systems/index-c24.html
           node .agents/skills/framewright/scripts/make-c24-pacing-fixtures.mjs examples/book-ad-systems/generated-c24
-      - name: Audit fixed-duration adaptive pacing
+      - name: Audit duration policy before rendering
         env:
           HTML: examples/book-ad-systems/index-c24.html
           MANIFEST: examples/book-ad-systems/generated-c24/manifest.json
           AUDIT_REPORT: artifacts/c24/pacing-audit.json
         run: node .agents/skills/framewright/scripts/c24-pacing-audit.mjs
-      - name: Render 15 fixed vs adaptive pacing pairs
+      - name: Render 18 fixed-12 vs adaptive-duration pairs
         env:
           HTML: examples/book-ad-systems/index-c24.html
           MANIFEST: examples/book-ad-systems/generated-c24/manifest.json
@@ -59,13 +59,13 @@ jobs:
           PRESET: veryfast
           CRF: '22'
         run: node .agents/skills/framewright/scripts/node-canvas-profile-batch.mjs
-      - name: Enforce pacing cost and layout gates
+      - name: Enforce duration/layout/cost gates
         run: node .agents/skills/framewright/scripts/c24-summarize.mjs artifacts/c24/batch.json artifacts/c24/pacing-audit.json artifacts/c24/summary.json
-      - name: Build absolute-time pacing review sheets
-        run: node .agents/skills/framewright/scripts/c24-review-sheets.mjs artifacts/c24/batch.json artifacts/c24/review
+      - name: Build normalized timeline and loop review sheets
+        run: node .agents/skills/framewright/scripts/c24-review-sheets.mjs artifacts/c24/batch.json artifacts/c24/pacing-audit.json artifacts/c24/review
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: c24-reading-pacing
+          name: c24-organic-duration
           path: artifacts/c24/
           retention-days: 14
