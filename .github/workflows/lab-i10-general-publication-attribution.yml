@@ -1,0 +1,51 @@
+name: Lab I10 General Publication Attribution
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - '.agents/skills/framewright/scripts/c30-campaign-learning.mjs'
+      - '.agents/skills/framewright/scripts/c31-platform-export-ingestion.mjs'
+      - '.agents/skills/framewright/scripts/c34-exploration-holdout-selector.mjs'
+      - '.agents/skills/framewright/scripts/c37-doe-identifiability.mjs'
+      - '.agents/skills/framewright/scripts/i08-publication-attribution-roundtrip.mjs'
+      - '.agents/skills/framewright/scripts/i09-blocked-publication-scheduler.mjs'
+      - '.agents/skills/framewright/scripts/i10-general-publication-attribution.mjs'
+      - '.agents/skills/framewright/scripts/i10-general-publication-attribution-audit.mjs'
+      - 'docs/i10-general-publication-attribution.md'
+      - '.github/workflows/lab-i10-general-publication-attribution.yml'
+  workflow_dispatch:
+
+jobs:
+  general-publication-attribution:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Syntax check dependencies and I10
+        run: |
+          node --check .agents/skills/framewright/scripts/i08-publication-attribution-roundtrip.mjs
+          node --check .agents/skills/framewright/scripts/i09-blocked-publication-scheduler.mjs
+          node --check .agents/skills/framewright/scripts/i10-general-publication-attribution.mjs
+          node --check .agents/skills/framewright/scripts/i10-general-publication-attribution-audit.mjs
+      - name: Re-run canonical I08 attribution contract
+        run: node .agents/skills/framewright/scripts/i08-publication-attribution-roundtrip-audit.mjs artifacts/i08
+      - name: Re-run canonical I09 blocked scheduler contract
+        run: node .agents/skills/framewright/scripts/i09-blocked-publication-scheduler-audit.mjs artifacts/i09
+      - name: Audit generalized attribution compatibility
+        run: node .agents/skills/framewright/scripts/i10-general-publication-attribution-audit.mjs artifacts/i10
+      - name: Show I10 summary
+        run: cat artifacts/i10/summary.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i10-general-publication-attribution
+          path: |
+            artifacts/i08/
+            artifacts/i09/
+            artifacts/i10/
+          retention-days: 14
