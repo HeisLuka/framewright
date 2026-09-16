@@ -4,7 +4,7 @@ import path from 'node:path';
 
 const wavPath=path.resolve(process.argv[2]||'artifacts/c23/track.wav');
 const mapPath=path.resolve(process.argv[3]||'artifacts/c23/onsets.json');
-const SR=44100,DUR=12,BPM=100,BEAT=60/BPM,OFFSET=.15,N=Math.round(SR*DUR);
+const SR=44100,DUR=12,BPM=100,BEAT=60/BPM,OFFSET=.25,N=Math.round(SR*DUR);
 const L=new Float32Array(N),R=new Float32Array(N);
 let seed=230917;const rnd=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
 function addPulse(t,accent=false){const s0=Math.round(t*SR),len=Math.round(.24*SR);for(let i=0;i<len&&s0+i<N;i++){const x=i/SR,env=Math.exp(-x/(accent?.075:.055));const kick=Math.sin(2*Math.PI*(accent?86:116)*x)*env*(accent?.62:.42);const click=(rnd()*2-1)*Math.exp(-x/.009)*(accent?.22:.14);L[s0+i]+=kick+click;R[s0+i]+=kick+click;}}
