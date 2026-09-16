@@ -9,6 +9,7 @@ __pycache__/
 frames/
 frames-*/
 shots/
+.bench/
 *.mp4
 *.mov
 *.webm
