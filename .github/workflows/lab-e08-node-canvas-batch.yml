@@ -1,0 +1,134 @@
+name: Lab E08 Node Canvas Batch
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - '.agents/skills/framewright/scripts/make-e08-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/node-canvas-batch.mjs'
+      - '.agents/skills/framewright/scripts/prepare-pinned-font-template.mjs'
+      - '.github/workflows/lab-e08-node-canvas-batch.yml'
+      - 'examples/book-ad-v0/**'
+  workflow_dispatch:
+
+jobs:
+  batch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npm install --no-save @napi-rs/canvas
+
+      - name: Install FFmpeg and pinned fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/make-e08-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/node-canvas-batch.mjs
+          node --check .agents/skills/framewright/scripts/prepare-pinned-font-template.mjs
+
+      - name: Prepare raster fixtures and pinned template
+        run: |
+          rm -rf artifacts/e08 examples/book-ad-v0/generated-e08 examples/book-ad-v0/index-e08.html
+          mkdir -p artifacts/e08
+          node .agents/skills/framewright/scripts/make-e08-fixtures.mjs examples/book-ad-v0/generated-e08
+          node .agents/skills/framewright/scripts/prepare-pinned-font-template.mjs examples/book-ad-v0/index.html examples/book-ad-v0/index-e08.html
+
+      - name: Render ten-video Node Canvas batch
+        env:
+          HTML: examples/book-ad-v0/index-e08.html
+          MANIFEST: examples/book-ad-v0/generated-e08/manifest.json
+          OUT_DIR: artifacts/e08/videos
+          REPORT: artifacts/e08/batch.json
+          WIDTH: 1080
+          PRESET: veryfast
+          CRF: 22
+        run: node .agents/skills/framewright/scripts/node-canvas-batch.mjs
+
+      - name: Validate batch and layout gate
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const r=JSON.parse(fs.readFileSync('artifacts/e08/batch.json','utf8'));
+          if(r.count!==10) throw new Error(`expected 10 videos, got ${r.count}`);
+          if(r.layoutWarningGroups!==0) {
+            for(const v of r.results) if(v.layoutWarnings.length) console.error(v.id, v.layoutWarnings);
+            throw new Error(`layout warnings: ${r.layoutWarningGroups}`);
+          }
+          if(r.results.some(v=>v.outputBytes<10000)) throw new Error('suspiciously small output');
+          console.log(`batch ${(r.batchMs/1000).toFixed(2)}s, ${r.videosPerHour} videos/hour, p95 ${(r.perVideoMs.p95/1000).toFixed(2)}s, peak ${(r.peakCombinedRssBytes/1048576).toFixed(1)} MiB`);
+          NODE
+
+      - name: Chromium raster-cover reference
+        env:
+          HTML: examples/book-ad-v0/index-e08.html
+          PAYLOAD: examples/book-ad-v0/generated-e08/payload-01.json
+        run: |
+          rm -rf frames-e08-ref
+          node .agents/skills/framewright/scripts/render.mjs frames-e08-ref 7 1080 1
+          ffmpeg -hide_banner -loglevel error -y -framerate 30 -i frames-e08-ref/f%05d.png \
+            -c:v libx264 -preset veryfast -crf 22 -maxrate 14M -bufsize 28M -pix_fmt yuv420p -movflags +faststart \
+            artifacts/e08/chromium-reference.mp4
+          rm -rf frames-e08-ref
+
+      - name: Compare canonical decoded output
+        run: |
+          NODE_VIDEO=artifacts/e08/videos/01-night-archive.mp4
+          ffmpeg -hide_banner -i artifacts/e08/chromium-reference.mp4 -i "$NODE_VIDEO" \
+            -lavfi "[0:v]setpts=PTS-STARTPTS[ref];[1:v]setpts=PTS-STARTPTS[test];[ref][test]ssim" \
+            -f null - 2> artifacts/e08/ssim.txt
+          ffmpeg -hide_banner -i artifacts/e08/chromium-reference.mp4 -i "$NODE_VIDEO" \
+            -lavfi "[0:v]setpts=PTS-STARTPTS[ref];[1:v]setpts=PTS-STARTPTS[test];[ref][test]psnr" \
+            -f null - 2> artifacts/e08/psnr.txt
+          grep -E 'All:|average:' artifacts/e08/ssim.txt artifacts/e08/psnr.txt || true
+          node - <<'NODE'
+          const fs=require('fs');
+          const s=fs.readFileSync('artifacts/e08/ssim.txt','utf8').match(/All:([0-9.]+)/)?.[1];
+          const p=fs.readFileSync('artifacts/e08/psnr.txt','utf8').match(/average:([0-9.]+)/)?.[1];
+          const q={ssim:s?+s:null,psnr:p?+p:null};
+          fs.writeFileSync('artifacts/e08/parity.json',JSON.stringify(q,null,2));
+          if(!q.ssim || q.ssim < 0.99) throw new Error(`SSIM below 0.99: ${q.ssim}`);
+          console.log(q);
+          NODE
+
+      - name: Validate MP4 outputs and save book-plate stills
+        run: |
+          mkdir -p artifacts/e08/stills
+          for f in artifacts/e08/videos/*.mp4; do
+            probe=$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height,nb_frames -show_entries format=duration -of json "$f")
+            node -e 'const p=JSON.parse(process.argv[1]);const s=p.streams[0];if(s.codec_name!=="h264"||s.width!==1080||s.height!==1920)throw new Error(JSON.stringify(p));const d=+p.format.duration;if(d<11.9||d>12.1)throw new Error(`duration ${d}`);' "$probe"
+            base=$(basename "$f" .mp4)
+            ffmpeg -hide_banner -loglevel error -y -ss 4 -i "$f" -frames:v 1 "artifacts/e08/stills/${base}.png"
+          done
+
+      - name: Write summary
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const r=JSON.parse(fs.readFileSync('artifacts/e08/batch.json','utf8'));
+          const q=JSON.parse(fs.readFileSync('artifacts/e08/parity.json','utf8'));
+          let md='# E08 batch summary\n\n';
+          md+=`- videos: ${r.count}\n- batch: ${(r.batchMs/1000).toFixed(3)} s\n- throughput: ${r.videosPerHour} videos/hour\n- per-video p50: ${(r.perVideoMs.p50/1000).toFixed(3)} s\n- per-video p95: ${(r.perVideoMs.p95/1000).toFixed(3)} s\n- peak combined RSS: ${(r.peakCombinedRssBytes/1048576).toFixed(1)} MiB\n- layout warning groups: ${r.layoutWarningGroups}\n- Chromium parity SSIM: ${q.ssim}\n- Chromium parity PSNR: ${q.psnr} dB\n`;
+          md+='\n| id | sec | fps | KiB | init ms | render mean ms | write wait mean ms |\n|---|---:|---:|---:|---:|---:|---:|\n';
+          for(const v of r.results) md+=`| ${v.id} | ${(v.totalMs/1000).toFixed(3)} | ${v.fps.toFixed(1)} | ${(v.outputBytes/1024).toFixed(1)} | ${v.initMs.toFixed(1)} | ${v.stages.renderMs.mean.toFixed(2)} | ${v.stages.writeWaitMs.mean.toFixed(2)} |\n`;
+          fs.writeFileSync('artifacts/e08/summary.md',md); console.log(md);
+          NODE
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e08-node-canvas-batch
+          path: artifacts/e08/
+          retention-days: 14
