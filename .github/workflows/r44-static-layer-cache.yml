@@ -1,0 +1,107 @@
+name: R44 Static Layer Cache Scout
+
+on:
+  pull_request:
+    paths:
+      - '.agents/skills/framewright/scripts/prepare-r44-static-layer-cache.mjs'
+      - '.agents/skills/framewright/scripts/r44-static-layer-parity.mjs'
+      - '.agents/skills/framewright/scripts/r44-static-layer-cache-analyze.mjs'
+      - '.github/workflows/r44-static-layer-cache.yml'
+      - 'docs/r44-static-layer-cache.md'
+  workflow_dispatch:
+
+jobs:
+  static-layer-cache:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/prepare-r44-static-layer-cache.mjs
+          node --check .agents/skills/framewright/scripts/r44-static-layer-parity.mjs
+          node --check .agents/skills/framewright/scripts/r44-static-layer-cache-analyze.mjs
+          node --check .agents/skills/framewright/scripts/r42-profile-concurrency.mjs
+      - name: Prepare exact C18 responsive fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r44.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r44.html examples/book-ad-systems/index-e17-for-r44.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r44.html examples/book-ad-systems/index-e17-e14-for-r44.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r44.html examples/book-ad-systems/index-e18-for-r44.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r44
+          node .agents/skills/framewright/scripts/prepare-r44-static-layer-cache.mjs examples/book-ad-systems/index-e18-for-r44.html examples/book-ad-systems/index-e18-r44-cached.html
+      - name: Build canonical AAC fixture once
+        run: |
+          mkdir -p artifacts/r44/baseline artifacts/r44/cached
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i 'sine=frequency=110:sample_rate=48000:duration=12' \
+            -filter:a 'volume=0.06' -t 12 -c:a aac -b:a 192k \
+            -movflags +faststart artifacts/r44/track.m4a
+      - name: Prove baseline-to-cache pixel parity
+        env:
+          BASELINE_HTML: examples/book-ad-systems/index-e18-for-r44.html
+          CACHED_HTML: examples/book-ad-systems/index-e18-r44-cached.html
+          MANIFEST: examples/book-ad-systems/generated-r44/manifest.json
+          REPORT: artifacts/r44/parity.json
+        run: node .agents/skills/framewright/scripts/r44-static-layer-parity.mjs
+      - name: Run baseline c2 production path
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r44.html
+          MANIFEST: examples/book-ad-systems/generated-r44/manifest.json
+          OUT_DIR: artifacts/r44/baseline
+          AUDIO: artifacts/r44/track.m4a
+          REPORT: artifacts/r44/baseline/report.json
+          JOBS: 12
+          CONCURRENCIES: 2
+          BITRATE: 3000000
+        run: node .agents/skills/framewright/scripts/r42-profile-concurrency.mjs
+      - name: Run cached c2 production path
+        env:
+          HTML: examples/book-ad-systems/index-e18-r44-cached.html
+          MANIFEST: examples/book-ad-systems/generated-r44/manifest.json
+          OUT_DIR: artifacts/r44/cached
+          AUDIO: artifacts/r44/track.m4a
+          REPORT: artifacts/r44/cached/report.json
+          JOBS: 12
+          CONCURRENCIES: 2
+          BITRATE: 3000000
+        run: node .agents/skills/framewright/scripts/r42-profile-concurrency.mjs
+      - name: Analyze promotion gate
+        env:
+          BASELINE_REPORT: artifacts/r44/baseline/report.json
+          CACHED_REPORT: artifacts/r44/cached/report.json
+          PARITY_REPORT: artifacts/r44/parity.json
+          REPORT: artifacts/r44/report.json
+          SUMMARY: artifacts/r44/summary.md
+        run: node .agents/skills/framewright/scripts/r44-static-layer-cache-analyze.mjs
+      - name: Validate report
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r44/report.json','utf8'));
+          if(r.schema!=='nightwill-r44-static-layer-cache-v1') throw new Error('wrong schema');
+          if(!r.crossParity.pass) throw new Error(`pixel parity failed: ${r.crossParity.failures}`);
+          if(r.baseline.jobs!==36||r.cached.jobs!==36) throw new Error('incomplete workload');
+          if(!r.correctness) throw new Error('correctness failed');
+          console.log(JSON.stringify({decision:r.decision,aggregate:r.aggregate,perProfile:r.perProfile},null,2));
+          NODE
+      - name: Show result
+        run: cat artifacts/r44/summary.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r44-static-layer-cache
+          path: |
+            artifacts/r44/report.json
+            artifacts/r44/summary.md
+            artifacts/r44/parity.json
+            artifacts/r44/baseline/report.json
+            artifacts/r44/cached/report.json
+          retention-days: 14
