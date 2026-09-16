@@ -39,7 +39,7 @@ function __c24Plan(){
   const load=__c24Load(),baseline={hook:90,book:150,cta:120};
   if(PACING_MODE==='baseline12'||PACING_MODE==='fixed'||PACING_MODE==='fixed12')return{mode:'baseline-12-v1',profileSeconds:12,totalFrames:360,grammar:'full',frames:baseline,seconds:{hook:3,book:5,cta:4},reasons:['control:fixed-12s'],...load};
   const profileSeconds=__c24DurationBand(load.score),targetFrames=profileSeconds*FPS;
-  if(profileSeconds===3){const frames={hook:90,book:0,cta:0};return{mode:'organic-duration-v1',profileSeconds,totalFrames:90,grammar:'teaser-hook',frames,seconds:{hook:3,book:0,cta:0},reasons:[`copy-load:${load.score}`,`duration-band:${profileSeconds}s`],...load};}
+  if(profileSeconds===3){const frames={hook:90,book:0,cta:0};return{mode:'organic-duration-v1',profileSeconds,totalFrames:90,grammar:'teaser-hook',frames,seconds:{hook:3,book:0,cta:0},reasons:['copy-load:'+load.score,'duration-band:'+profileSeconds+'s'],...load};}
   const grammar=profileSeconds===5?'hook-book':'full';
   const boundsByProfile={
     5:{hook:[54,78],book:[72,96],cta:[0,0]},
@@ -50,7 +50,7 @@ function __c24Plan(){
   };
   const bounds=boundsByProfile[profileSeconds],keys=profileSeconds===5?['hook','book']:['hook','book','cta'];
   const frames=__c24Allocate(targetFrames,bounds,load.desired,keys),seconds=Object.fromEntries(Object.entries(frames).map(([k,v])=>[k,+((v/FPS).toFixed(3))]));
-  return{mode:'organic-duration-v1',profileSeconds,totalFrames:targetFrames,grammar,frames,seconds,bounds,reasons:[`copy-load:${load.score}`,`duration-band:${profileSeconds}s`,`grammar:${grammar}`],...load};
+  return{mode:'organic-duration-v1',profileSeconds,totalFrames:targetFrames,grammar,frames,seconds,bounds,reasons:['copy-load:'+load.score,'duration-band:'+profileSeconds+'s','grammar:'+grammar],...load};
 }
 const __C24_PACING=__c24Plan();P.pacing=__C24_PACING;P.duration_profile=__C24_PACING.profileSeconds;window.__C24_PACING=()=>P.pacing;
 `;
