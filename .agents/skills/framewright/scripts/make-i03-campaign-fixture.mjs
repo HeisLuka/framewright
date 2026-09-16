@@ -20,7 +20,14 @@ const item=manifest.items.find(x=>x.bookId==='winter-map'&&x.angleId==='map-prem
 if(!item)throw new Error('no C27 fixture item');
 const input=JSON.parse(fs.readFileSync(path.join(fixtureDir,item.inputFile),'utf8'));
 const plan=JSON.parse(fs.readFileSync(path.join(fixtureDir,item.planFile),'utf8'));
-const book={...input.book,cover_url:`../book-ad-v0/generated-e08/${path.basename(input.book.cover_url)}`};
+const coverPath=path.resolve('examples/book-ad-v0/generated-e08',path.basename(input.book.cover_url));
+if(!fs.existsSync(coverPath))throw new Error(`missing cover ${coverPath}`);
+const runtimeAssetDir=path.join(path.dirname(c27Html),'generated-i03');
+fs.mkdirSync(runtimeAssetDir,{recursive:true});
+const runtimeCoverName=path.basename(input.book.cover_url);
+const runtimeCoverPath=path.join(runtimeAssetDir,runtimeCoverName);
+fs.copyFileSync(coverPath,runtimeCoverPath);
+const book={...input.book,cover_url:`./generated-i03/${runtimeCoverName}`};
 const basePayload={
   ...book,
   visual_system:'swiss',
@@ -36,9 +43,8 @@ const basePayload={
 };
 const payloadSha256=shaCanonical(basePayload);
 const templateSha256=shaFile(c27Html);
-const coverPath=path.resolve('examples/book-ad-v0/generated-e08',path.basename(input.book.cover_url));
-if(!fs.existsSync(coverPath))throw new Error(`missing cover ${coverPath}`);
-const coverSha256=shaFile(coverPath);
+const coverSha256=shaFile(runtimeCoverPath);
+if(coverSha256!==shaFile(coverPath))throw new Error('runtime cover copy hash drift');
 const durationMs=plan.duration_seconds*1000;
 const sourceSha256=shaFile(audioSource);
 const audioSpec={
@@ -82,7 +88,7 @@ const request={
       motion:{profile:'finite-choreography',version:'c22-v1'},
       art_direction:{mode:'cover-derived',algorithm:'c20-cover-adaptive-v1',source_cover_sha256:coverSha256,palette:{background:book.background,surface:'#FFFFFF',ink:book.ink,accent:book.accent,secondary:'#315A7D'}},
       seed:plan.seed,
-      assets:[{role:'cover',sha256:coverSha256,media_type:'image/png',uri:`asset://generated-e08/${path.basename(input.book.cover_url)}`}],
+      assets:[{role:'cover',sha256:coverSha256,media_type:'image/png',uri:`asset://generated-i03/${runtimeCoverName}`}],
     },
     timeline:{source:`c27:${plan.narrative_plan_id}`,policy_version:plan.policy_version,duration_ms:durationMs,frame_count:plan.total_frames},
     requested_delivery_profile_ids:['vertical-youtube-shorts-v1','vertical-instagram-reels-v1'],
@@ -99,6 +105,6 @@ fs.writeFileSync(payloadFile,JSON.stringify(basePayload,null,2)+'\n');
 fs.writeFileSync(campaignFile,JSON.stringify(request,null,2)+'\n');
 fs.writeFileSync(executionFile,JSON.stringify({
   schema:'framewright-i03-execution-map-v1',
-  selections:{'selected-winter-map':{html:c27Html,payload:payloadFile,audio:audioArtifact,narrative_plan_id:plan.narrative_plan_id}},
+  selections:{'selected-winter-map':{html:c27Html,payload:payloadFile,audio:audioArtifact,narrative_plan_id:plan.narrative_plan_id,runtime_cover:runtimeCoverPath}},
 },null,2)+'\n');
-console.log(JSON.stringify({campaign:campaignFile,executionMap:executionFile,selection:'selected-winter-map',narrativePlanId:plan.narrative_plan_id,durationMs,frames:plan.total_frames,payloadSha256,templateSha256,audioSpecId:audioSpec.audio_spec_id,audioSha256:canonicalAudio.sha256,profiles:request.selected[0].requested_delivery_profile_ids},null,2));
+console.log(JSON.stringify({campaign:campaignFile,executionMap:executionFile,selection:'selected-winter-map',narrativePlanId:plan.narrative_plan_id,durationMs,frames:plan.total_frames,payloadSha256,templateSha256,coverSha256,audioSpecId:audioSpec.audio_spec_id,audioSha256:canonicalAudio.sha256,profiles:request.selected[0].requested_delivery_profile_ids},null,2));
