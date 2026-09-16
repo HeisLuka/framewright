@@ -22,6 +22,8 @@ Cycle all existing C18 fixtures rather than one repeated creative:
 
 The fixed 3 Mbps rate is intentionally held constant across profiles so this pass measures lifecycle stability rather than introducing a second adaptive bitrate variable. R31 only proves the 3 Mbps semantic-ROI quality gate for one canonical 1080x1920 fixture, so this soak must not be cited as universal bitrate validation.
 
+For the canonical R34 run, the first **36 jobs** are warmup and every stable measurement window is **36 jobs**. One window therefore corresponds to one complete catalog cycle. This avoids comparing windows with materially different vertical/square/landscape or structural-variant mixes and mistaking workload composition for latency or memory drift.
+
 ## Correctness and observability
 
 Every C18 fixture gets a fresh-page baseline state fingerprint before the timed soak. Each warm-navigation job recomputes the same multi-frame downsampled Canvas fingerprint before encoding; mismatch is treated as a state-corruption failure.
@@ -31,7 +33,7 @@ Every encoded artifact is muxed with cached AAC and then ffprobed for video fram
 Measure:
 
 - observed successful videos/hour;
-- p50/p95 production-equivalent job wall by sequential windows;
+- p50/p95 production-equivalent job wall by catalog-balanced sequential windows;
 - navigation/reset wall;
 - cgroup CPU per successful video;
 - cgroup memory and recursive process-tree RSS level/slope;
