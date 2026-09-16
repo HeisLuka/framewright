@@ -16,6 +16,7 @@ jobs:
       - name: Validate pinned base image
         run: |
           mkdir -p artifacts
+          chmod 0777 artifacts
           BASE=$(awk 'NR==1{sub(/^FROM /,""); print}' Dockerfile.worker-lab)
           echo "$BASE" | tee artifacts/base-image-ref.txt
           docker pull "$BASE"
@@ -34,6 +35,7 @@ jobs:
       - name: Golden frames run A
         run: |
           mkdir -p artifacts/golden-a
+          chmod 0777 artifacts/golden-a
           docker run --rm \
             -e HTML=examples/book-ad-v0/index.html \
             -e PAYLOAD=examples/book-ad-v0/payload.example.json \
@@ -44,6 +46,7 @@ jobs:
       - name: Golden frames run B
         run: |
           mkdir -p artifacts/golden-b
+          chmod 0777 artifacts/golden-b
           docker run --rm \
             -e HTML=examples/book-ad-v0/index.html \
             -e PAYLOAD=examples/book-ad-v0/payload.example.json \
