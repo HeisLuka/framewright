@@ -1,0 +1,76 @@
+name: Lab E06 Reproducible Worker
+
+on:
+  push:
+    branches:
+      - lab/e06-repro-worker
+  workflow_dispatch:
+
+jobs:
+  worker-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record base image digest
+        run: |
+          mkdir -p artifacts
+          docker pull node:20.20.2-bookworm-slim
+          docker image inspect node:20.20.2-bookworm-slim --format '{{json .RepoDigests}}' | tee artifacts/base-image-digests.json
+
+      - name: Build worker image
+        run: |
+          docker build --pull=false -f Dockerfile.worker-lab -t framewright-worker:e06 .
+          docker image inspect framewright-worker:e06 --format '{{.Id}}' | tee artifacts/worker-image-id.txt
+
+      - name: Worker software manifest
+        run: |
+          docker run --rm -v "$PWD/artifacts:/artifacts" framewright-worker:e06 \
+            node .agents/skills/framewright/scripts/worker-manifest.mjs /artifacts/worker-manifest.json
+
+      - name: Golden frames run A
+        run: |
+          mkdir -p artifacts/golden-a
+          docker run --rm \
+            -e HTML=examples/book-ad-v0/index.html \
+            -e PAYLOAD=examples/book-ad-v0/payload.example.json \
+            -v "$PWD/artifacts/golden-a:/out" \
+            framewright-worker:e06 \
+            node .agents/skills/framewright/scripts/golden-frames.mjs /out 0,45,90,180,240,359 1080 7
+
+      - name: Golden frames run B
+        run: |
+          mkdir -p artifacts/golden-b
+          docker run --rm \
+            -e HTML=examples/book-ad-v0/index.html \
+            -e PAYLOAD=examples/book-ad-v0/payload.example.json \
+            -v "$PWD/artifacts/golden-b:/out" \
+            framewright-worker:e06 \
+            node .agents/skills/framewright/scripts/golden-frames.mjs /out 0,45,90,180,240,359 1080 7
+
+      - name: Verify bitwise frame stability
+        run: |
+          diff -u artifacts/golden-a/manifest.json artifacts/golden-b/manifest.json
+          for f in artifacts/golden-a/f*.png; do
+            b="artifacts/golden-b/$(basename "$f")"
+            cmp "$f" "$b"
+          done
+          sha256sum artifacts/golden-a/f*.png | tee artifacts/golden-sha256.txt
+
+      - name: Container warm-worker smoke benchmark
+        run: |
+          docker run --rm \
+            -e HTML=examples/book-ad-v0/index.html \
+            -e PAYLOAD=examples/book-ad-v0/payload.example.json \
+            -v "$PWD/artifacts:/artifacts" \
+            framewright-worker:e06 \
+            node .agents/skills/framewright/scripts/benchmark-warm-worker.mjs /artifacts/container-warm-c2.json 6 2 1080 1200000
+
+      - name: Upload E06 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: e06-repro-worker
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
