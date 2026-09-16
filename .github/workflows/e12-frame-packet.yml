@@ -1,0 +1,80 @@
+name: E12 frame packet raw pipeline
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/scripts/render-raw.mjs"
+      - ".agents/skills/framewright/scripts/frame-packet.mjs"
+      - ".agents/skills/framewright/scripts/post-identity.mjs"
+      - ".github/workflows/e12-frame-packet.yml"
+  workflow_dispatch:
+
+jobs:
+  packet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - run: npm test
+      - run: node --check .agents/skills/framewright/scripts/render-raw.mjs
+      - run: node --check .agents/skills/framewright/scripts/post-identity.mjs
+      - name: Inline legacy RIS path
+        env:
+          HTML: examples/ris-tv/index.html
+          AR: "9:16"
+          START: "0"
+          END: "30"
+          PRESET: ultrafast
+          CRF: "28"
+          METRICS_OUT: artifacts/e12-inline.json
+        run: >-
+          node .agents/skills/framewright/scripts/render-raw.mjs
+          artifacts/e12-inline.mp4 7 320 3
+      - name: Composition plus external identity backend
+        env:
+          HTML: examples/ris-tv/index.html
+          AR: "9:16"
+          START: "0"
+          END: "30"
+          PRESET: ultrafast
+          CRF: "28"
+          POST_MODULE: .agents/skills/framewright/scripts/post-identity.mjs
+          METRICS_OUT: artifacts/e12-external-identity.json
+        run: >-
+          node .agents/skills/framewright/scripts/render-raw.mjs
+          artifacts/e12-external-identity.mp4 7 320 3
+      - name: Assert frame packet metrics
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const inline = JSON.parse(fs.readFileSync('artifacts/e12-inline.json', 'utf8'));
+          const external = JSON.parse(fs.readFileSync('artifacts/e12-external-identity.json', 'utf8'));
+          for (const metrics of [inline, external]) {
+            if (metrics.frames !== 30) throw new Error(`expected 30 frames, got ${metrics.frames}`);
+            if (!(metrics.metadataBytes > 0)) throw new Error('missing frame metadata');
+            if (!(metrics.maxMetadataBytes > 0)) throw new Error('missing max metadata size');
+            if (metrics.incomingRgbaBytes !== metrics.writtenRgbaBytes) {
+              throw new Error('RGBA byte count changed unexpectedly');
+            }
+          }
+          if (inline.compositionOnly !== false) throw new Error('inline path must keep browser CRT');
+          if (external.compositionOnly !== true) throw new Error('external path must bypass browser CRT');
+          if (!String(external.postBackend).endsWith('post-identity.mjs')) {
+            throw new Error(`unexpected post backend ${external.postBackend}`);
+          }
+          console.log(JSON.stringify({
+            inlineFps: inline.framesPerSecond,
+            externalIdentityFps: external.framesPerSecond,
+            metadataBytesPerFrame: external.metadataBytes / external.frames,
+          }, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e12-frame-packet
+          path: artifacts/e12-*

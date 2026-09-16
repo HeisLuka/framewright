@@ -11,12 +11,13 @@
 //   START=0 END=120 RESUME is intentionally unsupported
 //   FPS=30 PRESET=slow CRF=22 MAXRATE=14M TRACK=track.wav
 //   METRICS_OUT=path/to/metrics.json
+//   POST_MODULE=path/to/module.mjs   optional external post backend
 //
-// The browser never returns PNG/base64 through CDP. Each worker renders a
-// deterministic frame, reads Canvas RGBA once, and POSTs the bytes to a local
-// same-origin endpoint. A producer is acknowledged only after its frame has
-// actually been written to ffmpeg in frame order. With one in-flight frame per
-// worker, out-of-order buffering is bounded by roughly tabs * bytesPerFrame.
+// Every producer sends one atomic frame packet: RGBA bytes plus compact
+// per-frame controls. The OrderedFrameSink acknowledges the producer only after
+// that exact packet has been post-processed (when configured) and written to
+// ffmpeg in frame order. With one in-flight packet per worker, out-of-order
+// memory stays bounded by roughly tabs * RGBA frame size.
 import puppeteer from "puppeteer";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -24,8 +25,13 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
+import {
+  FRAME_METADATA_HEADER,
+  createFramePacket,
+  decodeFrameMetadataHeader,
+} from "./frame-packet.mjs";
 import { OrderedFrameSink } from "./ordered-frame-sink.mjs";
 
 const [,, outS = "out.mp4", seedS = "7", widthS = "1920", tabsS = "5"] = process.argv;
@@ -44,13 +50,29 @@ const crf = String(process.env.CRF || "22");
 const maxrate = String(process.env.MAXRATE || "14M");
 const track = path.resolve(process.env.TRACK || "track.wav");
 const metricsOut = process.env.METRICS_OUT ? path.resolve(process.env.METRICS_OUT) : null;
+const postModulePath = process.env.POST_MODULE
+  ? path.resolve(process.env.POST_MODULE)
+  : null;
 
 if (!Number.isFinite(seed)) throw new Error("seed must be numeric");
 if (!fs.existsSync(html)) throw new Error(`no such HTML: ${html}`);
 if (!html.startsWith(root + path.sep) && html !== root) {
   throw new Error(`HTML must be inside FW_ROOT (${root}); got ${html}`);
 }
+if (postModulePath && !fs.existsSync(postModulePath)) {
+  throw new Error(`POST_MODULE does not exist: ${postModulePath}`);
+}
 await fsp.mkdir(path.dirname(out), { recursive: true });
+
+let postProcessor = null;
+if (postModulePath) {
+  const module = await import(pathToFileURL(postModulePath).href);
+  postProcessor = module.processFrame || module.default;
+  if (typeof postProcessor !== "function") {
+    throw new Error("POST_MODULE must export processFrame(packet, context) or a default function");
+  }
+}
+const compositionOnly = Boolean(postProcessor);
 
 const fwQuery = new URLSearchParams(process.env.FW_QUERY || "");
 let stagedCoverPath = null;
@@ -91,7 +113,11 @@ let ffmpegInputEnded = false;
 let fatalError = null;
 let receivedFrames = 0;
 let writtenFrames = 0;
-let rawBytes = 0;
+let incomingRgbaBytes = 0;
+let writtenRgbaBytes = 0;
+let metadataBytes = 0;
+let maxMetadataBytes = 0;
+let postMilliseconds = 0;
 
 const asError = (value) => (
   value instanceof Error ? value : new Error(String(value || "raw render failed"))
@@ -130,6 +156,21 @@ const streamWrite = async (stream, buffer) => {
   if (!accepted) await waitForDrain(stream);
 };
 
+const normalizePostResult = (result, frame) => {
+  const rgba = result && typeof result === "object" && "rgba" in result
+    ? result.rgba
+    : result;
+  if (!(rgba instanceof Uint8Array)) {
+    throw new Error(`post backend frame ${frame} must return a Uint8Array or { rgba }`);
+  }
+  if (rgba.byteLength !== expectedFrameBytes) {
+    throw new Error(
+      `post backend frame ${frame}: expected ${expectedFrameBytes} bytes, got ${rgba.byteLength}`,
+    );
+  }
+  return rgba;
+};
+
 const staticPath = (pathname) => {
   const decoded = decodeURIComponent(pathname);
   const relative = decoded.replace(/^\/+/, "");
@@ -151,6 +192,19 @@ const server = http.createServer((request, response) => {
     if (!frameSink) {
       response.writeHead(503);
       response.end("encoder not ready");
+      return;
+    }
+
+    const rawMetadataHeader = request.headers[FRAME_METADATA_HEADER];
+    const metadataHeader = Array.isArray(rawMetadataHeader)
+      ? rawMetadataHeader[0]
+      : rawMetadataHeader;
+    let metadata;
+    try {
+      metadata = decodeFrameMetadataHeader(metadataHeader, { expectedFrame: frame });
+    } catch (error) {
+      response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+      response.end(asError(error).message);
       return;
     }
 
@@ -180,9 +234,15 @@ const server = http.createServer((request, response) => {
         response.end(`frame ${frame}: expected ${expectedFrameBytes} bytes, got ${size}`);
         return;
       }
-      receivedFrames += 1;
       try {
-        await frameSink.submit(frame, Buffer.concat(chunks, size));
+        const rgba = Buffer.concat(chunks, size);
+        const packet = createFramePacket(rgba, metadata, { expectedBytes: expectedFrameBytes });
+        receivedFrames += 1;
+        incomingRgbaBytes += rgba.byteLength;
+        const metadataSize = Buffer.byteLength(JSON.stringify(packet.metadata), "utf8");
+        metadataBytes += metadataSize;
+        maxMetadataBytes = Math.max(maxMetadataBytes, metadataSize);
+        await frameSink.submit(frame, packet);
         response.writeHead(204, { "Cache-Control": "no-store" });
         response.end();
       } catch (error) {
@@ -243,32 +303,110 @@ const server = http.createServer((request, response) => {
   });
 });
 
-const renderIntoCanvas = async (page, frame) => page.evaluate(({ frame, width, seed }) => {
+const renderIntoCanvas = async (page, frame, fpsHint = 30) => page.evaluate((input) => {
+  const { frame, width, seed, fpsHint, compositionOnly } = input;
   const canvas = document.querySelector("canvas");
   if (!canvas) throw new Error("render page has no canvas");
+
+  const fallbackMetadata = () => ({
+    version: 1,
+    frame,
+    localFrame: frame,
+    progress: 0,
+    time: frame / fpsHint,
+    localTime: frame / fpsHint,
+    fps: fpsHint,
+    seed,
+    sceneId: "",
+    controls: { post: {} },
+  });
+
+  const legacyMetadata = (state) => {
+    if (!state || typeof state !== "object") return fallbackMetadata();
+    const resolvedFps = Math.max(1, Number(window.RISO?.fps || fpsHint || 30));
+    const post = state.post && typeof state.post === "object" ? state.post : {};
+    const globalFrame = Number.isFinite(state.f) ? Math.max(0, Math.trunc(state.f)) : frame;
+    const localFrame = Number.isFinite(state.i) ? Math.max(0, Math.trunc(state.i)) : globalFrame;
+    return {
+      version: 1,
+      frame: globalFrame,
+      localFrame,
+      progress: Number.isFinite(state.t) ? state.t : 0,
+      time: globalFrame / resolvedFps,
+      localTime: localFrame / resolvedFps,
+      fps: resolvedFps,
+      seed: Number.isFinite(state.seed) ? state.seed : seed,
+      sceneId: String(state.name || ""),
+      controls: {
+        post: {
+          ...post,
+          grainMultiplier: Number.isFinite(state.grain) ? state.grain : 1,
+          wobble: Number.isFinite(state.wobble) ? state.wobble : 0,
+          skip: Boolean(post.skip),
+        },
+      },
+    };
+  };
+
   if (window.RISO && typeof window.RISO.render === "function") {
     window.RISO.render(frame, width, seed);
-  } else if (typeof window.renderFrame === "function") {
-    window.renderFrame(frame, width, seed, canvas);
-  } else {
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      metadata: window.RISO.lastFrame || fallbackMetadata(),
+    };
+  }
+
+  if (typeof window.renderFrame !== "function") {
     throw new Error("raw renderer needs window.RISO.render() or window.renderFrame()");
   }
-  return { width: canvas.width, height: canvas.height };
-}, { frame, width, seed });
 
-const postCanvas = async (page, frame) => page.evaluate(async (frame) => {
+  let originalCrt = null;
+  if (compositionOnly && typeof window.crt === "function") {
+    originalCrt = window.crt;
+    window.crt = (src, dst) => {
+      if (dst.width !== src.width || dst.height !== src.height) {
+        dst.width = src.width;
+        dst.height = src.height;
+      }
+      const context = dst.getContext("2d", { alpha: false });
+      context.setTransform(1, 0, 0, 1, 0, 0);
+      context.globalAlpha = 1;
+      context.globalCompositeOperation = "copy";
+      context.drawImage(src, 0, 0);
+      context.globalCompositeOperation = "source-over";
+    };
+  }
+
+  try {
+    const state = window.renderFrame(frame, width, seed, canvas);
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      metadata: legacyMetadata(state),
+    };
+  } finally {
+    if (originalCrt) window.crt = originalCrt;
+  }
+}, { frame, width, seed, fpsHint, compositionOnly });
+
+const postCanvas = async (page, frame, metadata) => page.evaluate(async (input) => {
+  const { frame, metadata, metadataHeader } = input;
   const canvas = document.querySelector("canvas");
   if (!canvas) throw new Error("render page has no canvas");
   const context = canvas.getContext("2d", { alpha: false });
   const rgba = context.getImageData(0, 0, canvas.width, canvas.height).data;
   const response = await fetch(`/__fw_frame?n=${frame}`, {
     method: "POST",
+    headers: {
+      [metadataHeader]: encodeURIComponent(JSON.stringify(metadata)),
+    },
     body: rgba,
   });
   if (!response.ok) {
     throw new Error(`frame upload ${response.status}: ${await response.text()}`);
   }
-}, frame);
+}, { frame, metadata, metadataHeader: FRAME_METADATA_HEADER });
 
 let total;
 let fps;
@@ -295,9 +433,14 @@ try {
     return url.href;
   })();
 
+  const launchArgs = [];
+  if (process.env.CI || process.env.PUPPETEER_NO_SANDBOX === "1") {
+    launchArgs.push("--no-sandbox", "--disable-setuid-sandbox");
+  }
   browser = await puppeteer.launch({
     headless: true,
     protocolTimeout: 600000,
+    args: launchArgs,
   });
 
   const probe = await browser.newPage();
@@ -313,7 +456,7 @@ try {
     total = Math.max(1, Math.trunc(Number(info.total) || 1));
     fps = Math.max(1, Number(process.env.FPS || info.fps || 30));
     plates = Array.isArray(info.plates) ? info.plates : [];
-    const dimensions = await renderIntoCanvas(probe, start);
+    const dimensions = await renderIntoCanvas(probe, start, fps);
     frameWidth = dimensions.width;
     frameHeight = dimensions.height;
     expectedFrameBytes = frameWidth * frameHeight * 4;
@@ -355,9 +498,24 @@ try {
   });
   frameSink = new OrderedFrameSink({
     start,
-    write: async (_frame, buffer) => {
-      await streamWrite(ffmpeg.stdin, buffer);
-      rawBytes += buffer.length;
+    write: async (frame, packet) => {
+      if (packet.metadata.frame !== frame) {
+        throw new Error(`ordered packet mismatch: sink=${frame} metadata=${packet.metadata.frame}`);
+      }
+      let rgba = packet.rgba;
+      if (postProcessor) {
+        const postStarted = performance.now();
+        const result = await postProcessor(packet, {
+          frame,
+          width: frameWidth,
+          height: frameHeight,
+          fps,
+        });
+        postMilliseconds += performance.now() - postStarted;
+        rgba = normalizePostResult(result, frame);
+      }
+      await streamWrite(ffmpeg.stdin, rgba);
+      writtenRgbaBytes += rgba.byteLength;
       writtenFrames += 1;
     },
   });
@@ -391,12 +549,13 @@ try {
   console.log(
     `raw render ${start}..${end - 1}/${total - 1}  ${frameWidth}x${frameHeight} @ ${fps} fps  tabs ${tabs}`,
   );
+  console.log(`post backend ${postModulePath || "browser-inline"}`);
   if (plates.length) {
     console.log(plates.map((plate) => `${plate.name}:${plate.len}`).join("  "));
   }
   console.log(
     `raw frame ${(expectedFrameBytes / 1024 / 1024).toFixed(2)} MiB; `
-    + `bounded reorder <= ~${(expectedFrameBytes * tabs / 1024 / 1024).toFixed(1)} MiB`,
+    + `bounded reorder <= ~${(expectedFrameBytes * tabs / 1024 / 1024).toFixed(1)} MiB + compact metadata`,
   );
 
   let nextFrame = start;
@@ -411,13 +570,13 @@ try {
       while (!fatalError) {
         const frame = nextFrame++;
         if (frame >= end) break;
-        const dimensions = await renderIntoCanvas(page, frame);
-        if (dimensions.width !== frameWidth || dimensions.height !== frameHeight) {
+        const rendered = await renderIntoCanvas(page, frame, fps);
+        if (rendered.width !== frameWidth || rendered.height !== frameHeight) {
           throw new Error(
-            `frame ${frame} changed dimensions to ${dimensions.width}x${dimensions.height}`,
+            `frame ${frame} changed dimensions to ${rendered.width}x${rendered.height}`,
           );
         }
-        await postCanvas(page, frame);
+        await postCanvas(page, frame, rendered.metadata);
         completed += 1;
         if (completed % 60 === 0 || completed === count) {
           const seconds = (performance.now() - t0) / 1000;
@@ -452,7 +611,7 @@ try {
   const elapsedSeconds = (performance.now() - t0) / 1000;
   const outputBytes = (await fsp.stat(out)).size;
   const metrics = {
-    renderer: "raw-rgba-http-v0",
+    renderer: "raw-rgba-http-v1-frame-packet",
     html,
     output: out,
     seed,
@@ -466,8 +625,15 @@ try {
     seconds: elapsedSeconds,
     framesPerSecond: count / Math.max(elapsedSeconds, 1e-9),
     bytesPerFrame: expectedFrameBytes,
-    peakReorderBytesUpperBound: expectedFrameBytes * tabs,
-    rawBytes,
+    peakReorderBytesUpperBound: (expectedFrameBytes + maxMetadataBytes) * tabs,
+    incomingRgbaBytes,
+    writtenRgbaBytes,
+    metadataBytes,
+    maxMetadataBytes,
+    postBackend: postModulePath || "browser-inline",
+    compositionOnly,
+    postMilliseconds,
+    postMillisecondsPerFrame: count ? postMilliseconds / count : 0,
     outputBytes,
     preset,
     crf,
