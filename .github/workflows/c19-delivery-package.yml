@@ -1,0 +1,34 @@
+name: C19 Delivery Package
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/c19-delivery-package-v1.mjs'
+      - 'contracts/check-c19-delivery-package.mjs'
+      - 'contracts/factory-identity-v1.mjs'
+      - 'contracts/video-factory-v1.schema.json'
+      - 'contracts/check-example-v1.mjs'
+      - 'contracts/check-i04-duration-audio.mjs'
+      - 'contracts/examples/video-factory-v1.example.json'
+      - '.github/workflows/c19-delivery-package.yml'
+  workflow_dispatch:
+
+jobs:
+  package-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Verify base factory contract
+        run: node contracts/check-example-v1.mjs
+      - name: Verify I04 duration/audio regressions
+        run: node contracts/check-i04-duration-audio.mjs
+      - name: Verify selected-only deterministic delivery package
+        run: node contracts/check-c19-delivery-package.mjs
+      - name: Syntax check C19 compiler
+        run: |
+          node --check contracts/c19-delivery-package-v1.mjs
+          node --check contracts/check-c19-delivery-package.mjs

@@ -20,11 +20,21 @@ if (example.schema !== 'newboo-video-factory-bundle-v1') {
 if (!schema.$defs.RenderSpec.required.includes('duration_ms')) {
   throw new Error('RenderSpec.duration_ms is not required by schema');
 }
+if (!schema.$defs.RenderSpec.required.includes('frame_count')) {
+  throw new Error('RenderSpec.frame_count is not required by schema');
+}
+if (!schema.$defs.DeliveryProfile.properties.platform_ui_profile || !schema.$defs.DeliveryProfile.properties.platform_ui_version) {
+  throw new Error('DeliveryProfile platform UI provenance fields are missing from schema');
+}
 if (!schema.$defs.AudioSpec || !schema.$defs.CanonicalAudioArtifact) {
   throw new Error('canonical audio definitions missing from schema');
 }
 if (example.render.duration_ms !== example.render.delivery.duration_ms) {
   throw new Error('example render duration differs from delivery duration');
+}
+const expectedFrames = Math.round(example.render.duration_ms / 1000 * example.render.delivery.fps);
+if (example.render.frame_count !== expectedFrames) {
+  throw new Error(`example render frame_count ${example.render.frame_count} != expected ${expectedFrames}`);
 }
 if (example.render.audio) assertAudioSpecId(example.render.audio.spec);
 
@@ -39,5 +49,6 @@ console.log(JSON.stringify({
   renderSpecId: ids.renderSpecId,
   audioSpecId: example.render.audio?.spec?.audio_spec_id || null,
   durationMs: example.render.duration_ms,
+  frameCount: example.render.frame_count,
   artifactLinked: Boolean(example.artifact),
 }, null, 2));

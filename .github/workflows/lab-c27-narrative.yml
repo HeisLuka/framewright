@@ -1,0 +1,85 @@
+name: Lab C27 Narrative Plan
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/c27-narrative-plan.mjs'
+      - '.agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/c27-narrative-audit.mjs'
+      - '.agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs'
+      - '.agents/skills/framewright/scripts/make-c27-render-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/c27-render-audit.mjs'
+      - '.agents/skills/framewright/scripts/c27-summarize.mjs'
+      - '.agents/skills/framewright/scripts/c27-review-sheets.mjs'
+      - '.github/workflows/lab-c27-narrative.yml'
+  workflow_dispatch:
+
+jobs:
+  narrative-plan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install pinned renderer dependencies
+        run: npm install --no-save @napi-rs/canvas@1.0.9
+      - name: Install FFmpeg + pinned fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/c27-narrative-plan.mjs
+          node --check .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/c27-narrative-audit.mjs
+          node --check .agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs
+          node --check .agents/skills/framewright/scripts/make-c27-render-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/c27-render-audit.mjs
+          node --check .agents/skills/framewright/scripts/c27-summarize.mjs
+          node --check .agents/skills/framewright/scripts/c27-review-sheets.mjs
+      - name: Build verified NarrativePlans and semantic audit
+        run: |
+          mkdir -p artifacts/c27
+          node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs examples/book-ad-systems/generated-c27
+          node .agents/skills/framewright/scripts/c27-narrative-audit.mjs examples/book-ad-systems/generated-c27 artifacts/c27/semantic-audit.json
+      - name: Prepare current semantic creative stack
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-c27.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-c27.html examples/book-ad-systems/index-c22-c27.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-c22-c27.html examples/book-ad-systems/index-e17-c27.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-c27.html examples/book-ad-systems/index-e17-e14-c27.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-c27.html examples/book-ad-systems/index-e18-c27.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-c27.html examples/book-ad-systems/index-c20-c27.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-c27.html examples/book-ad-systems/index-c21-c27.html
+          node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c21-c27.html examples/book-ad-systems/index-c23-c27.html
+          node .agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs examples/book-ad-systems/index-c23-c27.html examples/book-ad-systems/index-c24-c27.html
+          node .agents/skills/framewright/scripts/prepare-c25-typography-axis.mjs examples/book-ad-systems/index-c24-c27.html examples/book-ad-systems/index-c25-c27.html
+          node .agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs examples/book-ad-systems/index-c25-c27.html examples/book-ad-systems/index-c26-c27.html examples/book-ad-systems/platform-ui-profiles.v1.json
+          node .agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs examples/book-ad-systems/index-c26-c27.html examples/book-ad-systems/index-c27.html
+          node .agents/skills/framewright/scripts/make-c27-render-fixtures.mjs examples/book-ad-systems/generated-c27 examples/book-ad-systems/generated-c27-render
+      - name: Audit NarrativePlan to renderer schedule before MP4 work
+        env:
+          HTML: examples/book-ad-systems/index-c27.html
+          MANIFEST: examples/book-ad-systems/generated-c27-render/manifest.json
+          RENDER_AUDIT: artifacts/c27/render-audit.json
+        run: node .agents/skills/framewright/scripts/c27-render-audit.mjs
+      - name: Render 36 controlled narrative videos
+        env:
+          HTML: examples/book-ad-systems/index-c27.html
+          MANIFEST: examples/book-ad-systems/generated-c27-render/manifest.json
+          OUT_DIR: artifacts/c27/videos
+          REPORT: artifacts/c27/batch.json
+          PRESET: veryfast
+          CRF: '22'
+        run: node .agents/skills/framewright/scripts/node-canvas-profile-batch.mjs
+      - name: Enforce semantic/render/layout gates
+        run: node .agents/skills/framewright/scripts/c27-summarize.mjs artifacts/c27/batch.json artifacts/c27/semantic-audit.json artifacts/c27/render-audit.json examples/book-ad-systems/generated-c27-render/manifest.json artifacts/c27/summary.json
+      - name: Build semantic checkpoint review matrices
+        run: node .agents/skills/framewright/scripts/c27-review-sheets.mjs artifacts/c27/batch.json examples/book-ad-systems/generated-c27-render/manifest.json artifacts/c27/review
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c27-narrative-plan
+          path: artifacts/c27/
+          retention-days: 14
