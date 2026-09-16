@@ -16,7 +16,17 @@ on:
       - '.agents/skills/framewright/scripts/render-factory-fast.mjs'
       - '.agents/skills/framewright/scripts/c27-narrative-plan.mjs'
       - '.agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs'
-      - '.agents/skills/framewright/scripts/prepare-c26-platform-safe-template.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e12-motion-template.mjs'
+      - '.agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e14-variant-template.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs'
+      - '.agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs'
+      - '.agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs'
+      - '.agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs'
+      - '.agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs'
+      - '.agents/skills/framewright/scripts/prepare-c25-typography-axis.mjs'
+      - '.agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs'
       - '.agents/skills/framewright/scripts/make-c26-platform-safe-fixtures.mjs'
       - 'examples/book-ad-systems/**'
       - '.github/workflows/i09-c35-physical-factory.yml'
@@ -45,10 +55,16 @@ jobs:
       - name: Prepare canonical C27 physical template and real cover fixture
         run: |
           node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-i09.html
-          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-i09.html examples/book-ad-systems/index-e17-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-for-i09.html examples/book-ad-systems/index-c22-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-c22-for-i09.html examples/book-ad-systems/index-e17-for-i09.html
           node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-i09.html examples/book-ad-systems/index-e17-e14-for-i09.html
           node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-i09.html examples/book-ad-systems/index-e18-for-i09.html
-          node .agents/skills/framewright/scripts/prepare-c26-platform-safe-template.mjs examples/book-ad-systems/index-e18-for-i09.html examples/book-ad-systems/index-c26-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-for-i09.html examples/book-ad-systems/index-c20-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-for-i09.html examples/book-ad-systems/index-c21-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c21-for-i09.html examples/book-ad-systems/index-c23-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs examples/book-ad-systems/index-c23-for-i09.html examples/book-ad-systems/index-c24-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c25-typography-axis.mjs examples/book-ad-systems/index-c24-for-i09.html examples/book-ad-systems/index-c25-for-i09.html
+          node .agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs examples/book-ad-systems/index-c25-for-i09.html examples/book-ad-systems/index-c26-for-i09.html examples/book-ad-systems/platform-ui-profiles.v1.json
           node .agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs examples/book-ad-systems/index-c26-for-i09.html examples/book-ad-systems/index-c27-i09.html
           node .agents/skills/framewright/scripts/make-c26-platform-safe-fixtures.mjs examples/book-ad-systems/generated-c26
       - name: Build three C35 physical scene payloads and canonical campaign request
