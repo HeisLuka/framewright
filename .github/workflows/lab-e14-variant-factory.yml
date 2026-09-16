@@ -1,0 +1,90 @@
+name: Lab E14 Variant Factory
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - '.agents/skills/framewright/scripts/make-e13-routed-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/make-e14-variant-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e12-motion-template.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e14-variant-template.mjs'
+      - '.agents/skills/framewright/scripts/e14-diversity.mjs'
+      - '.agents/skills/framewright/scripts/e14-review-sheets.mjs'
+      - '.agents/skills/framewright/scripts/node-canvas-batch.mjs'
+      - '.github/workflows/lab-e14-variant-factory.yml'
+      - 'examples/book-ad-systems/**'
+      - 'examples/book-ad-v0/**'
+  workflow_dispatch:
+
+jobs:
+  structural-variants:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install pinned worker dependencies
+        run: npm install --no-save @napi-rs/canvas@1.0.9
+      - name: Install FFmpeg + pinned fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/make-e14-variant-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs
+          node --check .agents/skills/framewright/scripts/e14-diversity.mjs
+          node --check .agents/skills/framewright/scripts/e14-review-sheets.mjs
+      - name: Prepare active-motion structural variants
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-e14.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e12-for-e14.html examples/book-ad-systems/index-e14.html
+          node .agents/skills/framewright/scripts/make-e14-variant-fixtures.mjs examples/book-ad-systems/generated-e14
+      - name: Render 40 routed-primary structural variants
+        env:
+          HTML: examples/book-ad-systems/index-e14.html
+          MANIFEST: examples/book-ad-systems/generated-e14/manifest.json
+          OUT_DIR: artifacts/e14/videos
+          REPORT: artifacts/e14/batch.json
+          WIDTH: '1080'
+          PRESET: veryfast
+          CRF: '22'
+        run: node .agents/skills/framewright/scripts/node-canvas-batch.mjs
+      - name: Measure within-system timeline diversity
+        run: node .agents/skills/framewright/scripts/e14-diversity.mjs artifacts/e14/batch.json examples/book-ad-systems/generated-e14/manifest.json artifacts/e14/diversity.json
+      - name: Build manual review sheets
+        run: node .agents/skills/framewright/scripts/e14-review-sheets.mjs artifacts/e14/batch.json examples/book-ad-systems/generated-e14/manifest.json artifacts/e14/review
+      - name: Validate variant factory
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const b=JSON.parse(fs.readFileSync('artifacts/e14/batch.json','utf8'));
+          const d=JSON.parse(fs.readFileSync('artifacts/e14/diversity.json','utf8'));
+          const m=JSON.parse(fs.readFileSync('examples/book-ad-systems/generated-e14/manifest.json','utf8'));
+          if(b.count!==40) throw new Error(`expected 40 videos, got ${b.count}`);
+          if(b.layoutWarningGroups!==0) throw new Error(`layout warnings ${b.layoutWarningGroups}`);
+          const books=[...new Set(m.items.map(x=>x.bookId))];
+          if(books.length!==10) throw new Error(`expected 10 books, got ${books.length}`);
+          for(const id of books){
+            const xs=m.items.filter(x=>x.bookId===id);
+            if(xs.length!==4) throw new Error(`${id}: expected four variants`);
+            if(new Set(xs.map(x=>x.variant)).size!==4) throw new Error(`${id}: duplicate variant ids`);
+            if(new Set(xs.map(x=>x.style)).size!==1) throw new Error(`${id}: variants escaped routed primary system`);
+            if(new Set(xs.map(x=>x.seed)).size!==1) throw new Error(`${id}: variants use different RNG seeds`);
+          }
+          if(b.videosPerHour<450) throw new Error(`throughput regression: ${b.videosPerHour}/h`);
+          if(d.minAcrossBooks<0.02) throw new Error(`within-system diversity floor too low: ${d.minAcrossBooks}`);
+          if(d.meanAcrossBooks<0.04) throw new Error(`mean within-system diversity too low: ${d.meanAcrossBooks}`);
+          console.log({videos:b.count,videosPerHour:b.videosPerHour,layoutWarnings:b.layoutWarningGroups,meanDiversity:d.meanAcrossBooks,minDiversity:d.minAcrossBooks});
+          NODE
+      - name: Copy manifests
+        run: |
+          cp examples/book-ad-systems/generated-e14/manifest.json artifacts/e14/manifest.json
+          cp examples/book-ad-systems/generated-e13/route-report.json artifacts/e14/route-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e14-variant-factory
+          path: artifacts/e14/
+          retention-days: 14
