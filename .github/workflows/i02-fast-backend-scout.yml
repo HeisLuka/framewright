@@ -5,6 +5,8 @@ on:
     branches: [lab/framewright-research]
     paths:
       - '.agents/skills/framewright/scripts/i02-fast-backend-scout.mjs'
+      - '.agents/skills/framewright/scripts/i02-stage-summary.mjs'
+      - '.agents/skills/framewright/scripts/i02-quality-calibration.mjs'
       - '.github/workflows/i02-fast-backend-scout.yml'
       - 'docs/i02-fast-backend-scout.md'
   workflow_dispatch:
@@ -28,7 +30,10 @@ jobs:
           sudo apt-get install -y ffmpeg fonts-dejavu-core
 
       - name: Syntax check
-        run: node --check .agents/skills/framewright/scripts/i02-fast-backend-scout.mjs
+        run: |
+          node --check .agents/skills/framewright/scripts/i02-fast-backend-scout.mjs
+          node --check .agents/skills/framewright/scripts/i02-stage-summary.mjs
+          node --check .agents/skills/framewright/scripts/i02-quality-calibration.mjs
 
       - name: Prepare exact C18 semantic scene + fixtures
         run: |
@@ -61,10 +66,23 @@ jobs:
           WEBCODECS_QUEUE: '8'
         run: node --input-type=module -e "globalThis.window={RISO:{fps:30}}; await import('./.agents/skills/framewright/scripts/i02-fast-backend-scout.mjs')"
 
-      - name: Show scout summary
+      - name: Analyze stage budget
+        env:
+          OUT_DIR: artifacts/i02
+          REPORT: artifacts/i02/report.json
+        run: node .agents/skills/framewright/scripts/i02-stage-summary.mjs
+
+      - name: Measure codec loss against each backend raster
+        env:
+          OUT_DIR: artifacts/i02
+        run: node .agents/skills/framewright/scripts/i02-quality-calibration.mjs
+
+      - name: Show scout summaries
         if: always()
         run: |
-          test -f artifacts/i02/summary.md && cat artifacts/i02/summary.md || true
+          for f in artifacts/i02/summary.md artifacts/i02/stage-summary.md artifacts/i02/quality-calibration.md; do
+            test -f "$f" && { echo; cat "$f"; } || true
+          done
           test -f artifacts/i02/report.json && node -e "const r=require('./artifacts/i02/report.json'); console.log(JSON.stringify(r.summary,null,2));" || true
 
       - uses: actions/upload-artifact@v4
