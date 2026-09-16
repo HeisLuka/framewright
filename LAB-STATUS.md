@@ -24,7 +24,8 @@ Historical `Exx` names remain valid aliases and are not renumbered. Independent 
 10. C20 — deterministic cover-adaptive art direction
 11. C21 — deterministic opening grammar / causal isolation
 12. C22 — finite motion choreography v2
-13. **C23 — deterministic cover-composition heuristics**
+13. C23 — deterministic cover-composition heuristics
+14. **C24 — adaptive organic duration + pacing**
 
 ## Product results that matter
 
@@ -39,7 +40,8 @@ Historical `Exx` names remain valid aliases and are not renumbered. Independent 
 - C20: cover palette + luminance + entropy + edge evidence can drive contrast-safe, visual-system-specific art direction without AI. Final verification run `35133994670`: `72/72`, zero layout warnings, 36/36 unique palette signatures, no extraction failures, mean adaptive/generic cost ratio `1.0131`, p95 `1.0391`, peak RSS `779.9 MiB`. Manual review led to a Newspaper-specific refinement rather than globally forcing more colour. Result: `LAB-C20-COVER-ADAPTIVE-ART-DIRECTION-RESULTS.md`.
 - C21: four no-AI opening grammars (`hook-led / cover-led / title-led / progressive-hook`) materially diverge during the first ~2 seconds and then exactly reconverge at 2.4s. Final canonical run `35136282583`: `40/40`, zero layout warnings, mean opening distance `0.092093`, minimum `0.037693`, convergence difference `0`, mean alternate-grammar cost ratio `1.0288`, p95 `1.0725`, peak RSS `778.2 MiB`. Exploratory background-RNG contamination was rejected. Alpha crossfade was rejected for ghosting; spatial wipe was rejected for sliced mixed-copy frames. Canonical transition is a one-frame editorial cut at ~1.8s. Result: `LAB-C21-OPENING-GRAMMAR-RESULTS.md`.
 - C22: finite semantic choreography replaces continuous E12 ambient drift with `entrance → settle → focal emphasis → settle`. Canonical run `35137597265`: `20/20`, zero layout warnings, settle-energy ratio `0.012684`, settle active-fraction ratio `0`, hook/CTA entrance ratios `1.174× / 1.151×`, mean wall ratio `1.0084`, p95 `1.0511`, mean MP4-byte ratio `0.9923`, peak RSS `733.6 MiB`. All 10 paired review sheets show calmer holds without dead entrances/focus/CTA. Result: `LAB-C22-MOTION-QUALITY-RESULTS.md`.
-- **C23:** low-resolution luminance/variance/edge/entropy evidence can provide a conservative no-AI focal prior for cover crop and cover/text side. Canonical run `35140548685`: `36/36` covers analyzed, `72/72` paired videos, zero layout warnings, side decisions `5 left / 31 right`, zoom capped at `1.06×` with minimum source-area retention `0.89`. Mean adaptive/fixed wall ratio `0.9992`, p95 `1.0285`; mean byte ratio `0.9937`. Manual review of all swap cases and high-zoom stress fixtures passed. Result: `LAB-C23-COVER-COMPOSITION-RESULTS.md`.
+- C23: low-resolution luminance/variance/edge/entropy evidence can provide a conservative no-AI focal prior for cover crop and cover/text side. Canonical run `35140548685`: `36/36` covers analyzed, `72/72` paired videos, zero layout warnings, side decisions `5 left / 31 right`, zoom capped at `1.06×` with minimum source-area retention `0.89`. Mean adaptive/fixed wall ratio `0.9992`, p95 `1.0285`; mean byte ratio `0.9937`. Manual review of all swap cases and high-zoom stress fixtures passed. Result: `LAB-C23-COVER-COMPOSITION-RESULTS.md`.
+- **C24:** the lab's old fixed `12s` duration is no longer a product assumption. Organic duration policy v1 chooses among `3 / 5 / 7 / 9 / 12 / 15s`, then allocates semantic plate dwell. Canonical run `35144806802`: `36/36`, zero layout warnings, zero audit errors, exactly 3 adaptive renders in each duration bucket. Mean adaptive duration `8.5s`, p50 `7s`; normalized render-ms-per-second ratio vs fixed-12 control mean `1.0151×`, p95 `1.0916×`; peak RSS ~`748 MiB`. Manual boundary review passed: `3s` is an intentional hook-only teaser with soft loop, `5s` is coherent hook→book without CTA, `15s` uses added time for heavy copy rather than dead hold. Result: `LAB-C24-ORGANIC-DURATION-RESULTS.md`.
 
 ## Runtime direction
 
@@ -80,15 +82,14 @@ output_sha256    = exact stored MP4 bytes
 
 Lossy H.264 does not need byte-for-byte repeatability. If a canonical artifact already exists for a `render_spec_id`, reuse it rather than re-encoding to chase the same SHA.
 
-Creative semantics such as `art_direction`, cover-composition evidence, verified hook/opening provenance and motion profile belong in `CreativeSpec`; Runtime must not re-route or reinterpret them.
+Creative semantics such as `art_direction`, cover-composition evidence, verified hook/opening provenance, motion profile and **duration/pacing plan** belong in `CreativeSpec`; Runtime must not re-route, reinterpret or independently choose them.
 
 ## Current priority
 
 The highest-value remaining C work is creative quality/catalog robustness rather than shaving renderer milliseconds. Strong next candidates are:
 
-- reading-time adaptive pacing — derive dwell from actual copy/layout complexity;
 - typography as a first-class visual-system axis;
-- real platform safe zones for Shorts/Reels/TikTok;
+- real platform UI safe zones for Shorts/Reels/TikTok;
 - catalog fatigue / repetition scoring across many books;
 - deterministic beat/onset alignment as a separate controlled test with C22 choreography fixed.
 
