@@ -1,0 +1,66 @@
+name: Lab C33 Expressive Copy Trust Mode
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/c27-narrative-plan.mjs'
+      - 'contracts/external-creative-draft-v1.mjs'
+      - 'contracts/external-creative-draft-v1.schema.json'
+      - 'contracts/creative-approval-v1.schema.json'
+      - 'contracts/check-external-creative-draft-v1.mjs'
+      - 'contracts/creative-proposal-v1.mjs'
+      - 'contracts/compile-creative-proposal-v1.mjs'
+      - 'contracts/check-creative-proposal-v1.mjs'
+      - 'contracts/check-context-atom-provenance-v1.mjs'
+      - 'contracts/examples/context-pack-v1.example.json'
+      - 'contracts/examples/external-creative-draft-v1.example.json'
+      - 'docs/c33-expressive-copy-trust-mode.md'
+      - '.github/workflows/lab-c33-expressive-copy-trust-mode.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse machine-readable schemas and example
+        run: |
+          node -e "for (const f of ['contracts/external-creative-draft-v1.schema.json','contracts/creative-approval-v1.schema.json','contracts/examples/external-creative-draft-v1.example.json']) JSON.parse(require('fs').readFileSync(f,'utf8'));"
+      - name: Syntax check contract sources
+        run: |
+          node --check .agents/skills/framewright/scripts/c27-narrative-plan.mjs
+          node --check contracts/external-creative-draft-v1.mjs
+          node --check contracts/check-external-creative-draft-v1.mjs
+      - name: Preserve C32 trusted-atom contract
+        run: node contracts/check-creative-proposal-v1.mjs
+      - name: Preserve C32 honest context provenance
+        run: node contracts/check-context-atom-provenance-v1.mjs
+      - name: Run C33 expressive-copy trust gate
+        run: |
+          mkdir -p artifacts/c33
+          node contracts/check-external-creative-draft-v1.mjs | tee artifacts/c33/report.json
+      - name: Validate C33 receipt
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/c33/report.json','utf8'));
+          if(r.status!=='PASS') throw new Error('C33 gate failed');
+          if(r.trust_mode!=='external_llm_review_required') throw new Error('C33 trust mode drift');
+          if(r.external_copy_sources!==3) throw new Error('expected hook/tension/payoff external copy sources');
+          if(r.preview_without_approval!==true||r.publish_without_approval!==false) throw new Error('preview/publish boundary drift');
+          if(r.publish_with_server_approval!==true||r.stale_approval_rejected!==true) throw new Error('approval boundary drift');
+          if(r.semantic_copy_change_changes_identity!==true) throw new Error('copy identity gate failed');
+          if(r.approval_changes_render_identity!==false) throw new Error('approval mutated render identity');
+          console.log(JSON.stringify(r,null,2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c33-expressive-copy-trust-mode
+          path: artifacts/c33/report.json
+          retention-days: 14
