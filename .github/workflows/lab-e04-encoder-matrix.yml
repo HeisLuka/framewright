@@ -1,0 +1,83 @@
+name: Lab E04 Encoder Matrix
+
+on:
+  push:
+    branches:
+      - lab/e04-encoder-matrix
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: Syntax checks
+        run: |
+          node --check .agents/skills/framewright/scripts/render-payload.mjs
+          node --check .agents/skills/framewright/scripts/render-webcodecs.mjs
+          node --check .agents/skills/framewright/scripts/x264-matrix.mjs
+          node --check .agents/skills/framewright/scripts/quality-video.mjs
+
+      - name: Render lossless source frames once
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+        run: |
+          rm -rf frames-ref artifacts
+          mkdir -p artifacts
+          node .agents/skills/framewright/scripts/render-payload.mjs frames-ref 7 1080 5
+
+      - name: x264 preset and CRF matrix
+        run: |
+          node .agents/skills/framewright/scripts/x264-matrix.mjs frames-ref artifacts/x264 30
+
+      - name: WebCodecs bitrate matrix
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+        run: |
+          mkdir -p artifacts/webcodecs
+          for bitrate in 600000 900000 1200000 1800000 2500000; do
+            REPORT_OUT="artifacts/webcodecs/${bitrate}-render.json" node .agents/skills/framewright/scripts/render-webcodecs.mjs "artifacts/webcodecs/${bitrate}.mp4" 7 1080 "$bitrate"
+            node .agents/skills/framewright/scripts/quality-video.mjs frames-ref "artifacts/webcodecs/${bitrate}.mp4" "artifacts/webcodecs/${bitrate}-quality.json" 30
+          done
+
+      - name: Summarize matrix
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const x=JSON.parse(fs.readFileSync('artifacts/x264/x264-matrix.json','utf8')).map(r=>({family:'x264',profile:`${r.preset}/crf${r.crf}`,encodeMs:r.encodeMs,totalMs:r.encodeMs,bytes:r.bytes,ssim:r.ssimAll,psnr:r.psnrAverage,duration:+r.ffprobe.format.duration,frames:+r.ffprobe.streams[0].nb_frames}));
+          const bitrates=[600000,900000,1200000,1800000,2500000];
+          const w=bitrates.map(b=>{const r=JSON.parse(fs.readFileSync(`artifacts/webcodecs/${b}-render.json`,'utf8')),q=JSON.parse(fs.readFileSync(`artifacts/webcodecs/${b}-quality.json`,'utf8'));return{family:'webcodecs',profile:`quality/${b}`,bitrate:b,encodeMs:r.browser.browserWallMs,totalMs:r.totalRunMs,bytes:r.output.mp4Bytes,ssim:q.ssimAll,psnr:q.psnrAverage,duration:+r.output.ffprobe.format.duration,frames:+r.output.ffprobe.streams[0].nb_frames,renderMs:r.browser.renderMs,videoFrameMs:r.browser.videoFrameMs,muxMs:r.node.muxMs};});
+          const rows=[...x,...w];fs.writeFileSync('artifacts/e04-summary.json',JSON.stringify(rows,null,2));
+          let csv='family,profile,total_ms,encode_ms,bytes,ssim,psnr,duration,frames\n';for(const r of rows)csv+=`${r.family},${r.profile},${r.totalMs},${r.encodeMs},${r.bytes},${r.ssim},${r.psnr},${r.duration},${r.frames}\n`;fs.writeFileSync('artifacts/e04-summary.csv',csv);console.log(csv);
+          NODE
+
+      - name: Reference contact sheets
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -framerate 30 -pattern_type glob -i 'frames-ref/f*.png' -vf "select='not(mod(n,30))',scale=270:-1,tile=4x3" -frames:v 1 artifacts/source-contact.png
+          ffmpeg -hide_banner -loglevel error -y -i artifacts/webcodecs/900000.mp4 -vf "select='not(mod(n,30))',scale=270:-1,tile=4x3" -frames:v 1 artifacts/webcodecs-900k-contact.png
+          ffmpeg -hide_banner -loglevel error -y -i artifacts/x264/x264-veryfast-crf22.mp4 -vf "select='not(mod(n,30))',scale=270:-1,tile=4x3" -frames:v 1 artifacts/x264-veryfast-crf22-contact.png
+          rm -rf frames-ref
+
+      - name: Upload E04 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: e04-encoder-matrix
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 14
