@@ -11,7 +11,7 @@ if(!html.includes(scheduleMarker))throw new Error('C24 variant-aware schedule ma
 const policy=String.raw`
 const PACING_MODE=String((window.FRAMEWRIGHT_PAYLOAD&&window.FRAMEWRIGHT_PAYLOAD.pacing_mode)||'baseline12').toLowerCase();
 const C24_DURATION_PROFILES=[3,5,7,9,12,15];
-function __c24TextStats(text){const s=String(text||'').trim(),words=s?s.split(/\s+/).filter(Boolean).length:0,chars=Array.from(s).filter(ch=>!\s/.test(ch)).length;return{words,chars};}
+function __c24TextStats(text){const s=String(text||'').trim(),words=s?s.split(' ').filter(Boolean).length:0,chars=Array.from(s).filter(ch=>ch.trim()!=='').length;return{words,chars};}
 function __c24Load(){
   const hook=__c24TextStats(P.hook),title=__c24TextStats(P.title),author=__c24TextStats(P.author),cta=__c24TextStats(P.cta);
   // Design proxy only: this is not a universal human reading-speed model.
