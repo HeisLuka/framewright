@@ -10,9 +10,9 @@ This branch is the persistent integration point for the Framewright research wor
 - Keep at most one active experiment PR at a time.
 - Product decisions and measured conclusions are also recorded in the Framewright Lab Notion page.
 
-## Canonical chain preserved in this branch
+## Canonical chain
 
-The useful canonical research path is now E01-E10:
+The useful canonical research path is now E01-E11:
 
 1. E01 stage profiler.
 2. E02 payload-driven Book Ad v0 workload.
@@ -24,6 +24,7 @@ The useful canonical research path is now E01-E10:
 8. E08 Node Canvas batch production probe with raster covers and strengthened text-layout QA.
 9. E09 pinned browserless worker + 100-video soak + cost/provider tooling.
 10. E10 4-vCPU concurrency matrix.
+11. E11 three production-oriented visual systems across ten stress books.
 
 The old stacked PRs for completed stages are archival and do not need to remain open.
 
@@ -33,31 +34,30 @@ The old stacked PRs for completed stages are archival and do not need to remain 
 - E08: canonical 10-video browserless batch at `641.9 videos/hour` sequential; p95 `5.715 s`, peak Node+FFmpeg RSS `711 MiB`, Chromium sanity parity SSIM `0.997234`. Result: `LAB-E08-NODE-CANVAS-BATCH.md`.
 - E09: pinned worker (`@napi-rs/canvas 1.0.9`, Node 20.20.2, FFmpeg, DejaVu; no Chromium/Puppeteer hot dependency) ran 100 videos at `651.74 videos/hour`, p50 `5.320 s`, p95 `7.004 s`, peak RSS `726.3 MiB`, and no practical monotonic memory-growth signal. Results: `LAB-E09-SOAK-RESULTS.md`, `LAB-E09-COST-SNAPSHOT.md`, `LAB-E09-PROVIDER-TARGETS.md`.
 - Visual cost classes: medium/riso and heavy JS full-frame styles were ~3x slower than cheap editorial in the archived Chromium/WebCodecs matrix; real RIS TV spends ~95% of warm render time in `crt()` and is ~3.57 compute fps. Result: `LAB-VISUAL-COST-CLASSES.md`.
-- E10: on a 4-CPU / 4 GiB constrained worker, c1=`642.50/h`, c2=`744.64/h`, c4=`771.15/h`. c4 is only `1.20x` c1 and has 30% parallel efficiency, showing the workload is already CPU-saturating. Peak full process-tree RSS at c4 is `2626.8 MiB`. Result: `LAB-E10-CONCURRENCY-RESULTS.md`.
+- E10: on a 4-CPU / 4 GiB constrained worker, c1=`642.50/h`, c2=`744.64/h`, c4=`771.15/h`. c4 is only `1.20x` c1 and has 30% parallel efficiency. Peak full process-tree RSS at c4 is `2626.8 MiB`. Result: `LAB-E10-CONCURRENCY-RESULTS.md`.
+- E11: all 30 videos (3 systems x 10 books) passed layout QA. Swiss=`629.48/h`, Newspaper=`741.87/h`, Paper=`627.12/h`; the visual systems are materially different while remaining in the same cheap browserless cost class. Result: `LAB-E11-VISUAL-SYSTEMS-RESULTS.md`.
 
 ## Current experiment
 
-PR #19 / E10 (`lab/e10-concurrency`) is the only active experiment while the result is being consolidated into `lab/framewright-research`.
+PR #20 / E11 (`lab/e11-visual-systems`) is being consolidated into `lab/framewright-research` after canonical run `35107793565`.
 
-Decision from the canonical run `35094835897`:
+Product conclusion from E11:
 
-- batch throughput mode: c4 (`771.15 videos/hour`);
-- balanced mode: c2 (`744.64 videos/hour`, ~96.6% of c4 throughput with much lower latency/RAM);
-- reference/latency mode: c1;
-- do not tune concurrency above 4 on GitHub Actions; the next uncertainty is real provider CPU performance.
+- Swiss, Newspaper and Paper are real composition/motion systems, not palette skins;
+- strong visual differentiation is cheap when built from vector/Canvas primitives rather than full-frame post-processing;
+- Newspaper was actually faster/smaller than Swiss in this workload;
+- the next visible weakness is motion density: strong entrances followed by long holds make the current outputs read as kinetic posters.
 
-After E10 merge, the next step is provider benchmarking with the existing portable E09 runner on actual priced shared and dedicated compute. Cost tables remain normalized estimates until that happens.
+After E11 merge, the next experiment should target cheap element-level motion grammar and pacing rather than renderer micro-optimization.
 
 ## Current architectural direction
 
-Preserve the JS/TS scene/template layer. For cheap/editorial book ads, `@napi-rs/canvas` is the leading production-renderer candidate: it removes Chromium and temporary frame files from the hot path while preserving the current scene logic. Production determinism should come from one pinned renderer + pinned fonts/assets + golden-frame regression tests.
+Preserve the JS/TS scene/template layer. For STANDARD book ads, `@napi-rs/canvas` is the leading production-renderer candidate: it removes Chromium and temporary frame files from the hot path while preserving the current scene logic. Production determinism should come from one pinned renderer + pinned fonts/assets + golden-frame regression tests.
 
 Use separate visual cost tiers:
 
 - STANDARD/FAST: browserless Node Canvas mass-production path;
-- RICH: benchmark materialized frame cost, because Canvas can defer rasterization;
+- RICH: materialized-frame cost must be benchmarked; avoid assuming scene-function timing captures deferred raster work;
 - HERO/CRT: optimize full-frame post with GPU/native/shader techniques only if ad-performance lift justifies the cost.
 
-The E08 stress batch exposed a text-fit contract bug for unbreakable wide words. The width-safe fitting rule should be promoted into the shared scene/text runtime rather than remain an experiment-only transform.
-
-A full Rust/C++ rewrite is not a current default direction. Native/GPU work should target measured heavy post-processing bottlenecks, not the scene DSL.
+The product focus is now higher-level creative systems: visual grammar, motion grammar, pacing, category fit, QA and variation. A full Rust/C++ rewrite is not a current default direction. Native/GPU work should target measured heavy post-processing bottlenecks, not the scene DSL.
