@@ -1,0 +1,64 @@
+name: R46 Adaptive Bitrate Oracle
+
+on:
+  pull_request:
+    paths:
+      - '.agents/skills/framewright/scripts/r46-adaptive-bitrate-oracle.mjs'
+      - '.github/workflows/r46-adaptive-bitrate-oracle.yml'
+      - 'docs/r46-adaptive-bitrate-oracle.md'
+  workflow_dispatch:
+
+jobs:
+  adaptive-bitrate-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r46-adaptive-bitrate-oracle.mjs
+      - name: Prepare responsive fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r46.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r46.html examples/book-ad-systems/index-e17-for-r46.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r46.html examples/book-ad-systems/index-e17-e14-for-r46.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r46.html examples/book-ad-systems/index-e18-for-r46.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r46
+      - name: Run heterogeneous semantic-ROI bitrate oracle
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r46.html
+          MANIFEST: examples/book-ad-systems/generated-r46/manifest.json
+          OUT_DIR: artifacts/r46
+          REPORT: artifacts/r46/report.json
+          BITRATES: 2000000,2250000,2500000,2750000,3000000
+        run: node .agents/skills/framewright/scripts/r46-adaptive-bitrate-oracle.mjs
+      - name: Validate report
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r46/report.json','utf8'));
+          if(r.schema!=='nightwill-r46-adaptive-bitrate-oracle-v1') throw new Error('wrong schema');
+          if(r.fixtures.length!==3) throw new Error('incomplete fixture set');
+          for(const f of r.fixtures){
+            const wc=f.rows.filter(x=>x.kind==='webcodecs');
+            if(wc.length!==5) throw new Error(`${f.bookId}: incomplete bitrate ladder`);
+            if(!wc.find(x=>x.bitrate===3000000)) throw new Error(`${f.bookId}: missing 3M control`);
+          }
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - name: Show result
+        run: cat artifacts/r46/summary.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r46-adaptive-bitrate-oracle
+          path: |
+            artifacts/r46/report.json
+            artifacts/r46/summary.md
+          retention-days: 14
