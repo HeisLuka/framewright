@@ -1,4 +1,4 @@
-# C31 — Bounded creative contract v1
+# C32 — Bounded creative contract v1
 
 ## Decision
 
@@ -24,7 +24,7 @@ The renderer never asks an LLM what a claim means and never silently repairs an 
 
 A deterministic program cannot reliably prove that arbitrary natural-language copy is entailed by a set of facts. Adding an LLM judge at validation time would simply move nondeterminism into the trust boundary.
 
-C31 therefore makes the safe operation explicit: `ContextPack` contains **trusted creative atoms** minted upstream from known account/book data. Every atom has:
+C32 therefore makes the safe operation explicit: `ContextPack` contains **trusted creative atoms** minted upstream from known account/book data. Every atom has:
 
 - a stable `atom_id`;
 - a semantic role (`hook`, `tension`, `payoff`);
@@ -114,9 +114,9 @@ The bridge then calls the existing C27 `planNarrative()` implementation. Book ti
 
 ## Threat boundary
 
-C31 assumes the external LLM is untrusted and may hallucinate IDs, omit required data, output stale context, cross book/account boundaries, or attempt to smuggle arbitrary content. Those are ordinary validation failures, not exceptional cases.
+C32 assumes the external LLM is untrusted and may hallucinate IDs, omit required data, output stale context, cross book/account boundaries, or attempt to smuggle arbitrary content. Those are ordinary validation failures, not exceptional cases.
 
-C31 does **not** claim that the validator can infer whether arbitrary prose is true. Only server-minted atoms are factual render inputs in v1.
+C32 does **not** claim that the validator can infer whether arbitrary prose is true. Only server-minted atoms are factual render inputs in v1.
 
 A future free-text mode must cross a separate trust boundary first, for example by producing a server-side verification/approval artifact whose ID and content hash can be referenced by CreativeProposal. Raw LLM prose must not bypass that boundary.
 

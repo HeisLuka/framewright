@@ -1,4 +1,4 @@
-name: lab-c31-bounded-creative-contract
+name: lab-c32-bounded-creative-contract
 
 on:
   workflow_dispatch:
@@ -10,8 +10,8 @@ on:
       - 'contracts/check-creative-proposal-v1.mjs'
       - 'contracts/examples/context-pack-v1.example.json'
       - 'contracts/examples/creative-proposal-v1.example.json'
-      - 'docs/c31-bounded-creative-contract.md'
-      - '.github/workflows/lab-c31-bounded-creative-contract.yml'
+      - 'docs/c32-bounded-creative-contract.md'
+      - '.github/workflows/lab-c32-bounded-creative-contract.yml'
 
 jobs:
   contract:
