@@ -40,7 +40,16 @@ The old stacked PRs for completed stages are archival and do not need to remain 
 
 ## Current experiment
 
-No active experiment after E08 is merged. Next high-value step is economics on actual priced compute: pin the Node Canvas dependency/worker image, run the browserless batch on one or more real VM sizes, then calculate $/video, $/1k and $/100k. In parallel, run a longer soak to validate memory stability.
+PR #18 / E09 (`lab/e09-cost-soak`) is the only active experiment. It turns the E08 browserless path into a reproducible production-worker candidate and starts cost validation:
+
+- Node 20.20.2 base pinned by digest;
+- `@napi-rs/canvas` pinned to 1.0.9;
+- browserless worker image with FFmpeg + DejaVu only (no Chromium/Puppeteer dependency in the hot worker image);
+- 100-video long-lived soak with memory-drift metrics;
+- portable provider benchmark runner + measured-throughput cost calculator;
+- dated provider-price envelope and target matrix (shared x86, dedicated x86, Spot and ARM candidate).
+
+Current CI run for the canonical 100-video soak: `35092934500`. Provider price tables remain estimates until this exact pinned image is run on the actual priced VM.
 
 ## Current architectural direction
 
