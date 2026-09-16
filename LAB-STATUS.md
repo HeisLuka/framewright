@@ -22,7 +22,8 @@ Historical `Exx` names remain valid aliases and are not renumbered. Independent 
 8. E17 — responsive semantic delivery profiles
 9. C18 / historical E18 — responsive coverage across all structural variants
 10. C20 — deterministic cover-adaptive art direction
-11. **C21 — deterministic opening grammar / causal isolation**
+11. C21 — deterministic opening grammar / causal isolation
+12. **C22 — finite motion choreography v2**
 
 ## Product results that matter
 
@@ -35,7 +36,8 @@ Historical `Exx` names remain valid aliases and are not renumbered. Independent 
 - E17: semantic reflow works for `vertical / square / landscape`, including long-title stress cases.
 - C18: all four structural variants work across all three profiles: `36/36`, zero layout warnings. It also exposed and fixed a provenance bug where `variant` was rendered but omitted from the batch report.
 - C20: cover palette + luminance + entropy + edge evidence can drive contrast-safe, visual-system-specific art direction without AI. Final verification run `35133994670`: `72/72`, zero layout warnings, 36/36 unique palette signatures, no extraction failures, mean adaptive/generic cost ratio `1.0131`, p95 `1.0391`, peak RSS `779.9 MiB`. Manual review led to a Newspaper-specific refinement rather than globally forcing more colour. Result: `LAB-C20-COVER-ADAPTIVE-ART-DIRECTION-RESULTS.md`.
-- **C21:** four no-AI opening grammars (`hook-led / cover-led / title-led / progressive-hook`) materially diverge during the first ~2 seconds and then exactly reconverge at 2.4s. Final canonical run `35136282583`: `40/40`, zero layout warnings, mean opening distance `0.092093`, minimum `0.037693`, convergence difference `0`, mean alternate-grammar cost ratio `1.0288`, p95 `1.0725`, peak RSS `778.2 MiB`. Exploratory background-RNG contamination was rejected. Alpha crossfade was rejected for ghosting; spatial wipe was rejected for sliced mixed-copy frames. Canonical transition is a one-frame editorial cut at ~1.8s. Result: `LAB-C21-OPENING-GRAMMAR-RESULTS.md`.
+- C21: four no-AI opening grammars (`hook-led / cover-led / title-led / progressive-hook`) materially diverge during the first ~2 seconds and then exactly reconverge at 2.4s. Final canonical run `35136282583`: `40/40`, zero layout warnings, mean opening distance `0.092093`, minimum `0.037693`, convergence difference `0`, mean alternate-grammar cost ratio `1.0288`, p95 `1.0725`, peak RSS `778.2 MiB`. Exploratory background-RNG contamination was rejected. Alpha crossfade was rejected for ghosting; spatial wipe was rejected for sliced mixed-copy frames. Canonical transition is a one-frame editorial cut at ~1.8s. Result: `LAB-C21-OPENING-GRAMMAR-RESULTS.md`.
+- **C22:** finite semantic choreography replaces continuous E12 ambient drift with `entrance → settle → focal emphasis → settle`. Canonical run `35137597265`: `20/20`, zero layout warnings, settle-energy ratio `0.012684`, settle active-fraction ratio `0`, hook/CTA entrance ratios `1.174× / 1.151×`, mean wall ratio `1.0084`, p95 `1.0511`, mean MP4-byte ratio `0.9923`, peak RSS `733.6 MiB`. All 10 paired review sheets show calmer holds without dead entrances/focus/CTA. Result: `LAB-C22-MOTION-QUALITY-RESULTS.md`.
 
 ## Runtime direction
 
@@ -80,11 +82,7 @@ Creative semantics such as `art_direction`, verified hook/opening provenance and
 
 ## Current priority
 
-**C22 — motion quality v2** is the next Creative/Product experiment.
-
-Goal: improve perceived motion quality without heavy full-frame effects or indiscriminate movement. Isolate choreography from layout/copy/art direction: coherent easing, stagger/reveal timing, one focal motion event at a time, deliberate settle windows, scene continuity and CTA emphasis.
-
-Beat/onset synchronization, if tested, stays a separate controlled axis so its contribution is attributable rather than mixed into every motion change.
+If music synchronization is worth pursuing, the next C experiment must keep **C22 choreography fixed** and vary only timing alignment to a deterministic beat/onset map. Do not mix audio-reactive layout changes, new motion grammar or runtime work into the same test.
 
 Then:
 
