@@ -1,0 +1,80 @@
+name: Lab E15 Campaign Package
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - '.agents/skills/framewright/scripts/make-e13-routed-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/make-e14-variant-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e12-motion-template.mjs'
+      - '.agents/skills/framewright/scripts/prepare-e14-variant-template.mjs'
+      - '.agents/skills/framewright/scripts/e14-diversity.mjs'
+      - '.agents/skills/framewright/scripts/e15-build-campaign-package.mjs'
+      - '.agents/skills/framewright/scripts/e15-validate-campaign-package.mjs'
+      - '.agents/skills/framewright/scripts/node-canvas-batch.mjs'
+      - '.github/workflows/lab-e15-campaign-package.yml'
+      - 'examples/book-ad-systems/**'
+      - 'examples/book-ad-v0/**'
+  workflow_dispatch:
+
+jobs:
+  campaign-package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install pinned worker dependencies
+        run: npm install --no-save @napi-rs/canvas@1.0.9
+      - name: Install FFmpeg + pinned fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/e15-build-campaign-package.mjs
+          node --check .agents/skills/framewright/scripts/e15-validate-campaign-package.mjs
+      - name: Prepare E14 candidate pool
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-e15.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e12-for-e15.html examples/book-ad-systems/index-e14.html
+          node .agents/skills/framewright/scripts/make-e14-variant-fixtures.mjs examples/book-ad-systems/generated-e14
+      - name: Render 40 candidate videos
+        env:
+          HTML: examples/book-ad-systems/index-e14.html
+          MANIFEST: examples/book-ad-systems/generated-e14/manifest.json
+          OUT_DIR: artifacts/e15/videos
+          REPORT: artifacts/e15/batch.json
+          WIDTH: '1080'
+          PRESET: veryfast
+          CRF: '22'
+        run: node .agents/skills/framewright/scripts/node-canvas-batch.mjs
+      - name: Measure E14 diversity evidence
+        run: node .agents/skills/framewright/scripts/e14-diversity.mjs artifacts/e15/batch.json examples/book-ad-systems/generated-e14/manifest.json artifacts/e15/diversity.json
+      - name: Build campaign package twice
+        env:
+          TEMPLATE: examples/book-ad-systems/index-e14.html
+          RENDERER: .agents/skills/framewright/scripts/node-canvas-batch.mjs
+          NEAR_DUP_THRESHOLD: '0.015'
+        run: |
+          node .agents/skills/framewright/scripts/e15-build-campaign-package.mjs examples/book-ad-systems/generated-e14/manifest.json examples/book-ad-systems/generated-e13/route-report.json artifacts/e15/batch.json artifacts/e15/diversity.json artifacts/e15/package
+          node .agents/skills/framewright/scripts/e15-build-campaign-package.mjs examples/book-ad-systems/generated-e14/manifest.json examples/book-ad-systems/generated-e13/route-report.json artifacts/e15/batch.json artifacts/e15/diversity.json artifacts/e15/package-check
+      - name: Validate deterministic package + selected creatives
+        run: node .agents/skills/framewright/scripts/e15-validate-campaign-package.mjs artifacts/e15/package artifacts/e15/package-check artifacts/e15/diversity.json
+      - name: Keep compact evidence
+        run: |
+          mkdir -p artifacts/e15/evidence
+          cp artifacts/e15/batch.json artifacts/e15/evidence/batch.json
+          cp artifacts/e15/diversity.json artifacts/e15/evidence/diversity.json
+          cp examples/book-ad-systems/generated-e13/route-report.json artifacts/e15/evidence/route-report.json
+          cp examples/book-ad-systems/generated-e14/manifest.json artifacts/e15/evidence/candidate-manifest.json
+          rm -rf artifacts/e15/package-check
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e15-campaign-package
+          path: |
+            artifacts/e15/package/
+            artifacts/e15/evidence/
+          retention-days: 14
