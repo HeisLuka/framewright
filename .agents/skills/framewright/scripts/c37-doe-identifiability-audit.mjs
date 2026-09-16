@@ -14,7 +14,6 @@ import {
 
 const outDir=path.resolve(process.argv[2]||'artifacts/c37');
 fs.mkdirSync(outDir,{recursive:true});
-const stable=value=>JSON.stringify(value,Object.keys(value||{}).sort());
 const ids=rows=>rows.map(x=>x.id);
 const countBy=(rows,key)=>rows.reduce((m,row)=>(m.set(row[key],(m.get(row[key])||0)+1),m),new Map());
 
@@ -110,7 +109,7 @@ function maxRankSummary(rows){return rows.map(x=>({runs:x.run_count,max_rank:x.m
 fs.writeFileSync(path.join(outDir,'report.json'),JSON.stringify(report,null,2)+'\n');
 fs.writeFileSync(path.join(outDir,'design.json'),JSON.stringify(design,null,2)+'\n');
 const summary=`# C37 DOE identifiability scout\n\n`+
-`C29 candidate space: **18** (`3 angle × 2 nested hooks × 3 reveal timings`). Honest global main-effects model: **8 parameters** (`angle + hook(angle) + reveal`).\n\n`+
+`C29 candidate space: **18** (\`3 angle × 2 nested hooks × 3 reveal timings\`). Honest global main-effects model: **8 parameters** (\`angle + hook(angle) + reveal\`).\n\n`+
 `Result: **3–5 unique creatives cannot identify all C29 main effects.** The exact search found a deterministic full-rank **8-run** global screening design. A strict small-budget alternative exists only after narrowing scope: with angle fixed, **4 runs** can identify hook + reveal main effects.\n\n`+
 `Selected global design: ${ids(global.candidates).map(x=>'`'+x+'`').join(', ')}.\n\n`+
 `Boundary: this is design-matrix evidence only. The 8-run design does not estimate interactions and does not claim randomized viewer exposure, CTR/CPA lift, or causal effects. Live organic execution must use explicit blocked publication opportunities and real platform exports.\n`;
