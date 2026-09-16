@@ -1,0 +1,78 @@
+name: Lab E10 Concurrency
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - '.agents/skills/framewright/scripts/e10-concurrency-matrix.mjs'
+      - '.agents/skills/framewright/scripts/e10-write-summary.mjs'
+      - '.agents/skills/framewright/scripts/node-canvas-soak.mjs'
+      - '.github/workflows/lab-e10-concurrency.yml'
+      - 'Dockerfile.node-canvas-worker'
+      - 'package.node-canvas-worker.json'
+      - 'examples/book-ad-v0/**'
+  workflow_dispatch:
+
+concurrency:
+  group: e10-concurrency-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  concurrency:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/e10-concurrency-matrix.mjs
+          node --check .agents/skills/framewright/scripts/e10-write-summary.mjs
+
+      - name: Build pinned worker
+        run: docker build -f Dockerfile.node-canvas-worker -t framewright-node-canvas:e10 .
+
+      - name: Run c1/c2/c4 matrix on four CPU container
+        run: |
+          mkdir -p artifacts/e10
+          docker run --rm \
+            --cpus=4 \
+            --memory=4g \
+            -v "$PWD/artifacts:/app/artifacts" \
+            framewright-node-canvas:e10 sh -lc '
+              node .agents/skills/framewright/scripts/make-e08-fixtures.mjs examples/book-ad-v0/generated-e08 &&
+              node .agents/skills/framewright/scripts/prepare-pinned-font-template.mjs examples/book-ad-v0/index.html examples/book-ad-v0/index-e08.html &&
+              TOTAL_VIDEOS=30 \
+              CONCURRENCY_CASES=1,2,4 \
+              HTML=examples/book-ad-v0/index-e08.html \
+              MANIFEST=examples/book-ad-v0/generated-e08/manifest.json \
+              WIDTH=1080 PRESET=veryfast CRF=22 \
+              OUT_DIR=artifacts/e10/concurrency \
+              node .agents/skills/framewright/scripts/e10-concurrency-matrix.mjs
+            '
+
+      - name: Validate matrix
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const r=JSON.parse(fs.readFileSync('artifacts/e10/concurrency/matrix.json','utf8'));
+          const mib=n=>n/1048576;
+          if(r.cases.length!==3) throw new Error(`expected 3 cases, got ${r.cases.length}`);
+          for(const c of r.cases){
+            if(c.videos!==30) throw new Error(`c${c.concurrency}: expected 30 videos, got ${c.videos}`);
+            if(c.layoutWarningGroups!==0) throw new Error(`c${c.concurrency}: layout warnings ${c.layoutWarningGroups}`);
+            if(!(c.videosPerHour>0)) throw new Error(`c${c.concurrency}: bad throughput`);
+            if(mib(c.peakProcessTreeRssBytes)>3900) throw new Error(`c${c.concurrency}: process tree RSS ${mib(c.peakProcessTreeRssBytes).toFixed(1)} MiB`);
+          }
+          console.log({bestConcurrency:r.bestConcurrency,bestVideosPerHour:r.bestVideosPerHour,cases:r.cases.map(c=>({c:c.concurrency,vph:c.videosPerHour,speedup:c.speedupVsC1,efficiency:c.parallelEfficiency,peakMiB:+mib(c.peakProcessTreeRssBytes).toFixed(1)}))});
+          NODE
+
+      - name: Write summary
+        run: node .agents/skills/framewright/scripts/e10-write-summary.mjs artifacts/e10/concurrency/matrix.json artifacts/e10/summary.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e10-concurrency
+          path: artifacts/e10/
+          retention-days: 14
