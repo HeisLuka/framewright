@@ -2,13 +2,13 @@
 
 This is the pre-C19 scout for the final apples-to-apples FAST backend verdict.
 
-It exists to answer one narrow question early: when the **same semantic scene code** is executed through the two current STANDARD candidates, is either runtime clearly dominated before we spend more time optimizing it?
+It exists to answer one narrow question early: when the **same semantic scene code** is executed through the current STANDARD candidates, is any runtime clearly dominated before we spend more time optimizing it?
 
 ## Same-scene contract
 
 The scout prepares the current C18 responsive structural-variant template and selects one fixture from that generated manifest.
 
-Both paths consume the same:
+All paths consume the same:
 
 - book payload;
 - cover asset;
@@ -21,7 +21,7 @@ Both paths consume the same:
 - fps/duration;
 - audio fixture.
 
-The Node path is not a second creative implementation: it executes the exact inline scene script with `vm` + `@napi-rs/canvas`, matching the existing C18 browserless renderer.
+The Node paths are not second creative implementations: they execute the exact inline scene script with `vm` + `@napi-rs/canvas`, matching the existing C18 browserless renderer.
 
 The Chromium path loads that exact generated HTML, injects the same payload before the page script runs, calls the same `renderFrame(frame, width, seed, canvas)` function, and feeds that canvas into WebCodecs.
 
@@ -47,11 +47,23 @@ B:
   -> MP4
 ```
 
+C — bounded third candidate added after the complementary-ecosystem scout:
+
+```text
+@napi-rs/canvas
+  -> @napi-rs/webcodecs VideoFrame(canvas)
+  -> H.264 + AAC in process
+  -> @napi-rs/webcodecs Mp4Muxer
+  -> MP4
+```
+
+The C path is deliberately pinned to `@napi-rs/webcodecs@1.3.0` because the lab runtime is pinned to Node `20.20.2`; current `1.4.0` requires Node 22+. The package documents that `VideoFrame(canvas)` copies Canvas pixels as RGBA, so this path is **not** assumed to be zero-copy. The benchmark records frame-copy/encode time, CPU and RSS explicitly.
+
 Both a fixed 2 Mbps x264 comparison and an `x264 veryfast CRF 22` reference are retained because nominal bitrate equality is not the same thing as quality equality.
 
 ## Measurements
 
-For three A/B repeats on the same runner:
+For repeated runs on the same runner:
 
 - end-to-end wall;
 - derived videos/hour;
@@ -60,6 +72,7 @@ For three A/B repeats on the same runner:
 - MP4 bytes;
 - WebCodecs launch/page/encode/upload/mux stages;
 - Node scene init/frame render/write-wait stages;
+- native Node WebCodecs render/copy+encode/AAC/mux-finalize stages;
 - ffprobe stream/frame metadata;
 - decoded A-vs-B SSIM/PSNR;
 - sampled **pre-encode raster parity** between browser Canvas and `@napi-rs/canvas`;
@@ -67,9 +80,9 @@ For three A/B repeats on the same runner:
 
 Raster parity is important: a codec comparison is not valid if the two Canvas implementations are already drawing materially different pictures.
 
-## Scout result — compute
+## Scout result — compute before candidate C
 
-Canonical scout evidence before the quality matrix: GitHub Actions run `35133551686`, fixture `river-station-paper-hook-first-vertical`, 1080x1920, seed 10.
+Canonical scout evidence before the native Node WebCodecs pass: GitHub Actions run `35133551686`, fixture `river-station-paper-hook-first-vertical`, 1080x1920, seed 10.
 
 | backend | mean wall | videos/hour | mean MP4 | peak RSS | cgroup CPU |
 |---|---:|---:|---:|---:|---:|
@@ -78,6 +91,8 @@ Canonical scout evidence before the quality matrix: GitHub Actions run `35133551
 | @napi-rs/canvas -> x264 CRF 22 reference | 6.516 s | 552.47 | 0.79 MiB | 728.37 MiB | 17.674 s |
 
 On this scene, the fixed-target Node path takes **1.63x** the wall time and about **1.98x** the CPU time of WebCodecs. WebCodecs therefore has a strong compute/capacity lead, but its Chromium process tree uses about **1.70x** the peak RSS of the Node path. Memory/concurrency economics remains a real gate.
+
+Candidate C is intended to test whether the current tradeoff can be improved: keep the browserless Node Canvas memory profile while replacing the raw-RGBA-to-FFmpeg process boundary with in-process H.264/AAC/MP4. It is only useful if the mandatory RGBA Canvas copy and native codec path do not erase that advantage.
 
 ## WebCodecs stage budget
 
@@ -100,7 +115,7 @@ The browser and `@napi-rs/canvas` execute the same semantic scene but are not pi
 
 That is close enough to continue backend economics research, but final visual QA should not use pixel equality as the cross-Canvas gate. Differences can come from font rasterization, SVG/image decode and Canvas compositing.
 
-## Scout result — rate/distortion
+## Scout result — rate/distortion before candidate C
 
 Each encoder was also compared against the lossless sampled frames produced by **its own** Canvas implementation:
 
@@ -112,16 +127,33 @@ Each encoder was also compared against the lossless sampled frames produced by *
 
 So the scout result is deliberately split:
 
-- **compute throughput / CPU:** WebCodecs leads strongly;
+- **compute throughput / CPU:** Chromium WebCodecs leads strongly;
 - **peak memory:** Node Canvas leads;
 - **current rate-distortion:** x264 leads;
-- **current WebCodecs bitrate policy is not quality-matched.**
+- **current Chromium WebCodecs bitrate policy is not quality-matched.**
 
 The interesting detail is x264 CRF 22: it produced about 0.79 MiB while slightly beating WebCodecs 2 Mbps on sampled average quality and materially beating its worst sampled frame. That is direct evidence that encoder policy, scene keyframes and eventually ROI-aware quality are worth investigating before freezing the STANDARD backend.
 
+## Native Node WebCodecs gate
+
+The added pass runs `@napi-rs/webcodecs@1.3.0` at the same 2 Mbps video target and 192 kbps AAC, with the same Node Canvas scene and deterministic WAV fixture. It reports:
+
+- full wall / videos-hour;
+- cgroup CPU and process-tree RSS;
+- Node scene render time;
+- `VideoFrame(canvas)` copy + encode enqueue time;
+- encoder queue wait;
+- AAC encode time;
+- MP4 mux-finalize time;
+- final MP4 bytes and ffprobe validation;
+- own-raster sampled SSIM/PSNR;
+- decoded-output difference from the x264 CRF22 reference when that artifact is present.
+
+The candidate is interesting only if it materially improves capacity/cost/reliability. Removing Chromium and FFmpeg CLI is not by itself a win.
+
 ## Current quality-match pass
 
-The next bounded pass sweeps WebCodecs at `1.5 / 2 / 2.5 / 3 / 4 Mbps` with:
+The Chromium WebCodecs pass also sweeps `1.5 / 2 / 2.5 / 3 / 4 Mbps` with:
 
 - the existing fixed two-second keyframe policy;
 - scene-boundary keyframes in addition to the two-second safety GOP.
@@ -134,7 +166,7 @@ This is explicitly **not the final backend selection** because C19 has not yet p
 
 It may reject a clearly inferior backend or expose a parity problem. The final backend freeze must still repeat the selected policies against the C19/I01 `RenderSpec` production workload and include semantic ROI gates for hook/title/CTA/cover.
 
-Decoded A-vs-B SSIM/PSNR is only a difference metric between two lossy outputs; it must not be presented as an independent quality score.
+Decoded cross-backend SSIM/PSNR is only a difference metric between two lossy outputs; it must not be presented as an independent quality score.
 
 ## Decision gate
 
@@ -143,6 +175,7 @@ Treat this run as strong scouting evidence when one candidate shows one or more 
 - roughly >=15% wall / videos-hour advantage across repeats;
 - materially lower CPU or RSS at similar output quality;
 - severe pre-encode raster mismatch;
-- repeated runtime failure/compatibility problems.
+- repeated runtime failure/compatibility problems;
+- meaningful simplification of process boundaries **without** a cost/capacity regression.
 
-Current evidence clears the compute gate in favor of WebCodecs, but does **not** yet clear the quality-matched backend gate. The quality matrix, warm/concurrency memory economics and final C19 workload remain before a STANDARD freeze.
+Current evidence clears the compute gate in favor of Chromium WebCodecs, but does **not** yet clear the quality-matched backend gate. The native Node WebCodecs pass, quality matrix, warm/concurrency memory economics and final C19 workload remain before a STANDARD freeze.
