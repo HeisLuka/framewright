@@ -11,7 +11,7 @@ put(){ if [ -e "$2" ] && [ $FORCE = 0 ]; then echo "  keep   $2 (exists, use --f
 put "$SKILL/assets/skeleton.html" index.html
 put "$SKILL/assets/audio-template.mjs" audio.mjs
 put "$SKILL/assets/storyboard.md" storyboard.md
-for f in look.mjs render.mjs render-raw.mjs bench-render.mjs build.sh make.sh inject.mjs portrait.sh trace.py doctor.sh; do put "$HERE/$f" "scripts/$f"; done
+for f in look.mjs render.mjs render-raw.mjs ordered-frame-sink.mjs bench-render.mjs build.sh make.sh inject.mjs portrait.sh trace.py doctor.sh; do put "$HERE/$f" "scripts/$f"; done
 chmod +x scripts/*.sh scripts/*.mjs 2>/dev/null || true
 if [ ! -f package.json ]; then cat > package.json <<'JSON'
 {
