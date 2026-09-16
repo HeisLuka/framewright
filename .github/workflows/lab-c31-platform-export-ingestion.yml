@@ -1,0 +1,51 @@
+name: C31 Platform Export Ingestion
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/c30-campaign-learning.mjs'
+      - '.agents/skills/framewright/scripts/c31-platform-export-ingestion.mjs'
+      - '.agents/skills/framewright/scripts/c31-platform-export-ingestion-audit.mjs'
+      - '.github/workflows/lab-c31-platform-export-ingestion.yml'
+      - 'docs/c31-platform-export-ingestion.md'
+  workflow_dispatch:
+
+jobs:
+  ingestion-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/c30-campaign-learning.mjs
+          node --check .agents/skills/framewright/scripts/c31-platform-export-ingestion.mjs
+          node --check .agents/skills/framewright/scripts/c31-platform-export-ingestion-audit.mjs
+      - name: Run C31 ingestion audit
+        run: node .agents/skills/framewright/scripts/c31-platform-export-ingestion-audit.mjs artifacts/c31
+      - name: Validate audit receipt
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/c31/report.json','utf8'));
+          if(r.schema!=='framewright-c31-platform-export-ingestion-audit-v1') throw new Error('wrong C31 audit schema');
+          for(const [key,value] of Object.entries(r.gates||{})) if(value!==true) throw new Error(`C31 gate failed: ${key}`);
+          if(r.boundary!=='synthetic source-shaped fixture; no live platform performance evidence claimed') throw new Error('C31 evidence boundary drift');
+          if(r.receipt?.row_count!==2||r.evidence?.observations?.length!==2) throw new Error('C31 incomplete audit accounting');
+          console.log(JSON.stringify({gates:r.gates,receipt:r.receipt},null,2));
+          NODE
+      - name: Show result
+        if: always()
+        run: test -f artifacts/c31/summary.md && cat artifacts/c31/summary.md || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c31-platform-export-ingestion
+          path: |
+            artifacts/c31/report.json
+            artifacts/c31/summary.md
+          retention-days: 14
