@@ -254,6 +254,9 @@ export const installRisoBridge = ({ runtime, canvas, defaultWidth = 1080, defaul
     get plates() {
       return runtime.plan.scenes.map((scene) => ({ name: scene.id, len: scene.durationFrames }));
     },
+    render(frame, width = defaultWidth, seed = defaultSeed) {
+      return runtime.render(frame, width, seed);
+    },
     frame(frame, width = defaultWidth, seed = defaultSeed) {
       runtime.render(frame, width, seed);
       return canvas.toDataURL("image/png");
