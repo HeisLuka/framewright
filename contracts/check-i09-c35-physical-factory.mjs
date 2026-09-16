@@ -43,9 +43,10 @@ const run=readJson(path.join(resultDir,'run.json'));
 const pkg=readJson(path.join(resultDir,'delivery-package.json'));
 const canonicalManifestPath=path.join(resultDir,'canonical-artifacts.json');
 must(fs.existsSync(canonicalManifestPath),'canonical artifact manifest missing');
+const canonicalManifest=readJson(canonicalManifestPath);
 must(attempt.canonical_manifest_sha256===run.canonical_manifest_sha256,'I07 attempt/run canonical manifest identity mismatch');
-must(run.campaign_id===input.campaign_id,'campaign ID drift');
-must(run.selected_creatives===3&&run.render_specs===3&&run.reserves===0,'physical factory accounting drift');
+must(run.campaign_id===input.campaign_id&&canonicalManifest.campaign_id===input.campaign_id,'campaign ID drift');
+must(canonicalManifest.selected_creatives===3&&canonicalManifest.render_specs===3&&canonicalManifest.reserves===0,'physical factory accounting drift');
 must(pkg.schema==='framewright-c19-delivery-package-v1','wrong C19 delivery package schema');
 must(pkg.selected?.length===3&&pkg.renders?.length===3,'C19 package lost C35 creatives/render specs');
 
@@ -136,9 +137,9 @@ const report={
   first_attempt:attempt.attempt,
   duplicate_enqueue_state:replay.state,
   physical_attempt_count:attemptFiles.length,
-  campaign_id:run.campaign_id,
-  selected_creatives:run.selected_creatives,
-  render_specs:run.render_specs,
+  campaign_id:canonicalManifest.campaign_id,
+  selected_creatives:canonicalManifest.selected_creatives,
+  render_specs:canonicalManifest.render_specs,
   distinct_creative_ids:creativeIds.size,
   distinct_render_spec_ids:renderSpecIds.size,
   distinct_artifact_shas:artifactShas.size,
