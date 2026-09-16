@@ -23,7 +23,7 @@ for(let i=0;i<semantic.books;i++){
     const payload={...basePayload,visual_system:spec.visual_system,creative_variant:spec.creative_variant,opening_grammar:spec.opening_grammar,typography_system:spec.typography_system,platform_profile:spec.platform_profile,pacing_mode:'organic',art_direction_mode:'cover',cover_composition_mode:'adaptive'};
     const payloadFile=`payload-${String(i+1).padStart(2,'0')}-${mode}.json`;
     fs.writeFileSync(path.join(outDir,payloadFile),JSON.stringify(payload,null,2)+'\n');
-    manifest.items.push({id:`book-${String(i+1).padStart(2,'0')}-${mode}`,bookId:`book-${String(i+1).padStart(2,'0')}`,mode,width:1080,height:1920,profile:'vertical',seed:baseEntry.seed,payloadFile,spec:{visual_system:spec.visual_system,creative_variant:spec.creative_variant,opening_grammar:spec.opening_grammar,typography_system:spec.typography_system,platform_profile:spec.platform_profile}});
+    manifest.items.push({id:`book-${String(i+1).padStart(2,'0')}-${mode}`,bookId:`book-${String(i+1).padStart(2,'0')}`,mode,width:1080,height:1920,profile:'vertical',seed:baseEntry.seed,payloadFile,spec:{candidate:spec.candidate,visual_system:spec.visual_system,creative_variant:spec.creative_variant,opening_grammar:spec.opening_grammar,typography_system:spec.typography_system,platform_profile:spec.platform_profile}});
   }
 }
 fs.writeFileSync(path.join(outDir,'manifest.json'),JSON.stringify(manifest,null,2)+'\n');
