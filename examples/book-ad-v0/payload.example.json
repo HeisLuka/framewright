@@ -1,0 +1,13 @@
+{
+  "book_id": "demo-001",
+  "title": "Архив ночного города",
+  "author": "Алексей Морозов",
+  "hook": "Если бы память можно было вернуть — какую ночь ты бы выбрал?",
+  "cta": "Открыть книгу",
+  "eyebrow": "НОВАЯ ИСТОРИЯ",
+  "brand": "BOOK DROP",
+  "cover_url": "./cover-demo.svg",
+  "accent": "#ff4b2b",
+  "background": "#f2eadf",
+  "ink": "#111111"
+}
