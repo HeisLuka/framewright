@@ -12,7 +12,7 @@ const injected=String.raw`
 const MOTION_MODE=String((window.FRAMEWRIGHT_PAYLOAD&&window.FRAMEWRIGHT_PAYLOAD.motion_density)||'baseline').toLowerCase();
 const MOTION_ACTIVE=MOTION_MODE==='active';
 let __motionCtx=null,__motionTextCall=0,__motionLabelCall=0;
-function __motionProgress(S){return S.i/Math.max(1,S.p?.len?S.p.len-1:119);}
+function __motionProgress(S){const last=S.plate==='hook'?89:S.plate==='book'?149:119;return clamp(S.i/last);}
 function __motionTime(S){return S.i/FPS;}
 
 const __drawCoverBase=drawCover;
@@ -68,7 +68,7 @@ tape=function(g,x,y,w,h,r,color,alpha=.9){
 
 function __motionOverlay(g,S,system,plate){
   if(!MOTION_ACTIVE)return;
-  const t=__motionTime(S),p=__motionProgress(S);
+  const t=__motionTime(S);
   g.save();
   if(system==='swiss'){
     const railY=SAFE.y+SAFE.h-82;
