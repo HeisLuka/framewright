@@ -1,0 +1,15 @@
+#!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
+
+const batchPath=path.resolve(process.argv[2]||'artifacts/c20/batch.json');
+const palettePath=path.resolve(process.argv[3]||'artifacts/c20/palette-audit.json');
+const outPath=path.resolve(process.argv[4]||'artifacts/c20/summary.json');
+const batch=JSON.parse(fs.readFileSync(batchPath,'utf8')),palette=JSON.parse(fs.readFileSync(palettePath,'utf8'));
+const byBook=new Map();for(const r of batch.results){const a=byBook.get(r.bookId)||[];a.push(r);byBook.set(r.bookId,a);}
+const pairs=[];for(const [bookId,rows] of byBook){const generic=rows.find(x=>x.id.endsWith('-generic')),cover=rows.find(x=>x.id.endsWith('-cover'));if(!generic||!cover)throw new Error(`${bookId}: incomplete pair`);const gMs=generic.totalMs+generic.initMs,aMs=cover.totalMs+cover.initMs;pairs.push({bookId,style:generic.style,genericMs:+gMs.toFixed(3),adaptiveMs:+aMs.toFixed(3),costRatio:+(aMs/gMs).toFixed(4),bytesRatio:+(cover.outputBytes/generic.outputBytes).toFixed(4),genericWarnings:generic.layoutWarnings.length,adaptiveWarnings:cover.layoutWarnings.length});}
+function stats(xs){const s=[...xs].sort((a,b)=>a-b),mean=s.reduce((a,b)=>a+b,0)/Math.max(1,s.length),q=p=>s[Math.min(s.length-1,Math.floor((s.length-1)*p))]||0;return{mean:+mean.toFixed(4),p50:+q(.5).toFixed(4),p95:+q(.95).toFixed(4),max:+q(1).toFixed(4)};}
+const summary={schema:'framewright-c20-summary-v1',fixtures:pairs.length,renders:batch.count,layoutWarningGroups:batch.layoutWarningGroups,palette:{failures:palette.failures.length,uniquePaletteSignatures:palette.uniquePaletteSignatures,minInkBackgroundContrast:palette.minInkBackgroundContrast,minAccentBackgroundContrast:palette.minAccentBackgroundContrast,minWhiteAccentContrast:palette.minWhiteAccentContrast},costRatio:stats(pairs.map(x=>x.costRatio)),bytesRatio:stats(pairs.map(x=>x.bytesRatio)),byStyle:Object.fromEntries(['swiss','newspaper','paper'].map(style=>{const p=pairs.filter(x=>x.style===style);return[style,{pairs:p.length,costRatio:stats(p.map(x=>x.costRatio)),bytesRatio:stats(p.map(x=>x.bytesRatio))}];})),pairs};
+fs.mkdirSync(path.dirname(outPath),{recursive:true});fs.writeFileSync(outPath,JSON.stringify(summary,null,2));
+if(summary.fixtures!==36)throw new Error(`expected 36 fixture pairs, got ${summary.fixtures}`);if(summary.renders!==72)throw new Error(`expected 72 renders, got ${summary.renders}`);if(summary.layoutWarningGroups!==0)throw new Error(`layout warnings ${summary.layoutWarningGroups}`);if(summary.palette.failures)throw new Error(`palette failures ${summary.palette.failures}`);if(summary.costRatio.mean>1.15)throw new Error(`adaptive mean cost ratio ${summary.costRatio.mean} > 1.15`);if(summary.costRatio.p95>1.25)throw new Error(`adaptive p95 cost ratio ${summary.costRatio.p95} > 1.25`);if(summary.bytesRatio.mean>1.65)throw new Error(`adaptive mean byte ratio ${summary.bytesRatio.mean} > 1.65`);
+console.log(JSON.stringify({fixtures:summary.fixtures,renders:summary.renders,costRatio:summary.costRatio,bytesRatio:summary.bytesRatio,palette:summary.palette,byStyle:summary.byStyle},null,2));
