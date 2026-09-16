@@ -113,9 +113,20 @@ export const buildLineBands = ({
   return bands;
 };
 
+const summarize = ({ complete, reason = "complete", cursor, lines, bands }) => ({
+  complete,
+  reason,
+  cursor,
+  lines,
+  lineCount: lines.length,
+  height: lines.length && bands.length
+    ? Math.max(...lines.map((line) => line.bottom)) - bands[0].top
+    : 0,
+});
+
 export const layoutIntoBands = ({
   prepared,
-  bands,
+  bands = [],
   startCursor = { segmentIndex: 0, graphemeIndex: 0 },
   nextLineRange,
   materializeLine,
@@ -124,20 +135,12 @@ export const layoutIntoBands = ({
   if (typeof materializeLine !== "function") throw new Error("materializeLine callback is required");
   let cursor = cloneCursor(startCursor);
   const lines = [];
-  for (const band of bands || []) {
+  for (const band of bands) {
     for (const slot of band.slots || []) {
       const range = nextLineRange(prepared, cursor, slot.width);
-      if (!range) {
-        return {
-          complete: true,
-          cursor,
-          lines,
-          lineCount: lines.length,
-          height: lines.length ? Math.max(...lines.map((line) => line.bottom)) - bands[0].top : 0,
-        };
-      }
+      if (!range) return summarize({ complete: true, cursor, lines, bands });
       if (sameCursor(cursor, range.end)) {
-        return { complete: false, reason: "no_progress", cursor, lines, lineCount: lines.length, height: 0 };
+        return summarize({ complete: false, reason: "no_progress", cursor, lines, bands });
       }
       const materialized = materializeLine(prepared, range);
       lines.push({
@@ -151,12 +154,12 @@ export const layoutIntoBands = ({
       cursor = cloneCursor(range.end);
     }
   }
-  return {
-    complete: false,
-    reason: "overflow",
+  const tail = nextLineRange(prepared, cursor, Number.MAX_SAFE_INTEGER);
+  return summarize({
+    complete: tail === null,
+    reason: tail === null ? "complete" : "overflow",
     cursor,
     lines,
-    lineCount: lines.length,
-    height: lines.length ? Math.max(...lines.map((line) => line.bottom)) - bands[0].top : 0,
-  };
+    bands,
+  });
 };
