@@ -1,0 +1,130 @@
+name: R30 Warm Pool Concurrency Scout
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r30-warm-concurrency-scout.mjs'
+      - '.agents/skills/framewright/scripts/r30-live-rss-soak.mjs'
+      - '.github/workflows/r30-warm-concurrency-scout.yml'
+      - 'docs/r30-warm-concurrency-scout.md'
+  workflow_dispatch:
+
+jobs:
+  warm-concurrency-scout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/r30-warm-concurrency-scout.mjs
+          node --check .agents/skills/framewright/scripts/r30-live-rss-soak.mjs
+
+      - name: Prepare exact C18 production-shaped scene
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r30.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r30.html examples/book-ad-systems/index-e17-for-r30.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r30.html examples/book-ad-systems/index-e17-e14-for-r30.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r30.html examples/book-ad-systems/index-e18-for-r30.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r30
+
+      - name: Build canonical AAC fixture once
+        run: |
+          mkdir -p artifacts/r30
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i 'sine=frequency=110:sample_rate=48000:duration=12' \
+            -filter:a 'volume=0.06' -t 12 -c:a aac -b:a 192k \
+            -movflags +faststart artifacts/r30/track.m4a
+
+      - name: Run lifecycle + concurrency matrix
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r30.html
+          MANIFEST: examples/book-ad-systems/generated-r30/manifest.json
+          OUT_DIR: artifacts/r30
+          AUDIO: artifacts/r30/track.m4a
+          REPORT: artifacts/r30/report.json
+          SUMMARY: artifacts/r30/summary.md
+          BOOK_ID: river-station
+          VARIANT: hook-first
+          PROFILE: vertical
+          BITRATE: '2000000'
+          WEBCODECS_QUEUE: '8'
+          COLD_JOBS: '3'
+          FRESH_PAGE_JOBS: '6'
+          MATRIX_JOBS: '8'
+          SOAK_JOBS: '16'
+          CONCURRENCIES: '1,2,3,4'
+        run: node .agents/skills/framewright/scripts/r30-warm-concurrency-scout.mjs
+
+      - name: Validate throughput result
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r30/report.json','utf8'));
+          for(const x of [r.results.cold,r.results.fresh,...r.results.matrix,r.results.soak]){
+            if(x.jobs<1) throw new Error(`${x.name}: no successful jobs`);
+            if(x.failures>0) throw new Error(`${x.name}: failures=${x.failures}`);
+            if(!(x.videosPerHour>0) || !(x.peakRssBytes>0)) throw new Error(`${x.name}: invalid economics metrics`);
+          }
+          if(![1,2,3,4].includes(r.decision.bestThroughputConcurrency)) throw new Error('bad best concurrency');
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+
+      - name: Run corrected live-browser RSS soak
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r30.html
+          MANIFEST: examples/book-ad-systems/generated-r30/manifest.json
+          OUT_DIR: artifacts/r30
+          RSS_REPORT: artifacts/r30/live-rss-soak.json
+          RSS_SUMMARY: artifacts/r30/live-rss-soak.md
+          BOOK_ID: river-station
+          VARIANT: hook-first
+          PROFILE: vertical
+          BITRATE: '2000000'
+          WEBCODECS_QUEUE: '8'
+          RSS_SOAK_JOBS: '24'
+        run: node .agents/skills/framewright/scripts/r30-live-rss-soak.mjs
+
+      - name: Validate live RSS soak
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r30/live-rss-soak.json','utf8'));
+          if(r.fresh.failures || r.reuse.failures) throw new Error('live RSS soak had job failures');
+          if(!r.gate.freshPass) throw new Error(`fresh-page tail RSS slope failed: ${r.fresh.rssTailSlopeBytesPerJob}`);
+          console.log(JSON.stringify(r.gate,null,2));
+          NODE
+
+      - name: Show result
+        if: always()
+        run: |
+          for f in artifacts/r30/summary.md artifacts/r30/live-rss-soak.md; do
+            test -f "$f" && { echo; cat "$f"; } || true
+          done
+          test -f artifacts/r30/report.json && node -e "const r=require('./artifacts/r30/report.json'); console.log(JSON.stringify(r.decision,null,2));" || true
+          test -f artifacts/r30/live-rss-soak.json && node -e "const r=require('./artifacts/r30/live-rss-soak.json'); console.log(JSON.stringify(r.gate,null,2));" || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r30-warm-concurrency-scout
+          path: |
+            artifacts/r30/report.json
+            artifacts/r30/summary.md
+            artifacts/r30/live-rss-soak.json
+            artifacts/r30/live-rss-soak.md
+            artifacts/r30/track.m4a
+            artifacts/r30/*-0.mp4
+            artifacts/r30/*-0.h264
+          retention-days: 14
