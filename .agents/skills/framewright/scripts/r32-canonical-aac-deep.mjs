@@ -120,7 +120,7 @@ async function ensureCanonicalAudio({ forceMiss = false } = {}) {
     const actual = await sha256File(canonicalAudio);
     if (meta.audioSpecId === audioSpecId && meta.artifactSha256 === actual) return { cacheHit: true, prepareMs: performance.now() - started, artifact: canonicalAudio, artifactSha256: actual, bytes: fs.statSync(canonicalAudio).size };
   }
-  const tmp = `${canonicalAudio}.tmp-${process.pid}`;
+  const tmp = path.join(audioCacheDir, `${audioSpecId}.tmp-${process.pid}.m4a`);
   const encodeStarted = performance.now();
   await run('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-y', '-i', audioSource, '-t', String(renderDurationSeconds), '-vn', '-c:a', 'aac', '-b:a', audioBitrate, '-movflags', '+faststart', tmp]);
   const encodeMs = performance.now() - encodeStarted;
