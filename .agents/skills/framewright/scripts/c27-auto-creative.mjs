@@ -126,8 +126,9 @@ export function extractBookEvidence({book,source_pack,include_payload_hook=true,
 
 function evidenceText(item,book){return resolveCopySource(item.source,book);}
 function angleTypeForEvidence(item){return ANGLE_PRIORITY.includes(item.kind)?item.kind:'premise';}
+function pairKey(a,b){return [a,b].sort().join('::');}
 
-function chooseTension({hookItem,allItems,book,maxSpoilerLevel}){
+function chooseTension({hookItem,allItems,book,maxSpoilerLevel,usedTensionIds=new Set(),usedPairKeys=new Set()}){
   const pool=allItems.filter(item=>
     item.id!==hookItem.id&&
     item.spoiler_level<=maxSpoilerLevel&&
@@ -139,6 +140,10 @@ function chooseTension({hookItem,allItems,book,maxSpoilerLevel}){
     ? ['premise','question','identity','emotion','world','character','thesis','conflict']
     : ['conflict','premise','question','identity','emotion','world','character','thesis'];
   return pool.slice().sort((a,b)=>{
+    const at=usedTensionIds.has(a.id)?1:0,bt=usedTensionIds.has(b.id)?1:0;
+    if(at!==bt)return at-bt;
+    const apair=usedPairKeys.has(pairKey(hookItem.id,a.id))?1:0,bpair=usedPairKeys.has(pairKey(hookItem.id,b.id))?1:0;
+    if(apair!==bpair)return apair-bpair;
     const ai=preferred.indexOf(a.kind),bi=preferred.indexOf(b.kind);
     const ap=ai<0?99:ai,bp=bi<0?99:bi;
     return ap-bp||a.spoiler_level-b.spoiler_level||a.id.localeCompare(b.id);
@@ -159,12 +164,13 @@ export function buildAutoAngles({book,evidence,max_spoiler_level=1,max_angle_typ
     groups.get(type).push(item);
   }
   const orderedTypes=[...ANGLE_PRIORITY.filter(x=>groups.has(x)),...Array.from(groups.keys()).filter(x=>!ANGLE_PRIORITY.includes(x)).sort()];
-  const angles=[];
+  const angles=[],usedPairKeys=new Set();
   for(const type of orderedTypes.slice(0,max_angle_types)){
-    const variants=[];
+    const variants=[],usedTensionIds=new Set();
     const candidates=groups.get(type).slice().sort((a,b)=>a.spoiler_level-b.spoiler_level||a.id.localeCompare(b.id));
     for(const hookItem of candidates.slice(0,max_hooks_per_angle)){
-      const tension=chooseTension({hookItem,allItems:evidence.items,book,maxSpoilerLevel:max_spoiler_level});
+      const tension=chooseTension({hookItem,allItems:evidence.items,book,maxSpoilerLevel:max_spoiler_level,usedTensionIds,usedPairKeys});
+      if(tension){usedTensionIds.add(tension.id);usedPairKeys.add(pairKey(hookItem.id,tension.id));}
       variants.push({
         id:`${type}-${hookItem.id}`,
         hook_evidence_id:hookItem.id,
