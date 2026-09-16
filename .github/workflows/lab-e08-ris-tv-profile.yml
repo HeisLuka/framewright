@@ -1,0 +1,58 @@
+name: Lab E08 RIS TV Pinned Profile
+
+on:
+  push:
+    branches:
+      - lab/e08-ris-tv-pinned-profile
+  pull_request:
+    branches:
+      - lab/e06-repro-worker
+  workflow_dispatch:
+
+jobs:
+  ris-tv-profile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build pinned worker
+        run: docker build --pull=false -f Dockerfile.worker-lab -t framewright-worker:e08 .
+
+      - name: Prepare artifacts
+        run: |
+          rm -rf artifacts/e08
+          mkdir -p artifacts/e08
+          chmod 0777 artifacts/e08
+
+      - name: Profile real RIS TV representative frames
+        run: |
+          docker run --rm \
+            -e CI=true \
+            -e HTML=examples/ris-tv/index.html \
+            -v "$PWD/artifacts/e08:/artifacts" \
+            framewright-worker:e08 \
+            node .agents/skills/framewright/scripts/profile-ris-tv-samples.mjs /artifacts/ris-tv-profile.json 1920 7 \
+            | tee artifacts/e08/ris-tv-profile.log
+
+      - name: Summarize
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const r=JSON.parse(fs.readFileSync('artifacts/e08/ris-tv-profile.json','utf8'));
+          let md=`# E08 sampled RIS TV profile\n\n`;
+          md+=`Pinned worker; ${r.config.width}px output width; ${r.config.totalFrames} frames / ${r.config.durationSeconds.toFixed(1)} s.\n\n`;
+          md+=`Cold first frame: browser ${(r.cold.browserTotalMs/1000).toFixed(3)} s, CRT ${(r.cold.crtMs/1000).toFixed(3)} s, PNG ${(r.cold.pngEncodeMs/1000).toFixed(3)} s.\n\n`;
+          md+=`Warm representative samples: render mean ${r.summary.renderMs.mean.toFixed(1)} ms/frame (p95 ${r.summary.renderMs.p95.toFixed(1)}), scene ${r.summary.sceneMs.mean.toFixed(1)} ms, CRT ${r.summary.crtMs.mean.toFixed(1)} ms. Weighted full-video compute estimate: ${(r.summary.estimatedFullComputeMs/1000).toFixed(1)} s, ${r.summary.estimatedComputeFps.toFixed(2)} compute fps, excluding PNG transport/encode.\n\n`;
+          md+=`| plate | frames | render mean ms | scene mean ms | CRT mean ms | weighted compute s |\n|---|---:|---:|---:|---:|---:|\n`;
+          for(const p of r.byPlate)md+=`| ${p.name} | ${p.len} | ${p.renderMs.mean.toFixed(1)} | ${p.sceneMs.mean.toFixed(1)} | ${p.crtMs.mean.toFixed(1)} | ${(p.estimatedPlateComputeMs/1000).toFixed(2)} |\n`;
+          fs.writeFileSync('artifacts/e08/summary.md',md);console.log(md);
+          NODE
+
+      - name: Upload E08 artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: e08-ris-tv-profile
+          path: artifacts/e08/
+          if-no-files-found: error
+          retention-days: 14
