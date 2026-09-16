@@ -1,0 +1,24 @@
+FROM node:20.20.2-bookworm-slim@sha256:2cf067cfed83d5ea958367df9f966191a942351a2df77d6f0193e162b5febfc0
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    TZ=UTC \
+    FRAMEWRIGHT_NODE_CANVAS_VERSION=1.0.9
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    ffmpeg \
+    fontconfig \
+    fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/* \
+    && fc-cache -f
+
+WORKDIR /app
+COPY package.node-canvas-worker.json ./package.json
+RUN npm install --omit=dev --no-audit --no-fund \
+    && node -e "const p=require('./node_modules/@napi-rs/canvas/package.json'); if(p.version!==process.env.FRAMEWRIGHT_NODE_CANVAS_VERSION) throw new Error('canvas version '+p.version); console.log('@napi-rs/canvas',p.version)"
+
+COPY . .
+
+CMD ["node", ".agents/skills/framewright/scripts/node-canvas-batch.mjs"]
