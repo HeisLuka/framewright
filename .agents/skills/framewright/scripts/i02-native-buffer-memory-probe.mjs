@@ -74,7 +74,8 @@ for (let frame = 0; frame < total; frame += 1) {
   } else if (mode === 'image-data-frame') {
     const rgba = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
     touchedBytes += rgba.byteLength;
-    const vf = new VideoFrame(rgba, {format:'RGBA', codedWidth:canvas.width, codedHeight:canvas.height, timestamp:Math.trunc(frame * 1_000_000 / fps), duration:Math.trunc(1_000_000 / fps)});
+    const bytes = new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength);
+    const vf = new VideoFrame(bytes, {format:'RGBA', codedWidth:canvas.width, codedHeight:canvas.height, timestamp:Math.trunc(frame * 1_000_000 / fps), duration:Math.trunc(1_000_000 / fps)});
     vf.close();
   }
   if (frame % 30 === 29 || frame === total - 1) {
