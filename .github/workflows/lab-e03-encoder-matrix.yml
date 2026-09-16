@@ -1,0 +1,66 @@
+name: Lab E03 Encoder Matrix
+
+on:
+  push:
+    branches:
+      - lab/e03-encoder-matrix
+  workflow_dispatch:
+
+jobs:
+  encoder-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+
+      - name: Syntax checks
+        run: |
+          node --check .agents/skills/framewright/scripts/render.mjs
+          node --check .agents/skills/framewright/scripts/look.mjs
+          node --check .agents/skills/framewright/scripts/encoder-matrix.mjs
+
+      - name: Render canonical book-ad frames once
+        env:
+          HTML: examples/book-ad-v0/index.html
+          PAYLOAD: examples/book-ad-v0/payload.example.json
+        run: |
+          rm -rf frames-e03 artifacts/e03
+          mkdir -p artifacts/e03
+          node .agents/skills/framewright/scripts/render.mjs frames-e03 7 1080 5
+
+      - name: Run x264 preset and CRF matrix
+        env:
+          PRESETS: veryfast,fast,medium,slow
+          CRFS: 18,22,26
+          MAXRATE: 14M
+          BUFSIZE: 28M
+        run: |
+          node .agents/skills/framewright/scripts/encoder-matrix.mjs frames-e03 artifacts/e03 30
+          cat artifacts/e03/matrix.md
+
+      - name: Preserve one visual sample per preset at CRF 22
+        run: |
+          for preset in veryfast fast medium slow; do
+            ffmpeg -hide_banner -loglevel error -y -ss 6 -i "artifacts/e03/x264-${preset}-crf22.mp4" -frames:v 1 "artifacts/e03/sample-${preset}-crf22.png"
+          done
+
+      - name: Upload lab artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: e03-encoder-matrix
+          path: artifacts/e03/
+          if-no-files-found: error
+          retention-days: 14
