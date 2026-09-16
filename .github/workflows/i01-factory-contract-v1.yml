@@ -1,0 +1,26 @@
+name: I01 Factory Contract v1
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/video-factory-v1.schema.json'
+      - 'contracts/factory-identity-v1.mjs'
+      - 'contracts/check-example-v1.mjs'
+      - 'contracts/examples/video-factory-v1.example.json'
+      - 'docs/video-factory-contract-v1.md'
+      - '.github/workflows/i01-factory-contract-v1.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Parse schema and verify canonical identities
+        run: node contracts/check-example-v1.mjs
+      - name: Syntax check identity helper
+        run: node --check contracts/factory-identity-v1.mjs
