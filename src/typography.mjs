@@ -150,6 +150,7 @@ export const buildGlyphHomes = (compiled, {
   context.font = compiled.font;
   const segmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
   const glyphs = [];
+  const letterSpacing = Number(compiled.letterSpacing || 0);
 
   for (let lineIndex = 0; lineIndex < compiled.lines.length; lineIndex += 1) {
     const line = compiled.lines[lineIndex];
@@ -162,22 +163,25 @@ export const buildGlyphHomes = (compiled, {
     );
     const top = Number(line.y ?? line.top ?? lineIndex * compiled.lineHeight) + originY;
     let prefix = "";
-    let previousWidth = 0;
+    let previousMeasured = 0;
+    let graphemeIndex = 0;
     for (const part of segmenter.segment(lineText)) {
       if (glyphs.length >= maxGlyphs) return Object.freeze(glyphs);
       prefix += part.segment;
-      const currentWidth = context.measureText(prefix).width;
-      const advance = Math.max(0, currentWidth - previousWidth + Number(compiled.letterSpacing || 0));
+      const currentMeasured = context.measureText(prefix).width;
+      const advance = Math.max(0, currentMeasured - previousMeasured);
+      const startX = previousMeasured + graphemeIndex * letterSpacing;
       glyphs.push(Object.freeze({
         text: part.segment,
-        x: baseX + previousWidth + advance / 2,
+        x: baseX + startX + advance / 2,
         y: top + compiled.lineHeight * baselineRatio,
         advance,
         lineIndex,
         index: glyphs.length,
         font: compiled.font,
       }));
-      previousWidth = currentWidth + Number(compiled.letterSpacing || 0);
+      previousMeasured = currentMeasured;
+      graphemeIndex += 1;
     }
   }
   return Object.freeze(glyphs);
