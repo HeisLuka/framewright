@@ -12,7 +12,7 @@ This branch is the persistent integration point for the Framewright research wor
 
 ## Canonical chain
 
-The useful canonical research path is now E01-E11:
+The useful canonical research path is now E01-E12:
 
 1. E01 stage profiler.
 2. E02 payload-driven Book Ad v0 workload.
@@ -25,6 +25,7 @@ The useful canonical research path is now E01-E11:
 9. E09 pinned browserless worker + 100-video soak + cost/provider tooling.
 10. E10 4-vCPU concurrency matrix.
 11. E11 three production-oriented visual systems across ten stress books.
+12. E12 cheap element-level motion grammar and pacing.
 
 The old stacked PRs for completed stages are archival and do not need to remain open.
 
@@ -36,19 +37,20 @@ The old stacked PRs for completed stages are archival and do not need to remain 
 - Visual cost classes: medium/riso and heavy JS full-frame styles were ~3x slower than cheap editorial in the archived Chromium/WebCodecs matrix; real RIS TV spends ~95% of warm render time in `crt()` and is ~3.57 compute fps. Result: `LAB-VISUAL-COST-CLASSES.md`.
 - E10: on a 4-CPU / 4 GiB constrained worker, c1=`642.50/h`, c2=`744.64/h`, c4=`771.15/h`. c4 is only `1.20x` c1 and has 30% parallel efficiency. Peak full process-tree RSS at c4 is `2626.8 MiB`. Result: `LAB-E10-CONCURRENCY-RESULTS.md`.
 - E11: all 30 videos (3 systems x 10 books) passed layout QA. Swiss=`629.48/h`, Newspaper=`741.87/h`, Paper=`627.12/h`; the visual systems are materially different while remaining in the same cheap browserless cost class. Result: `LAB-E11-VISUAL-SYSTEMS-RESULTS.md`.
+- E12: 60 interleaved baseline/active videos proved that cheap element-level motion barely changes render cost. Active throughput ratios were Swiss=`0.992x`, Newspaper=`0.977x`, Paper=`0.988x`; hold-window activity increased `12.03x`, `1.843x`, `2.975x` respectively, with zero layout warnings. Result: `LAB-E12-MOTION-GRAMMAR-RESULTS.md`.
 
 ## Current experiment
 
-PR #20 / E11 (`lab/e11-visual-systems`) is being consolidated into `lab/framewright-research` after canonical run `35107793565`.
+PR #21 / E12 (`lab/e12-motion-grammar`) is complete after canonical run `35110611620` and is ready to consolidate into `lab/framewright-research`.
 
-Product conclusion from E11:
+Product conclusion from E12:
 
-- Swiss, Newspaper and Paper are real composition/motion systems, not palette skins;
-- strong visual differentiation is cheap when built from vector/Canvas primitives rather than full-frame post-processing;
-- Newspaper was actually faster/smaller than Swiss in this workload;
-- the next visible weakness is motion density: strong entrances followed by long holds make the current outputs read as kinetic posters.
+- motion density can be increased materially using only cheap element-level transforms/reveals;
+- CPU cost is effectively unchanged; the main tax is modest MP4 size growth;
+- Swiss, Newspaper and Paper can each carry their own motion language without full-frame pixel effects;
+- renderer optimization is no longer the useful next question for STANDARD ads.
 
-After E11 merge, the next experiment should target cheap element-level motion grammar and pacing rather than renderer micro-optimization.
+After E12 merge, the next experiment should move to deterministic creative routing and useful variant generation: which visual system and motion grammar fits which book/category/hook, and how many genuinely different candidates can be produced per book without AI in the render path.
 
 ## Current architectural direction
 
@@ -60,4 +62,4 @@ Use separate visual cost tiers:
 - RICH: materialized-frame cost must be benchmarked; avoid assuming scene-function timing captures deferred raster work;
 - HERO/CRT: optimize full-frame post with GPU/native/shader techniques only if ad-performance lift justifies the cost.
 
-The product focus is now higher-level creative systems: visual grammar, motion grammar, pacing, category fit, QA and variation. A full Rust/C++ rewrite is not a current default direction. Native/GPU work should target measured heavy post-processing bottlenecks, not the scene DSL.
+The product focus is now higher-level creative systems: visual grammar, motion grammar, pacing, category fit, QA, routing and variation. A full Rust/C++ rewrite is not a current default direction. Native/GPU work should target measured heavy post-processing bottlenecks, not the scene DSL.

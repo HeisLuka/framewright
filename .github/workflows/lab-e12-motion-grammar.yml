@@ -1,0 +1,82 @@
+name: Lab E12 Motion Grammar
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - '.agents/skills/framewright/scripts/prepare-e12-motion-template.mjs'
+      - '.agents/skills/framewright/scripts/make-e12-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/e12-summarize.mjs'
+      - '.agents/skills/framewright/scripts/e12-motion-activity.mjs'
+      - '.agents/skills/framewright/scripts/e12-motion-sheets.mjs'
+      - '.github/workflows/lab-e12-motion-grammar.yml'
+      - 'examples/book-ad-systems/**'
+  workflow_dispatch:
+
+jobs:
+  motion-grammar:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs
+          node --check .agents/skills/framewright/scripts/make-e12-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/e12-summarize.mjs
+          node --check .agents/skills/framewright/scripts/e12-motion-activity.mjs
+          node --check .agents/skills/framewright/scripts/e12-motion-sheets.mjs
+
+      - name: Build pinned browserless worker
+        run: docker build -f Dockerfile.node-canvas-worker -t framewright-node-canvas:e12 .
+
+      - name: Render baseline and active motion matrix
+        run: |
+          mkdir -p artifacts/e12
+          docker run --rm \
+            --cpus=4 \
+            --memory=4g \
+            -v "$PWD/artifacts:/app/artifacts" \
+            framewright-node-canvas:e12 sh -lc '
+              node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12.html &&
+              node .agents/skills/framewright/scripts/make-e12-fixtures.mjs examples/book-ad-systems/generated-e12 &&
+              HTML=examples/book-ad-systems/index-e12.html \
+              MANIFEST=examples/book-ad-systems/generated-e12/manifest.json \
+              OUT_DIR=artifacts/e12/videos \
+              REPORT=artifacts/e12/batch.json \
+              WIDTH=1080 PRESET=veryfast CRF=22 \
+              node .agents/skills/framewright/scripts/node-canvas-batch.mjs &&
+              node .agents/skills/framewright/scripts/e12-summarize.mjs artifacts/e12/batch.json artifacts/e12/motion-summary.json artifacts/e12/summary.md &&
+              node .agents/skills/framewright/scripts/e12-motion-activity.mjs artifacts/e12/batch.json artifacts/e12/motion-activity.json &&
+              node .agents/skills/framewright/scripts/e12-motion-sheets.mjs artifacts/e12/batch.json artifacts/e12/review
+            '
+
+      - name: Validate motion experiment
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const s=JSON.parse(fs.readFileSync('artifacts/e12/motion-summary.json','utf8'));
+          const a=JSON.parse(fs.readFileSync('artifacts/e12/motion-activity.json','utf8'));
+          if(s.totalVideos!==60) throw new Error(`expected 60 videos, got ${s.totalVideos}`);
+          if(s.layoutWarningGroups!==0) throw new Error(`layout warnings: ${s.layoutWarningGroups}`);
+          for(const style of ['swiss','newspaper','paper']){
+            const g=s.styles[style],m=a.styles[style];
+            if(g.baseline.count!==10||g.active.count!==10) throw new Error(`${style}: incomplete mode matrix`);
+            if(g.active.videosPerHour<450) throw new Error(`${style}: active throughput too low ${g.active.videosPerHour}/h`);
+            if(g.comparison.throughputRatio<0.80) throw new Error(`${style}: >20% throughput loss ${g.comparison.throughputRatio}`);
+            if(g.comparison.outputSizeRatio>1.60) throw new Error(`${style}: >60% MP4 growth ${g.comparison.outputSizeRatio}`);
+            if(!(m.activeVsBaseline>1.05)) throw new Error(`${style}: hold motion did not materially increase ${m.activeVsBaseline}`);
+            const p=`artifacts/e12/review/${style}-compare.png`;
+            if(!fs.existsSync(p)||fs.statSync(p).size<20000) throw new Error(`missing motion review sheet ${p}`);
+          }
+          console.log(JSON.stringify({cost:s.styles,activity:a.styles},null,2));
+          NODE
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e12-motion-grammar
+          path: artifacts/e12/
+          retention-days: 14
