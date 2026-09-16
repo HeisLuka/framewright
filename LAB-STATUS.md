@@ -12,7 +12,7 @@ This branch is the persistent integration point for the Framewright research wor
 
 ## Canonical chain preserved in this branch
 
-The branch contains the useful E01-E08 research path:
+The useful canonical research path is now E01-E10:
 
 1. E01 stage profiler.
 2. E02 payload-driven Book Ad v0 workload.
@@ -22,39 +22,42 @@ The branch contains the useful E01-E08 research path:
 6. E06 reproducible worker image and golden-frame checks.
 7. E07 Node Canvas pinned-font parity.
 8. E08 Node Canvas batch production probe with raster covers and strengthened text-layout QA.
+9. E09 pinned browserless worker + 100-video soak + cost/provider tooling.
+10. E10 4-vCPU concurrency matrix.
 
 The old stacked PRs for completed stages are archival and do not need to remain open.
 
-## Parallel / archived experiments
+## Key completed results
 
-- PR #7: R1 x264 replication control — archival.
-- PR #8: T1 compressed intermediate image transport — archival; changing PNG to JPEG/WebP did not solve the transport problem.
-- PR #9: T2 raw RGBA request-per-frame control — archival; exact visual parity but unusably slow HTTP-per-frame transport.
-- PR #10: T3 persistent raw stream control — archival; browser streaming upload control was not viable in this setup.
-- PR #11: style-class throughput matrix — experimental branch retained for results/reference.
-- PR #12: real RIS TV pinned-worker profile — experimental branch retained for results/reference.
-- PR #13: plate-aware Book Ad QA gate — experimental branch retained for follow-up.
-- PR #14: Node Canvas renderer probe — archival. It showed ~2.6x end-to-end speedup and no temporary PNGs, but initially had a large visual parity gap dominated by text/font rendering.
-- PR #15: pinned-font parity — completed. Pinning DejaVu Sans raised decoded parity from SSIM 0.961873 to 0.994484 and PSNR from 21.25 dB to 32.56 dB while keeping Node Canvas ~2.31x faster end-to-end. Full result: `LAB-E07-NODE-CANVAS-FONT-PARITY.md`.
-- PR #17: Node Canvas batch production probe — completed. Canonical run `35091919070`: 10 x 12 s 1080x1920 videos in 56.084 s on 4 vCPU AMD EPYC 7763, 641.9 videos/hour sequential, p95 5.715 s/video, peak Node+FFmpeg RSS 711 MiB, zero final layout warnings, Chromium sanity parity SSIM 0.997234 / PSNR 38.89 dB. Full result: `LAB-E08-NODE-CANVAS-BATCH.md`.
+- E07: pinned DejaVu Sans raised Node Canvas vs Chromium parity to SSIM `0.994484` / PSNR `32.56 dB` while Node Canvas remained ~2.31x faster end-to-end. Result: `LAB-E07-NODE-CANVAS-FONT-PARITY.md`.
+- E08: canonical 10-video browserless batch at `641.9 videos/hour` sequential; p95 `5.715 s`, peak Node+FFmpeg RSS `711 MiB`, Chromium sanity parity SSIM `0.997234`. Result: `LAB-E08-NODE-CANVAS-BATCH.md`.
+- E09: pinned worker (`@napi-rs/canvas 1.0.9`, Node 20.20.2, FFmpeg, DejaVu; no Chromium/Puppeteer hot dependency) ran 100 videos at `651.74 videos/hour`, p50 `5.320 s`, p95 `7.004 s`, peak RSS `726.3 MiB`, and no practical monotonic memory-growth signal. Results: `LAB-E09-SOAK-RESULTS.md`, `LAB-E09-COST-SNAPSHOT.md`, `LAB-E09-PROVIDER-TARGETS.md`.
+- Visual cost classes: medium/riso and heavy JS full-frame styles were ~3x slower than cheap editorial in the archived Chromium/WebCodecs matrix; real RIS TV spends ~95% of warm render time in `crt()` and is ~3.57 compute fps. Result: `LAB-VISUAL-COST-CLASSES.md`.
+- E10: on a 4-CPU / 4 GiB constrained worker, c1=`642.50/h`, c2=`744.64/h`, c4=`771.15/h`. c4 is only `1.20x` c1 and has 30% parallel efficiency, showing the workload is already CPU-saturating. Peak full process-tree RSS at c4 is `2626.8 MiB`. Result: `LAB-E10-CONCURRENCY-RESULTS.md`.
 
 ## Current experiment
 
-PR #18 / E09 (`lab/e09-cost-soak`) is the only active experiment. It turns the E08 browserless path into a reproducible production-worker candidate and starts cost validation:
+PR #19 / E10 (`lab/e10-concurrency`) is the only active experiment while the result is being consolidated into `lab/framewright-research`.
 
-- Node 20.20.2 base pinned by digest;
-- `@napi-rs/canvas` pinned to 1.0.9;
-- browserless worker image with FFmpeg + DejaVu only (no Chromium/Puppeteer dependency in the hot worker image);
-- 100-video long-lived soak with memory-drift metrics;
-- portable provider benchmark runner + measured-throughput cost calculator;
-- dated provider-price envelope and target matrix (shared x86, dedicated x86, Spot and ARM candidate).
+Decision from the canonical run `35094835897`:
 
-Current CI run for the canonical 100-video soak: `35092934500`. Provider price tables remain estimates until this exact pinned image is run on the actual priced VM.
+- batch throughput mode: c4 (`771.15 videos/hour`);
+- balanced mode: c2 (`744.64 videos/hour`, ~96.6% of c4 throughput with much lower latency/RAM);
+- reference/latency mode: c1;
+- do not tune concurrency above 4 on GitHub Actions; the next uncertainty is real provider CPU performance.
+
+After E10 merge, the next step is provider benchmarking with the existing portable E09 runner on actual priced shared and dedicated compute. Cost tables remain normalized estimates until that happens.
 
 ## Current architectural direction
 
-Preserve the JS/TS scene/template layer. For cheap/editorial book ads, `@napi-rs/canvas` is now the leading production-renderer candidate: it removes Chromium and temporary frame files from the hot path while preserving the current scene logic. Production determinism should come from one pinned renderer + pinned fonts/assets + golden-frame regression tests, not from requiring two different renderers to be pixel-identical.
+Preserve the JS/TS scene/template layer. For cheap/editorial book ads, `@napi-rs/canvas` is the leading production-renderer candidate: it removes Chromium and temporary frame files from the hot path while preserving the current scene logic. Production determinism should come from one pinned renderer + pinned fonts/assets + golden-frame regression tests.
 
-The E08 stress batch also exposed and fixed a text-fit contract bug for unbreakable wide words. That width-safe fitting rule should be promoted into the shared scene/text runtime rather than remain an experiment-only transform.
+Use separate visual cost tiers:
 
-A full Rust/C++ rewrite is not a current default direction. Native/GPU work should be reserved for measured bottlenecks such as expensive full-frame post-processing.
+- STANDARD/FAST: browserless Node Canvas mass-production path;
+- RICH: benchmark materialized frame cost, because Canvas can defer rasterization;
+- HERO/CRT: optimize full-frame post with GPU/native/shader techniques only if ad-performance lift justifies the cost.
+
+The E08 stress batch exposed a text-fit contract bug for unbreakable wide words. The width-safe fitting rule should be promoted into the shared scene/text runtime rather than remain an experiment-only transform.
+
+A full Rust/C++ rewrite is not a current default direction. Native/GPU work should target measured heavy post-processing bottlenecks, not the scene DSL.
