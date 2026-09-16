@@ -26,11 +26,29 @@ Sample stable moments after entrances and score:
 
 The first scout compares x264 CRF22 against Chromium WebCodecs fixed 2/3/4/5 Mbps. Each WebCodecs policy only passes when every semantic ROI reaches or exceeds the corresponding x264 ROI SSIM against the lossless Canvas reference.
 
-## Escalation rule
+## Canonical result
 
-- If a fixed bitrate clears every ROI, choose the smallest passing bitrate and do not add quantizer complexity yet.
-- If no fixed bitrate clears the ROI target, quantizer/content-adaptive policy earns a bounded follow-up.
-- Scene-boundary keyframes are not reopened here: I02 already found they were not a major global-quality lever.
+GitHub Actions run `35141867150`, artifact `10465487001`, Ubuntu 24.04 / Node 20.20.2 / FFmpeg 6.1.1.
+
+| policy | encoded bytes | encode wall | ROI SSIM mean | ROI SSIM worst | every semantic ROI >= x264 |
+|---|---:|---:|---:|---:|---|
+| x264 CRF22 | 0.56 MiB | 8.25 s | 0.980595 | 0.948084 | reference |
+| WebCodecs 2 Mbps | 1.20 MiB | 2.38 s | 0.985802 | 0.958287 | **FAIL** |
+| WebCodecs 3 Mbps | 1.42 MiB | 2.34 s | 0.986204 | 0.961759 | **PASS** |
+| WebCodecs 4 Mbps | 1.65 MiB | 2.14 s | 0.986303 | 0.957067 | **PASS** |
+| WebCodecs 5 Mbps | 1.87 MiB | 2.16 s | 0.987118 | 0.962740 | **PASS** |
+
+The important result is not the global average: 2 Mbps looks strong in aggregate but loses to the x264 reference in at least one semantic ROI. The smallest fixed-bitrate policy that clears every measured hook/title/CTA/cover region is **3 Mbps**.
+
+At that passing point WebCodecs is about 3.5× faster in encode wall than the x264 reference in this controlled run, but produces about 2.54× as many video bytes. This is a quality/throughput policy result, not yet a provider cost verdict; storage/egress economics still need the final machine-economics pass.
+
+## Decision
+
+- Use **3 Mbps at 1080×1920** as the current lowest validated fixed-bitrate WebCodecs policy for this canonical typography-heavy fixture.
+- Do not accept 2 Mbps as the production default from full-frame SSIM alone.
+- Quantizer/content-adaptive QP does **not** earn a deep pass yet because a simple fixed-bitrate policy already clears the semantic quality gate.
+- Scene-boundary keyframes remain closed by I02 evidence.
+- Revalidate the bitrate ladder across additional visual systems/profiles before treating 3 Mbps as universal; this run proves the gate and one canonical point, not every creative.
 
 ## Metrics
 
