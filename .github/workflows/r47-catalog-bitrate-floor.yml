@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.agents/skills/framewright/scripts/r47-catalog-bitrate-floor.mjs'
+      - '.agents/skills/framewright/scripts/make-r47-catalog-bitrate-fixtures.mjs'
       - '.github/workflows/r47-catalog-bitrate-floor.yml'
       - 'docs/r47-catalog-bitrate-floor.md'
       - 'docs/r46-adaptive-bitrate-oracle.md'
@@ -24,14 +25,16 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg fonts-dejavu-core
       - name: Syntax check
-        run: node --check .agents/skills/framewright/scripts/r47-catalog-bitrate-floor.mjs
+        run: |
+          node --check .agents/skills/framewright/scripts/r47-catalog-bitrate-floor.mjs
+          node --check .agents/skills/framewright/scripts/make-r47-catalog-bitrate-fixtures.mjs
       - name: Prepare responsive fixtures
         run: |
           node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r47.html
           node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r47.html examples/book-ad-systems/index-e17-for-r47.html
           node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r47.html examples/book-ad-systems/index-e17-e14-for-r47.html
           node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r47.html examples/book-ad-systems/index-e18-for-r47.html
-          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r47
+          node .agents/skills/framewright/scripts/make-r47-catalog-bitrate-fixtures.mjs examples/book-ad-systems/generated-r47
       - name: Run catalog semantic-ROI bitrate floor scout
         env:
           HTML: examples/book-ad-systems/index-e18-for-r47.html
