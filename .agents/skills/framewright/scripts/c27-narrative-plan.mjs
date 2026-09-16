@@ -21,11 +21,23 @@ export function splitSentences(text){
   return String(text||'').match(/[^.!?]+[.!?]+|[^.!?]+$/g)?.map(x=>x.trim()).filter(Boolean)||[];
 }
 
+function assertContextAtomSource(source){
+  if(typeof source.text!=='string'||!source.text.trim())throw new Error('context_atom source requires text');
+  if(typeof source.context_pack_id!=='string'||!source.context_pack_id.trim())throw new Error('context_atom source requires context_pack_id');
+  if(typeof source.context_hash!=='string'||!/^[a-f0-9]{64}$/.test(source.context_hash))throw new Error('context_atom source requires lowercase context_hash sha256');
+  if(typeof source.atom_id!=='string'||!source.atom_id.trim())throw new Error('context_atom source requires atom_id');
+  if(!Array.isArray(source.source_fact_ids)||!source.source_fact_ids.length||source.source_fact_ids.some(x=>typeof x!=='string'||!x.trim()))throw new Error('context_atom source requires non-empty source_fact_ids');
+}
+
 export function resolveCopySource(source,book){
   if(!source||typeof source!=='object')throw new Error('copy source must be an object');
   if(source.kind==='human_verified'){
     if(typeof source.text!=='string'||!source.text.trim())throw new Error('human_verified source requires text');
     if(typeof source.verification_id!=='string'||!source.verification_id.trim())throw new Error('human_verified source requires verification_id');
+    return source.text;
+  }
+  if(source.kind==='context_atom'){
+    assertContextAtomSource(source);
     return source.text;
   }
   if(source.kind!=='book_payload_field')throw new Error(`unsupported copy source kind: ${source.kind}`);
@@ -135,7 +147,7 @@ export function planNarrative(input){
   if(!Number.isInteger(fps)||fps<=0)throw new Error('fps must be a positive integer');
   if(!C27_REVEAL_TIMINGS.includes(revealTiming))throw new Error(`unsupported reveal_timing: ${revealTiming}`);
   if(!C27_CTA_TREATMENTS.includes(ctaTreatment))throw new Error(`unsupported cta_treatment: ${ctaTreatment}`);
-  if(durationSeconds>=7&&!angle.tension)throw new Error('7s+ full grammar requires a verified tension copy source');
+  if(durationSeconds>=7&&!angle.tension)throw new Error('7s+ full grammar requires a trusted tension copy source');
   if(durationSeconds===3&&ctaTreatment!=='none')throw new Error('3s teaser forces cta_treatment=none');
   if(durationSeconds===5&&!['none','soft_reveal'].includes(ctaTreatment))throw new Error('5s profile supports only none/soft_reveal CTA treatment');
 
@@ -172,8 +184,9 @@ export function assertNarrativePlan(plan){
     for(const atom of r.atoms){
       if(!atom?.source)throw new Error(`copy provenance missing for role ${r.role}`);
       if(atom.source.kind==='human_verified'&&!atom.source.verification_id)throw new Error('human_verified atom missing verification_id');
+      if(atom.source.kind==='context_atom')assertContextAtomSource(atom.source);
       if(atom.source.kind==='book_payload_field'&&!atom.source.field)throw new Error('book_payload_field atom missing field');
-      if(!['human_verified','book_payload_field','reserved_affordance'].includes(atom.source.kind))throw new Error(`untrusted source kind ${atom.source.kind}`);
+      if(!['human_verified','context_atom','book_payload_field','reserved_affordance'].includes(atom.source.kind))throw new Error(`untrusted source kind ${atom.source.kind}`);
     }
     cursor=r.end_frame;
   }
