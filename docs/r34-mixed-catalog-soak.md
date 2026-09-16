@@ -17,10 +17,10 @@ Cycle all existing C18 fixtures rather than one repeated creative:
 - 180 full jobs = five catalog cycles;
 - persistent Chromium, two page workers;
 - full document navigation per job;
-- WebCodecs H.264 at 3 Mbps for this stability pass;
+- WebCodecs H.264 with a 3 Mbps target for this stability pass;
 - one canonical pre-encoded 12s AAC artifact, stream-copy mux per job.
 
-The fixed 3 Mbps rate is intentionally held constant across profiles so this pass measures lifecycle stability rather than introducing a second adaptive bitrate variable. R31 only proves the 3 Mbps semantic-ROI quality gate for one canonical 1080x1920 fixture, so this soak must not be cited as universal bitrate validation.
+The fixed **target** of 3 Mbps is intentionally held constant across profiles so this pass measures lifecycle stability rather than introducing a second adaptive bitrate variable. `bitrateMode` is not overridden, so WebCodecs uses its standard variable-mode default; this is not a CBR claim. R31 only proves the 3 Mbps semantic-ROI quality gate for one canonical 1080x1920 fixture, so this soak must not be cited as universal bitrate validation.
 
 For the canonical R34 run, the first **36 jobs** are warmup and every stable measurement window is **36 jobs**. One window therefore corresponds to one complete catalog cycle. This avoids comparing windows with materially different vertical/square/landscape or structural-variant mixes and mistaking workload composition for latency or memory drift.
 
@@ -36,10 +36,13 @@ Measure:
 - p50/p95 production-equivalent job wall by catalog-balanced sequential windows;
 - navigation/reset wall;
 - cgroup CPU per successful video;
-- cgroup memory and recursive process-tree RSS level/slope;
+- cgroup `memory.current` as an advisory whole-cgroup signal;
+- recursive process-tree RSS level/slope as the canonical bounded memory-drift gate;
 - sampled peak memory;
 - state/artifact failures and runtime/browser/encoder failures;
 - QA fingerprint overhead separately from production-equivalent job wall.
+
+`memory.current` is deliberately **not** allowed to trigger recycle by itself: cgroup v2 includes reclaimable file/page cache, and this workload continuously creates and deletes temporary H.264/MP4 files. Treating that signal as anonymous process memory would create a false leak detector. A future freeze soak may split `memory.stat` anon/file or use PSS for a stronger memory model.
 
 ## Predeclared observe-only recycle gates
 
@@ -47,9 +50,9 @@ R34 does **not** recycle during the run. A state-based recycle implementation on
 
 1. **failure:** >1% job failures, any browser/page/encoder-class failure, or any state/artifact corruption;
 2. **latency drift:** last stable window p95 >=25% above first stable window and p50 >=10% above;
-3. **memory drift:** first-to-last stable median grows >=25% with a positive slope >=0.5 MiB/job in either cgroup memory or recursive process-tree RSS.
+3. **memory drift:** first-to-last stable recursive process-tree RSS median grows >=25% with a positive slope >=0.5 MiB/job.
 
-Separately, full-navigation reset is only reopened if navigation reaches >=10% of p50 production-equivalent wall. R33 measured about a 1.4% residual ceiling, so this should remain closed unless heterogeneous duration/profile churn changes the result.
+Separately, full-navigation reset is only reopened if navigation reaches >=10% of p50 production-equivalent wall. R33 measured about a 1.4% residual ceiling, so this should remain closed unless heterogeneous profile churn changes the result.
 
 ## Decision rule
 
