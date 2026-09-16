@@ -2,22 +2,22 @@
 
 Pricing snapshot date: **2026-09-16**.
 
-This file is deliberately a **normalized cost envelope**, not a provider benchmark. It applies the canonical E08 throughput (`641.9 videos/hour`) to current published hourly VM prices. A VM with the same vCPU count may be materially faster or slower than the GitHub-hosted E08 runner, so these numbers must be replaced by measured provider throughput before making a production purchasing decision.
+This file is deliberately a **normalized cost envelope**, not a provider benchmark. It applies the pinned E09 100-video soak throughput (`651.74 videos/hour`) to current published hourly VM prices. A VM with the same vCPU count may be materially faster or slower than the GitHub-hosted runner, so these numbers must be replaced by measured provider throughput before making a production purchasing decision.
 
-Canonical E08 workload: 1080x1920, 30 fps, 12 s / 360 frames, pinned fonts + raster cover, `@napi-rs/canvas -> raw RGBA -> libx264 veryfast/CRF22`, sequential videos.
+Canonical E09 workload: 1080x1920, 30 fps, 12 s / 360 frames, pinned fonts + raster cover, `@napi-rs/canvas 1.0.9 -> raw RGBA -> libx264 veryfast/CRF22`, sequential videos. Canonical soak: 100 videos / 552.369 s, p50 5.320 s, p95 7.004 s, peak Node+FFmpeg RSS 726.3 MiB, no practical memory-drift signal.
 
 ## Current published price points
 
-| Provider / plan | CPU class | Published USD/hour | Cost / 1k if 641.9 videos/h | Cost / 100k if 641.9 videos/h |
+| Provider / plan | CPU class | Published USD/hour | Cost / 1k if 651.74 videos/h | Cost / 100k if 651.74 videos/h |
 |---|---|---:|---:|---:|
-| Hetzner CPX32 EU | shared, 4 vCPU / 8 GB | $0.0673 | $0.105 | $10.48 |
-| DigitalOcean Basic | shared, 4 vCPU / 8 GB | $0.07143 | $0.111 | $11.13 |
-| Google Cloud C4D standard-4 Spot | spot, 4 vCPU / 15 GB | $0.079774236 | $0.124 | $12.43 |
-| DigitalOcean CPU-Optimized | dedicated, 4 vCPU / 8 GB | $0.125 | $0.195 | $19.47 |
-| Hetzner CCX23 EU | dedicated CPU plan | $0.1626 | $0.253 | $25.33 |
-| Google Cloud C4D standard-4 on-demand | 4 vCPU / 15 GB | $0.187114224 | $0.292 | $29.15 |
+| Hetzner CPX32 EU | shared, 4 vCPU / 8 GB | $0.0673 | $0.103 | $10.33 |
+| DigitalOcean Basic | shared, 4 vCPU / 8 GB | $0.07143 | $0.110 | $10.96 |
+| Google Cloud C4D standard-4 Spot | spot, 4 vCPU / 15 GB | $0.079774236 | $0.122 | $12.24 |
+| DigitalOcean CPU-Optimized | dedicated, 4 vCPU / 8 GB | $0.125 | $0.192 | $19.18 |
+| Hetzner CCX23 EU | dedicated CPU plan | $0.1626 | $0.249 | $24.95 |
+| Google Cloud C4D standard-4 on-demand | 4 vCPU / 15 GB | $0.187114224 | $0.287 | $28.71 |
 
-At E08 throughput, 100,000 videos require about `155.79 VM-hours` on one sequential 4-vCPU worker.
+At the pinned E09 soak throughput, 100,000 videos require about `153.44 VM-hours` on one sequential 4-vCPU worker.
 
 Formula:
 
@@ -52,4 +52,4 @@ For each provider record: exact CPU model, vCPU/RAM, image digest, `@napi-rs/can
 
 ## Dependency pin
 
-E09 pins `@napi-rs/canvas` to **1.0.9**, the current npm release at the snapshot date. Source: https://www.npmjs.com/package/@napi-rs/canvas
+E09 pins `@napi-rs/canvas` to **1.0.9**. Source: https://www.npmjs.com/package/@napi-rs/canvas
