@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -111,23 +112,44 @@ static std::vector<uint8_t> process_frame(const std::vector<uint8_t>& src, const
   const double norm = 1.0 / (1.0 + p.barrel);
   const double caXPx = p.caX * W / 1920.0;
 
-  std::vector<float> map(static_cast<size_t>(W) * H * 2);
-  for (int y = 0; y < H; ++y) {
-    const double ny = (y - cy) / cy;
-    for (int x = 0; x < W; ++x) {
-      const double nx = (x - cx) / cx;
-      const double d = (1.0 + p.barrel * (nx * nx + ny * ny)) * norm;
-      const size_t i = (static_cast<size_t>(y) * W + x) * 2;
-      map[i] = static_cast<float>(nx * d * cx + cx);
-      map[i + 1] = static_cast<float>(ny * d * cy + cy);
+  struct GeometryCache {
+    int width = 0;
+    int height = 0;
+    double barrel = std::numeric_limits<double>::quiet_NaN();
+    std::vector<float> map;
+    int scanlinePeriod = 0;
+    std::vector<float> scanline;
+  };
+  static GeometryCache cache;
+  if (cache.width != W || cache.height != H || cache.barrel != p.barrel) {
+    cache.width = W;
+    cache.height = H;
+    cache.barrel = p.barrel;
+    cache.map.resize(static_cast<size_t>(W) * H * 2);
+    for (int y = 0; y < H; ++y) {
+      const double ny = (y - cy) / cy;
+      for (int x = 0; x < W; ++x) {
+        const double nx = (x - cx) / cx;
+        const double d = (1.0 + p.barrel * (nx * nx + ny * ny)) * norm;
+        const size_t i = (static_cast<size_t>(y) * W + x) * 2;
+        cache.map[i] = static_cast<float>(nx * d * cx + cx);
+        cache.map[i + 1] = static_cast<float>(ny * d * cy + cy);
+      }
     }
   }
+  const auto& map = cache.map;
 
   const int slP = std::max(2, static_cast<int>(std::lround(H / 360.0)));
-  std::vector<float> slT(slP);
-  for (int i = 0; i < slP; ++i) {
-    slT[i] = static_cast<float>(0.58 + 0.42 * std::pow(std::sin(M_PI * (i + 0.5) / slP), 1.2));
+  if (cache.scanlinePeriod != slP) {
+    cache.scanlinePeriod = slP;
+    cache.scanline.resize(slP);
+    for (int i = 0; i < slP; ++i) {
+      cache.scanline[i] = static_cast<float>(
+        0.58 + 0.42 * std::pow(std::sin(M_PI * (i + 0.5) / slP), 1.2)
+      );
+    }
   }
+  const auto& slT = cache.scanline;
 
   const uint32_t postHash = hash_parts({std::to_string(p.seed), "post", std::to_string(p.frame)});
   const double rand = first_sfc32(postHash);
@@ -218,7 +240,17 @@ static std::vector<uint8_t> process_frame(const std::vector<uint8_t>& src, const
   };
 
   const unsigned hw = std::max(1u, std::thread::hardware_concurrency());
-  const unsigned threads = std::min<unsigned>(hw, std::max(1, H / 32));
+  unsigned requestedThreads = hw;
+  if (const char* raw = std::getenv("CRT_THREADS")) {
+    try {
+      const unsigned parsed = static_cast<unsigned>(std::stoul(raw));
+      if (parsed > 0) requestedThreads = parsed;
+    } catch (...) {}
+  }
+  const unsigned threads = std::min<unsigned>(
+    std::max(1u, requestedThreads),
+    static_cast<unsigned>(std::max(1, H / 32))
+  );
   if (threads <= 1) {
     render_rows(0, H);
   } else {
