@@ -1,27 +1,40 @@
 #!/usr/bin/env node
 // Frame viewer for a framewright project.
-//   node look.mjs shot <frame[,frame...]> [width=1200] [seed=7] [out]      one or more frames as PNG
-//   node look.mjs sheet [n=24] [cellWidth=480] [seed=7] [out]              contact sheet of n evenly spaced frames
-//   node look.mjs info                                                    total frames and plate list as JSON
-// Env: HTML=path/to/index.html (default ./index.html), AR=9:16 (aspect override), OUT_DIR=shots
+//   node look.mjs shot <frame[,frame...]> [width=1200] [seed=7] [out]
+//   node look.mjs sheet [n=24] [cellWidth=480] [seed=7] [out]
+//   node look.mjs info
+// Env: HTML=path/to/index.html, PAYLOAD=path/to/payload.json,
+//      AR=9:16 (aspect override), OUT_DIR=shots
 import puppeteer from 'puppeteer';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const [,, mode = 'shot', ...rest] = process.argv;
 const html = path.resolve(process.env.HTML || 'index.html');
+const payloadPath = process.env.PAYLOAD ? path.resolve(process.env.PAYLOAD) : null;
 const outDir = process.env.OUT_DIR || 'shots';
 if (!fs.existsSync(html)) { console.error(`no such file: ${html} (set HTML=path)`); process.exit(1); }
+let injectedPayload = null;
+if (payloadPath) {
+  if (!fs.existsSync(payloadPath)) { console.error(`no such payload: ${payloadPath}`); process.exit(1); }
+  try { injectedPayload = JSON.parse(fs.readFileSync(payloadPath, 'utf8')); }
+  catch (e) { console.error(`bad payload JSON: ${e.message}`); process.exit(1); }
+}
 
-const b = await puppeteer.launch({ headless: true, protocolTimeout: 600000, args: ['--allow-file-access-from-files'] });
+const browserArgs = ['--allow-file-access-from-files'];
+if (process.env.CI) browserArgs.push('--no-sandbox', '--disable-setuid-sandbox');
+const b = await puppeteer.launch({ headless: true, protocolTimeout: 600000, args: browserArgs });
 const p = await b.newPage();
 p.on('pageerror', e => console.error('PAGE ERROR', e.message));
 p.on('console', m => { if (m.type() === 'error' || m.type() === 'warning') console.error('CONSOLE', m.text()); });
+if (injectedPayload !== null) await p.evaluateOnNewDocument(v => { window.FRAMEWRIGHT_PAYLOAD = v; }, injectedPayload);
 
 async function open(seed) {
   const url = 'file://' + html + `?f=0&w=320&s=${seed}` + (process.env.AR ? `&ar=${process.env.AR}` : '');
   await p.goto(url, { waitUntil: 'load', timeout: 120000 });
   await p.waitForFunction('window.__ready===true', { timeout: 120000 });
+  const bootError = await p.evaluate(() => window.__bootError || null);
+  if (bootError) throw new Error(bootError);
 }
 function save(dataUrl, out) {
   fs.mkdirSync(path.dirname(out), { recursive: true });
@@ -50,8 +63,9 @@ try {
     console.log('  ms', Date.now() - t0);
   } else if (mode === 'info') {
     await open(7);
-    const info = await p.evaluate(() => ({ total: window.RISO.total, fps: window.RISO.fps ?? 30, plates: window.RISO.plates }));
+    const info = await p.evaluate(() => ({ total: window.RISO.total, fps: window.RISO.fps ?? 30, plates: window.RISO.plates, payload: window.RISO.payload ?? null }));
     info.seconds = +(info.total / info.fps).toFixed(2);
+    if (payloadPath) info.payloadPath = payloadPath;
     console.log(JSON.stringify(info, null, 2));
   } else {
     console.error('usage: look.mjs shot|sheet|info ...');
