@@ -11,8 +11,9 @@ if(!html.includes(marker))throw new Error('I05 static-text insertion marker miss
 const injection=String.raw`
 // I05 StaticTextPlanBundle v1: a target-bound lowering of text measurement/search.
 // It is intentionally generic: no Swiss/Newspaper/Paper node list lives here.
-// Placement, color, alpha and motion remain frame-time concerns; line breaking,
-// fitted font size and tracked glyph advances become immutable job-local plans.
+// The bundle externalizes block/label/track resolution, but only resolved labels are
+// consumed by I05 today. Blocks stay on the already-proven C25 fit cache and tracked
+// glyphs stay on the baseline dynamic-advance path until their own pixel-parity gate.
 const I05_STATIC_TEXT_PLAN_VERSION='i05-static-text-plan-v1';
 const __i05TextBlock=textBlock,__i05Label=label,__i05Track=track;
 const __i05BlockPlans=new Map(),__i05LabelPlans=new Map(),__i05TrackPlans=new Map();
@@ -46,23 +47,13 @@ function __i05LabelKey(text,n){return __i05Key(['label',String(text),n.maxW??nul
 function __i05TrackKey(text,spacing,n){return __i05Key(['track',String(text),n.size??24,n.weight??700,spacing]);}
 
 textBlock=function(g,text,o={}){
-  // QA capture must keep traversing the inherited C25/C26 instrumentation exactly.
   if(__i05CaptureActive())return __i05TextBlock(g,text,o);
   const n=__i05BlockOpts(o),key=__i05BlockKey(text,n),cached=__i05BlockPlans.get(key);
-  if(cached){
-    __i05Stats.blockHits++;
-    // Do not round-trip Canvas font state through g.font. Re-enter through the
-    // same canonical setter as the baseline; native canvas font getters are not
-    // a portable serialization format for raster-equivalent replay.
-    font(g,cached.size,n.weight||700);
-    g.fillStyle=n.color||P.ink;g.textAlign=n.align||'left';
-    let y=n.y||0,x=n.x||0;if(n.centerBlock)y-=((cached.lines.length-1)*cached.lh)/2;
-    for(const line of cached.lines){g.fillText(line,x,y);y+=cached.lh;}
-    return{size:cached.size,lines:[...cached.lines],lh:cached.lh,height:cached.height,overflow:cached.overflow};
-  }
-  __i05Stats.blockMisses++;
+  if(cached)__i05Stats.blockHits++;else __i05Stats.blockMisses++;
+  // Rendering deliberately stays on the inherited primitive. C25 already owns a
+  // deterministic fitBlock cache, and the I05 manual block replay failed exact pixels.
   const b=__i05TextBlock(g,text,o);
-  __i05BlockPlans.set(key,__i05FreezePlan({kind:'block',key,text:String(text),request:{maxW:n.maxW??900,maxH:Number.isFinite(n.maxH)?n.maxH:null,maxLines:n.maxLines??99,size:n.size??88,min:n.min??24,weight:n.weight??700,lineHeight:n.lineHeight??1.02},size:b.size,lines:[...b.lines],lh:b.lh,height:b.height,overflow:!!b.overflow}));
+  if(!cached)__i05BlockPlans.set(key,__i05FreezePlan({kind:'block',key,text:String(text),request:{maxW:n.maxW??900,maxH:Number.isFinite(n.maxH)?n.maxH:null,maxLines:n.maxLines??99,size:n.size??88,min:n.min??24,weight:n.weight??700,lineHeight:n.lineHeight??1.02},size:b.size,lines:[...b.lines],lh:b.lh,height:b.height,overflow:!!b.overflow,consumed:false}));
   return b;
 };
 
@@ -76,26 +67,21 @@ label=function(g,text,x,y,o={}){
   }
   __i05Stats.labelMisses++;
   const size=__i05Label(g,text,x,y,o);
-  __i05LabelPlans.set(key,__i05FreezePlan({kind:'label',key,text:String(text),request:{maxW:n.maxW??null,size:n.size??28,min:n.min??16,weight:n.weight??700},size}));
+  __i05LabelPlans.set(key,__i05FreezePlan({kind:'label',key,text:String(text),request:{maxW:n.maxW??null,size:n.size??28,min:n.min??16,weight:n.weight??700},size,consumed:true}));
   return size;
 };
 
 track=function(g,text,x,y,spacing,o={}){
   if(__i05CaptureActive())return __i05Track(g,text,x,y,spacing,o);
   const n=__i05TrackOpts(o),sp=__i05TrackSpacing(spacing),key=__i05TrackKey(text,sp,n),cached=__i05TrackPlans.get(key);
-  if(cached){
-    __i05Stats.trackHits++;
-    font(g,n.size||24,n.weight||700);
-    g.fillStyle=n.color||P.ink;g.textAlign='left';let px=x,i=0;
-    for(const ch of String(text)){g.fillText(ch,px,y);px+=cached.steps[i++];}
-    return cached.width;
+  if(cached)__i05Stats.trackHits++;else __i05Stats.trackMisses++;
+  // The artifact records resolved advances, but current rendering intentionally stays
+  // dynamic: direct advance replay still had exact-pixel drift in the bounded probe.
+  const width=__i05Track(g,text,x,y,spacing,o);
+  if(!cached){
+    const steps=[];for(const ch of String(text))steps.push(g.measureText(ch).width+sp);
+    __i05TrackPlans.set(key,__i05FreezePlan({kind:'track',key,text:String(text),request:{size:n.size??24,weight:n.weight??700,spacing:sp},steps,width,consumed:false}));
   }
-  __i05Stats.trackMisses++;
-  const width=__i05Track(g,text,x,y,spacing,o),steps=[];
-  // One-time advance capture. Subsequent frames replay exact measured advances
-  // while still entering font state through the baseline font() helper.
-  for(const ch of String(text))steps.push(g.measureText(ch).width+sp);
-  __i05TrackPlans.set(key,__i05FreezePlan({kind:'track',key,text:String(text),request:{size:n.size??24,weight:n.weight??700,spacing:sp},steps,width}));
   return width;
 };
 
@@ -104,6 +90,7 @@ window.__I05_STATIC_TEXT_PLAN=()=>({
   schema:'framewright-i05-static-text-plan-bundle-v1',
   version:I05_STATIC_TEXT_PLAN_VERSION,
   environment:{width:LW,height:LH,fps:FPS,fontFamily:'DejaVu Sans',typographySystem:typeof ACTIVE_TYPOGRAPHY_SYSTEM!=='undefined'?ACTIVE_TYPOGRAPHY_SYSTEM:'baseline',platformProfile:typeof C26_PLATFORM_PROFILE!=='undefined'?C26_PLATFORM_PROFILE:'generic'},
+  consumption:{block:'c25-fit-cache',label:'i05-resolved-size-replay',track:'baseline-dynamic-advance'},
   plans:__i05PlanRows(),
   stats:{...__i05Stats,entries:__i05BlockPlans.size+__i05LabelPlans.size+__i05TrackPlans.size,blockEntries:__i05BlockPlans.size,labelEntries:__i05LabelPlans.size,trackEntries:__i05TrackPlans.size}
 });
