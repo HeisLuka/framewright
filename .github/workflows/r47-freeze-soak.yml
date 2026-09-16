@@ -1,0 +1,112 @@
+name: R47 1k State Recycle Freeze Soak
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r47-build-freeze-soak.mjs'
+      - '.agents/skills/framewright/scripts/r47-analyze-freeze-soak.mjs'
+      - '.agents/skills/framewright/scripts/r34-mixed-catalog-soak.mjs'
+      - '.github/workflows/r47-freeze-soak.yml'
+      - 'docs/r47-freeze-soak.md'
+  workflow_dispatch:
+
+jobs:
+  freeze-soak:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check source tools
+        run: |
+          node --check .agents/skills/framewright/scripts/r34-mixed-catalog-soak.mjs
+          node --check .agents/skills/framewright/scripts/r47-build-freeze-soak.mjs
+          node --check .agents/skills/framewright/scripts/r47-analyze-freeze-soak.mjs
+      - name: Prepare exact C18 catalog fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r47.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r47.html examples/book-ad-systems/index-e17-for-r47.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r47.html examples/book-ad-systems/index-e17-e14-for-r47.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r47.html examples/book-ad-systems/index-e18-for-r47.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r47
+      - name: Build canonical AAC fixture once
+        run: |
+          mkdir -p artifacts/r47/scenario
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i 'sine=frequency=110:sample_rate=48000:duration=12' \
+            -filter:a 'volume=0.06' -t 12 -c:a aac -b:a 192k \
+            -movflags +faststart artifacts/r47/track.m4a
+      - name: Build R47 worker from canonical R34 harness
+        run: |
+          node .agents/skills/framewright/scripts/r47-build-freeze-soak.mjs \
+            .agents/skills/framewright/scripts/r34-mixed-catalog-soak.mjs \
+            artifacts/r47/r47-worker.mjs
+          node --check artifacts/r47/r47-worker.mjs
+      - name: Run 1080-job state-recycle freeze soak
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r47.html
+          MANIFEST: examples/book-ad-systems/generated-r47/manifest.json
+          OUT_DIR: artifacts/r47/scenario
+          AUDIO: artifacts/r47/track.m4a
+          REPORT: artifacts/r47/scenario/report.json
+          JOBS: '1080'
+          BITRATE: '3000000'
+          WINDOW_SIZE: '36'
+          WARMUP_JOBS: '36'
+          BATCH_SIZE: '6'
+          LEARN_JOBS: '36'
+          RSS_THRESHOLD_MULTIPLIER: '1.25'
+          RSS_STREAK: '3'
+          IDLE_SETTLE_MS: '100'
+        run: node artifacts/r47/r47-worker.mjs
+      - name: Analyze freeze gates
+        run: |
+          set +e
+          node .agents/skills/framewright/scripts/r47-analyze-freeze-soak.mjs \
+            artifacts/r47/scenario/report.json \
+            artifacts/r47/report.json \
+            artifacts/r47/summary.md
+          rc=$?
+          set -e
+          # rc=2 is a completed negative research result. Harness/runtime failures still fail the workflow.
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then exit "$rc"; fi
+      - name: Validate report completeness
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r47/report.json','utf8'));
+          if(r.schema!=='framewright-r47-freeze-soak-v1') throw new Error('wrong R47 schema');
+          if(r.workload?.jobs!==1080||r.workload?.catalogCycles!==30) throw new Error('wrong freeze workload');
+          const keys=['accountingPass','correctnessPass','barrierPass','idleRssGate','triggerConsistencyGate','latencyDriftGate','throughputDriftGate','recycleOverheadGate','recoveryTailGate','pass'];
+          for(const k of keys) if(typeof r.gates?.[k]!=='boolean') throw new Error(`missing gate ${k}`);
+          if(!Number.isFinite(r.metrics?.p95IdleRatio)||!Number.isFinite(r.metrics?.lateVideosPerHour)) throw new Error('missing freeze metrics');
+          const s=JSON.parse(fs.readFileSync('artifacts/r47/scenario/report.json','utf8'));
+          if(s.schema!=='framewright-r47-freeze-soak-scenario-v1') throw new Error('wrong scenario schema');
+          if((s.result?.successfulJobs||0)+(s.result?.failedJobs||0)!==1080) throw new Error('incomplete accounting');
+          if(s.result?.barrierSamples?.length!==180) throw new Error('expected 180 idle barriers');
+          console.log(JSON.stringify({decision:r.decision,gates:r.gates,metrics:r.metrics},null,2));
+          NODE
+      - name: Show result
+        if: always()
+        run: |
+          test -f artifacts/r47/summary.md && cat artifacts/r47/summary.md || true
+          test -f artifacts/r47/scenario/summary.md && tail -80 artifacts/r47/scenario/summary.md || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r47-freeze-soak
+          path: |
+            artifacts/r47/report.json
+            artifacts/r47/summary.md
+            artifacts/r47/scenario/report.json
+            artifacts/r47/scenario/summary.md
+            artifacts/r47/track.m4a
+          retention-days: 14
