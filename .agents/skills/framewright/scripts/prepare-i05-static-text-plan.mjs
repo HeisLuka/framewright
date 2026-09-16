@@ -11,13 +11,14 @@ if(!html.includes(marker))throw new Error('I05 static-text insertion marker miss
 const injection=String.raw`
 // I05 StaticTextPlanBundle v1: a target-bound lowering of text measurement/search.
 // It is intentionally generic: no Swiss/Newspaper/Paper node list lives here.
-// The bundle externalizes block/label/track resolution, but only resolved labels are
-// consumed by I05 today. Blocks stay on the already-proven C25 fit cache and tracked
-// glyphs stay on the baseline dynamic-advance path until their own pixel-parity gate.
+// The bundle externalizes block/label/track resolution, but consumption is legal only
+// where exact raster parity has been demonstrated. Blocks stay on the proven C25
+// fitBlock cache, labels consume a resolved fitSingleSize plan, and tracked glyphs stay
+// on the baseline dynamic-advance path until a future glyph-run lowering proves parity.
 const I05_STATIC_TEXT_PLAN_VERSION='i05-static-text-plan-v1';
-const __i05TextBlock=textBlock,__i05Label=label,__i05Track=track;
-const __i05BlockPlans=new Map(),__i05LabelPlans=new Map(),__i05TrackPlans=new Map();
-const __i05Stats={blockHits:0,blockMisses:0,labelHits:0,labelMisses:0,trackHits:0,trackMisses:0};
+const __i05TextBlock=textBlock,__i05Label=label,__i05Track=track,__i05FitSingleSize=fitSingleSize;
+const __i05BlockPlans=new Map(),__i05LabelPlans=new Map(),__i05TrackPlans=new Map(),__i05FitSinglePlans=new Map();
+const __i05Stats={blockHits:0,blockMisses:0,labelHits:0,labelMisses:0,trackHits:0,trackMisses:0,fitSingleHits:0,fitSingleMisses:0};
 
 function __i05Clone(v){return JSON.parse(JSON.stringify(v));}
 function __i05Key(parts){return JSON.stringify(parts);}
@@ -45,29 +46,36 @@ function __i05FreezePlan(plan){
 function __i05BlockKey(text,n){return __i05Key(['block',String(text),n.maxW??900,Number.isFinite(n.maxH)?n.maxH:'inf',n.maxLines??99,n.size??88,n.min??24,n.weight??700,n.lineHeight??1.02]);}
 function __i05LabelKey(text,n){return __i05Key(['label',String(text),n.maxW??null,n.size??28,n.min??16,n.weight??700]);}
 function __i05TrackKey(text,spacing,n){return __i05Key(['track',String(text),n.size??24,n.weight??700,spacing]);}
+function __i05FitSingleKey(text,maxW,start,min,weight){return __i05Key(['fitSingle',String(text),maxW,start,min,weight]);}
+
+// First actual typed lowering: cache the pure font-size search, not the draw primitive.
+// The inherited label() still performs the canonical font(), fillStyle, textAlign and
+// fillText operations, so I05 never has to reproduce opaque Canvas drawing state.
+fitSingleSize=function(g,text,maxW,start=92,min=18,weight=700){
+  const key=__i05FitSingleKey(text,maxW,start,min,weight),cached=__i05FitSinglePlans.get(key);
+  if(cached){__i05Stats.fitSingleHits++;font(g,cached.size,weight);return cached.size;}
+  __i05Stats.fitSingleMisses++;
+  const size=__i05FitSingleSize(g,text,maxW,start,min,weight);
+  __i05FitSinglePlans.set(key,Object.freeze({key,text:String(text),maxW,start,min,weight,size}));
+  return size;
+};
 
 textBlock=function(g,text,o={}){
   if(__i05CaptureActive())return __i05TextBlock(g,text,o);
   const n=__i05BlockOpts(o),key=__i05BlockKey(text,n),cached=__i05BlockPlans.get(key);
   if(cached)__i05Stats.blockHits++;else __i05Stats.blockMisses++;
-  // Rendering deliberately stays on the inherited primitive. C25 already owns a
-  // deterministic fitBlock cache, and the I05 manual block replay failed exact pixels.
   const b=__i05TextBlock(g,text,o);
-  if(!cached)__i05BlockPlans.set(key,__i05FreezePlan({kind:'block',key,text:String(text),request:{maxW:n.maxW??900,maxH:Number.isFinite(n.maxH)?n.maxH:null,maxLines:n.maxLines??99,size:n.size??88,min:n.min??24,weight:n.weight??700,lineHeight:n.lineHeight??1.02},size:b.size,lines:[...b.lines],lh:b.lh,height:b.height,overflow:!!b.overflow,consumed:false}));
+  if(!cached)__i05BlockPlans.set(key,__i05FreezePlan({kind:'block',key,text:String(text),request:{maxW:n.maxW??900,maxH:Number.isFinite(n.maxH)?n.maxH:null,maxLines:n.maxLines??99,size:n.size??88,min:n.min??24,weight:n.weight??700,lineHeight:n.lineHeight??1.02},size:b.size,lines:[...b.lines],lh:b.lh,height:b.height,overflow:!!b.overflow,consumedBy:'c25-fit-cache'}));
   return b;
 };
 
 label=function(g,text,x,y,o={}){
   if(__i05CaptureActive())return __i05Label(g,text,x,y,o);
   const n=__i05LabelOpts(x,o),key=__i05LabelKey(text,n),cached=__i05LabelPlans.get(key);
-  if(cached){
-    __i05Stats.labelHits++;
-    font(g,cached.size,n.weight||700);
-    g.fillStyle=n.color||P.ink;g.textAlign=n.align||'left';g.fillText(String(text),x,y);return cached.size;
-  }
-  __i05Stats.labelMisses++;
+  if(cached)__i05Stats.labelHits++;else __i05Stats.labelMisses++;
+  // Always delegate drawing. Only fitSingleSize() is lowered above.
   const size=__i05Label(g,text,x,y,o);
-  __i05LabelPlans.set(key,__i05FreezePlan({kind:'label',key,text:String(text),request:{maxW:n.maxW??null,size:n.size??28,min:n.min??16,weight:n.weight??700},size,consumed:true}));
+  if(!cached)__i05LabelPlans.set(key,__i05FreezePlan({kind:'label',key,text:String(text),request:{maxW:n.maxW??null,size:n.size??28,min:n.min??16,weight:n.weight??700},size,consumedBy:n.maxW?'i05-fitSingleSize-plan':'none-fixed-size'}));
   return size;
 };
 
@@ -75,12 +83,10 @@ track=function(g,text,x,y,spacing,o={}){
   if(__i05CaptureActive())return __i05Track(g,text,x,y,spacing,o);
   const n=__i05TrackOpts(o),sp=__i05TrackSpacing(spacing),key=__i05TrackKey(text,sp,n),cached=__i05TrackPlans.get(key);
   if(cached)__i05Stats.trackHits++;else __i05Stats.trackMisses++;
-  // The artifact records resolved advances, but current rendering intentionally stays
-  // dynamic: direct advance replay still had exact-pixel drift in the bounded probe.
   const width=__i05Track(g,text,x,y,spacing,o);
   if(!cached){
     const steps=[];for(const ch of String(text))steps.push(g.measureText(ch).width+sp);
-    __i05TrackPlans.set(key,__i05FreezePlan({kind:'track',key,text:String(text),request:{size:n.size??24,weight:n.weight??700,spacing:sp},steps,width,consumed:false}));
+    __i05TrackPlans.set(key,__i05FreezePlan({kind:'track',key,text:String(text),request:{size:n.size??24,weight:n.weight??700,spacing:sp},steps,width,consumedBy:'baseline-dynamic-advance'}));
   }
   return width;
 };
@@ -90,9 +96,10 @@ window.__I05_STATIC_TEXT_PLAN=()=>({
   schema:'framewright-i05-static-text-plan-bundle-v1',
   version:I05_STATIC_TEXT_PLAN_VERSION,
   environment:{width:LW,height:LH,fps:FPS,fontFamily:'DejaVu Sans',typographySystem:typeof ACTIVE_TYPOGRAPHY_SYSTEM!=='undefined'?ACTIVE_TYPOGRAPHY_SYSTEM:'baseline',platformProfile:typeof C26_PLATFORM_PROFILE!=='undefined'?C26_PLATFORM_PROFILE:'generic'},
-  consumption:{block:'c25-fit-cache',label:'i05-resolved-size-replay',track:'baseline-dynamic-advance'},
+  consumption:{block:'c25-fit-cache',label:'i05-fitSingleSize-plan',track:'baseline-dynamic-advance'},
   plans:__i05PlanRows(),
-  stats:{...__i05Stats,entries:__i05BlockPlans.size+__i05LabelPlans.size+__i05TrackPlans.size,blockEntries:__i05BlockPlans.size,labelEntries:__i05LabelPlans.size,trackEntries:__i05TrackPlans.size}
+  fitSinglePlans:[...__i05FitSinglePlans.values()].sort((a,b)=>a.key<b.key?-1:a.key>b.key?1:0).map(__i05Clone),
+  stats:{...__i05Stats,entries:__i05BlockPlans.size+__i05LabelPlans.size+__i05TrackPlans.size,blockEntries:__i05BlockPlans.size,labelEntries:__i05LabelPlans.size,trackEntries:__i05TrackPlans.size,fitSingleEntries:__i05FitSinglePlans.size}
 });
 `;
 
