@@ -1,0 +1,117 @@
+name: I02 Native Buffer Full Scout
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/i02-node-webcodecs-buffer-scout.mjs'
+      - '.github/workflows/i02-native-buffer-full-scout.yml'
+  workflow_dispatch:
+
+jobs:
+  full-scout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install --no-save @napi-rs/canvas@1.0.9 @napi-rs/webcodecs@1.3.0
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/i02-fast-backend-scout.mjs
+          node --check .agents/skills/framewright/scripts/i02-node-webcodecs-buffer-scout.mjs
+
+      - name: Prepare exact C18 semantic scene + fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-i02.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-i02.html examples/book-ad-systems/index-e17-for-i02.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-i02.html examples/book-ad-systems/index-e17-e14-for-i02.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-i02.html examples/book-ad-systems/index-e18-for-i02.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-i02
+
+      - name: Make deterministic 12s audio fixture
+        run: |
+          mkdir -p artifacts/i02 artifacts/i02-buffer-native
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=110:sample_rate=48000:duration=12' -filter:a 'volume=0.06' -c:a pcm_s16le artifacts/i02/track.wav
+
+      - name: Run Chromium and x264 controls
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-i02.html
+          MANIFEST: examples/book-ad-systems/generated-i02/manifest.json
+          OUT_DIR: artifacts/i02
+          REPORT: artifacts/i02/report.json
+          SUMMARY: artifacts/i02/summary.md
+          TRACK: artifacts/i02/track.wav
+          BOOK_ID: river-station
+          VARIANT: hook-first
+          PROFILE: vertical
+          REPEATS: '3'
+          BITRATE: '2000000'
+          X264_PRESET: veryfast
+          X264_CRF: '22'
+          WEBCODECS_QUEUE: '8'
+        run: node --input-type=module -e "globalThis.window={RISO:{fps:30}}; await import('./.agents/skills/framewright/scripts/i02-fast-backend-scout.mjs')"
+
+      - name: Run memory-safe native buffer WebCodecs candidate
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-i02.html
+          MANIFEST: examples/book-ad-systems/generated-i02/manifest.json
+          OUT_DIR: artifacts/i02-buffer-native
+          BUFFER_REPORT: artifacts/i02-buffer-native/report.json
+          BUFFER_SUMMARY: artifacts/i02-buffer-native/summary.md
+          TRACK: artifacts/i02/track.wav
+          X264_REF: artifacts/i02/node-crf-1.mp4
+          WEB_REF: artifacts/i02/web-1.mp4
+          BOOK_ID: river-station
+          VARIANT: hook-first
+          PROFILE: vertical
+          BUFFER_REPEATS: '3'
+          BUFFER_BITRATE: '2000000'
+          BUFFER_AUDIO_BITRATE: '192000'
+          BUFFER_QUEUE: '2'
+          BUFFER_CODEC: avc1.420028
+        run: node .agents/skills/framewright/scripts/i02-node-webcodecs-buffer-scout.mjs
+
+      - name: Print comparison
+        if: always()
+        run: |
+          echo '=== existing controls ==='
+          test -f artifacts/i02/summary.md && cat artifacts/i02/summary.md || true
+          echo '=== native buffer candidate ==='
+          test -f artifacts/i02-buffer-native/summary.md && cat artifacts/i02-buffer-native/summary.md || true
+          node - <<'NODE'
+          const fs=require('fs');
+          if (!fs.existsSync('artifacts/i02/report.json') || !fs.existsSync('artifacts/i02-buffer-native/report.json')) process.exit(0);
+          const base=JSON.parse(fs.readFileSync('artifacts/i02/report.json'));
+          const n=JSON.parse(fs.readFileSync('artifacts/i02-buffer-native/report.json'));
+          const mb=x=>(x/1048576).toFixed(2);
+          const rows=[
+            ['chromium-webcodecs',base.summary.web],
+            ['node-x264-fixed',base.summary.nodeFixed],
+            ['node-x264-crf22',base.summary.nodeCrf],
+            ['node-webcodecs-buffer',n.summary],
+          ];
+          console.log('\nbackend\twall_s\tvideos_h\tCPU_s\tRSS_MiB\tMP4_MiB');
+          for (const [name,s] of rows) console.log(`${name}\t${(s.wallMs.mean/1000).toFixed(3)}\t${s.videosPerHourFromMeanWall}\t${(s.cgroupCpuMs.mean/1000).toFixed(3)}\t${mb(s.peakRssBytes.max)}\t${mb(s.outputBytes.mean)}`);
+          NODE
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i02-native-buffer-full-scout
+          path: |
+            artifacts/i02/report.json
+            artifacts/i02/summary.md
+            artifacts/i02/web-1.mp4
+            artifacts/i02/node-crf-1.mp4
+            artifacts/i02-buffer-native/
+          retention-days: 14
