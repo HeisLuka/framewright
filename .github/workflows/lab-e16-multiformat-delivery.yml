@@ -1,0 +1,67 @@
+name: Lab E16 Multi-format Delivery
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/make-e16-source-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/e16-adapt-formats.mjs'
+      - '.agents/skills/framewright/scripts/e16-validate-formats.mjs'
+      - '.agents/skills/framewright/scripts/e16-review-sheets.mjs'
+      - '.github/workflows/lab-e16-multiformat-delivery.yml'
+  workflow_dispatch:
+
+jobs:
+  multiformat:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+          cache: npm
+      - name: Install pinned worker dependencies
+        run: npm ci
+      - name: Install FFmpeg + pinned fonts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/make-e16-source-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/e16-adapt-formats.mjs
+          node --check .agents/skills/framewright/scripts/e16-validate-formats.mjs
+          node --check .agents/skills/framewright/scripts/e16-review-sheets.mjs
+      - name: Prepare E14 active-motion variant template + E16 sources
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e12.html examples/book-ad-systems/index-e14.html
+          node .agents/skills/framewright/scripts/make-e16-source-fixtures.mjs examples/book-ad-systems/generated-e16
+      - name: Render 3 representative 9:16 sources
+        env:
+          HTML: examples/book-ad-systems/index-e14.html
+          MANIFEST: examples/book-ad-systems/generated-e16/manifest.json
+          OUT_DIR: artifacts/e16/source-videos
+          REPORT: artifacts/e16/source-batch.json
+          WIDTH: '1080'
+          PRESET: veryfast
+          CRF: '22'
+        run: node .agents/skills/framewright/scripts/node-canvas-batch.mjs
+      - name: Adapt square and landscape using contain/crop baselines
+        run: node .agents/skills/framewright/scripts/e16-adapt-formats.mjs artifacts/e16/source-batch.json examples/book-ad-systems/generated-e16/manifest.json artifacts/e16/adapted artifacts/e16/adaptation.json
+      - name: Validate geometric delivery tradeoffs
+        run: node .agents/skills/framewright/scripts/e16-validate-formats.mjs artifacts/e16/adaptation.json artifacts/e16/verdict.json
+      - name: Generate review sheets
+        run: node .agents/skills/framewright/scripts/e16-review-sheets.mjs artifacts/e16/adaptation.json artifacts/e16/review
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: e16-multiformat-delivery
+          path: |
+            artifacts/e16/source-batch.json
+            artifacts/e16/adaptation.json
+            artifacts/e16/verdict.json
+            artifacts/e16/review
+            artifacts/e16/adapted
+          retention-days: 14
