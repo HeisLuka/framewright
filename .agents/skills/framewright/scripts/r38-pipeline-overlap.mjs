@@ -112,11 +112,38 @@ async function main() {
       const mode=sequence[cycleIndex], rows=[], failures=[]; let next=0,maxInflight=0,maxInflightBytes=0,currentInflightBytes=0,peakRss=processTreeRss(); const tails=new Set(); const wall0=performance.now(),cpu0=cpuUsec();
       const trackTail=(promise,bytes) => { currentInflightBytes+=bytes; maxInflightBytes=Math.max(maxInflightBytes,currentInflightBytes); const wrapped=promise.finally(()=>{tails.delete(wrapped);currentInflightBytes-=bytes;}); tails.add(wrapped);maxInflight=Math.max(maxInflight,tails.size);return wrapped; };
       const worker=async(page,workerIndex)=>{
-        for(;;){const idx=next++;if(idx>=entries.length)return;const entry=entries[idx],id=`c${cycleIndex}-${mode}-w${workerIndex}-j${idx}`,job0=performance.now();try{const loadMs=await navigate(page,idx);const fp=await fingerprint(page,entry);if(fp!==refs.get(idx))throw new Error(`state fingerprint mismatch fixture ${idx}`);const encoded=await encode(page,id,entry);const encodedDone=performance.now();const tail=trackTail((async()=>{const t0=performance.now();const fin=await finalize(id,encoded);const end=performance.now();if(!fin.valid)throw new Error(`invalid artifact fixture ${idx}`);const row={cycleIndex,mode,idx,workerIndex,loadMs:+loadMs.toFixed(2),encodeMs:+encoded.encodeMs.toFixed(2),drawMs:+encoded.drawMs.toFixed(2),uploadMs:+encoded.uploadMs.toFixed(2),muxMs:+fin.muxMs.toFixed(2),validateMs:+fin.validateMs.toFixed(2),hashMs:+fin.hashMs.toFixed(2),tailMs:+(end-t0).toFixed(2),encodePhaseWallMs:+(encodedDone-job0).toFixed(2),completionWallMs:+(end-job0).toFixed(2),mp4Bytes:fin.mp4Bytes,maxQueue:encoded.maxQueue,artifactSha256:fin.artifactSha256,processTreeRssBytes:processTreeRss()};rows.push(row);peakRss=Math.max(peakRss,row.processTreeRssBytes);return row;})(),encoded.bytes);
-          if(mode==='serial')await tail;else if(tails.size>=tailLimit)await Promise.race([...tails]);
-        }catch(error){failures.push({idx,workerIndex,message:String(error?.stack||error)});}
+        for(;;){
+          const idx=next++;
+          if(idx>=entries.length)return;
+          const entry=entries[idx],id=`c${cycleIndex}-${mode}-w${workerIndex}-j${idx}`,job0=performance.now();
+          try {
+            const loadMs=await navigate(page,idx);
+            const fp=await fingerprint(page,entry);
+            if(fp!==refs.get(idx))throw new Error(`state fingerprint mismatch fixture ${idx}`);
+            const encoded=await encode(page,id,entry);
+            const encodedDone=performance.now();
+            if(mode==='overlap') while(tails.size>=tailLimit) await Promise.race([...tails]);
+            const tail=trackTail((async()=>{
+              const t0=performance.now();
+              const fin=await finalize(id,encoded);
+              const end=performance.now();
+              if(!fin.valid)throw new Error(`invalid artifact fixture ${idx}`);
+              const row={cycleIndex,mode,idx,workerIndex,loadMs:+loadMs.toFixed(2),encodeMs:+encoded.encodeMs.toFixed(2),drawMs:+encoded.drawMs.toFixed(2),uploadMs:+encoded.uploadMs.toFixed(2),muxMs:+fin.muxMs.toFixed(2),validateMs:+fin.validateMs.toFixed(2),hashMs:+fin.hashMs.toFixed(2),tailMs:+(end-t0).toFixed(2),encodePhaseWallMs:+(encodedDone-job0).toFixed(2),completionWallMs:+(end-job0).toFixed(2),mp4Bytes:fin.mp4Bytes,maxQueue:encoded.maxQueue,artifactSha256:fin.artifactSha256,processTreeRssBytes:processTreeRss()};
+              rows.push(row);
+              peakRss=Math.max(peakRss,row.processTreeRssBytes);
+              return row;
+            })(),encoded.bytes);
+            if(mode==='serial')await tail;
+          } catch(error) {
+            failures.push({idx,workerIndex,message:String(error?.stack||error)});
+          }
+        }
       };
-      await Promise.all(pages.map((p,i)=>worker(p,i))); await Promise.all([...tails]); const scenarioWallMs=performance.now()-wall0,cpuMs=(cpuUsec()-cpu0)/1000; if(failures.length)throw new Error(`${mode} cycle ${cycleIndex} failures: ${JSON.stringify(failures)}`); if(rows.length!==36)throw new Error(`${mode} cycle ${cycleIndex} expected 36 rows, got ${rows.length}`);
+      await Promise.all(pages.map((p,i)=>worker(p,i)));
+      await Promise.all([...tails]);
+      const scenarioWallMs=performance.now()-wall0,cpuMs=(cpuUsec()-cpu0)/1000;
+      if(failures.length)throw new Error(`${mode} cycle ${cycleIndex} failures: ${JSON.stringify(failures)}`);
+      if(rows.length!==36)throw new Error(`${mode} cycle ${cycleIndex} expected 36 rows, got ${rows.length}`);
       cycles.push({cycleIndex,mode,jobs:rows.length,scenarioWallMs:+scenarioWallMs.toFixed(2),videosPerHour:+(rows.length*3600000/scenarioWallMs).toFixed(2),cpuMs:+cpuMs.toFixed(2),cpuMsPerVideo:+(cpuMs/rows.length).toFixed(2),p50CompletionWallMs:+quantile(rows.map(r=>r.completionWallMs),.5).toFixed(2),p95CompletionWallMs:+quantile(rows.map(r=>r.completionWallMs),.95).toFixed(2),p50TailMs:+quantile(rows.map(r=>r.tailMs),.5).toFixed(2),meanMuxMs:+mean(rows.map(r=>r.muxMs)).toFixed(2),meanValidateMs:+mean(rows.map(r=>r.validateMs)).toFixed(2),meanEncodeMs:+mean(rows.map(r=>r.encodeMs)).toFixed(2),peakProcessTreeRssBytes:peakRss,maxInflight,maxInflightBytes,rows});
       console.log(`${mode} cycle ${cycleIndex}: ${cycles.at(-1).videosPerHour} videos/h, p50 ${cycles.at(-1).p50CompletionWallMs} ms, max tails ${maxInflight}`);
     }
