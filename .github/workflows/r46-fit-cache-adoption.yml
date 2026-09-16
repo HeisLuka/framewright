@@ -1,0 +1,116 @@
+name: R46 Deterministic Fit Cache Adoption
+
+on:
+  push:
+    branches: [lab/r46-fit-cache-adoption]
+    paths:
+      - '.agents/skills/framewright/scripts/prepare-r46-fit-cache.mjs'
+      - '.agents/skills/framewright/scripts/r46-fit-cache-parity.mjs'
+      - '.agents/skills/framewright/scripts/r46-fit-cache-analyze.mjs'
+      - '.github/workflows/r46-fit-cache-adoption.yml'
+      - 'docs/r46-fit-cache-adoption.md'
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/prepare-r46-fit-cache.mjs'
+      - '.agents/skills/framewright/scripts/r46-fit-cache-parity.mjs'
+      - '.agents/skills/framewright/scripts/r46-fit-cache-analyze.mjs'
+      - '.github/workflows/r46-fit-cache-adoption.yml'
+      - 'docs/r46-fit-cache-adoption.md'
+  workflow_dispatch:
+
+jobs:
+  fit-cache:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: |
+          npm install
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/prepare-r46-fit-cache.mjs
+          node --check .agents/skills/framewright/scripts/r46-fit-cache-parity.mjs
+          node --check .agents/skills/framewright/scripts/r46-fit-cache-analyze.mjs
+          node --check .agents/skills/framewright/scripts/r42-profile-concurrency.mjs
+      - name: Prepare exact current C18 responsive fixtures
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r46.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r46.html examples/book-ad-systems/index-e17-for-r46.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r46.html examples/book-ad-systems/index-e17-e14-for-r46.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r46.html examples/book-ad-systems/index-e18-for-r46.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r46
+          node .agents/skills/framewright/scripts/prepare-r46-fit-cache.mjs examples/book-ad-systems/index-e18-for-r46.html examples/book-ad-systems/index-e18-r46-fit-cache.html
+      - name: Build canonical AAC fixture once
+        run: |
+          mkdir -p artifacts/r46/baseline artifacts/r46/cached
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=110:sample_rate=48000:duration=12' -filter:a 'volume=0.06' -t 12 -c:a aac -b:a 192k -movflags +faststart artifacts/r46/track.m4a
+      - name: Prove exact baseline-to-cache pixel parity and cache hits
+        env:
+          BASELINE_HTML: examples/book-ad-systems/index-e18-for-r46.html
+          CACHED_HTML: examples/book-ad-systems/index-e18-r46-fit-cache.html
+          MANIFEST: examples/book-ad-systems/generated-r46/manifest.json
+          REPORT: artifacts/r46/parity.json
+        run: node .agents/skills/framewright/scripts/r46-fit-cache-parity.mjs
+      - name: Run baseline c2 production path
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r46.html
+          MANIFEST: examples/book-ad-systems/generated-r46/manifest.json
+          OUT_DIR: artifacts/r46/baseline
+          AUDIO: artifacts/r46/track.m4a
+          REPORT: artifacts/r46/baseline/report.json
+          JOBS: '12'
+          CONCURRENCIES: '2'
+          BITRATE: '3000000'
+        run: node .agents/skills/framewright/scripts/r42-profile-concurrency.mjs
+      - name: Run fit-cache c2 production path
+        env:
+          HTML: examples/book-ad-systems/index-e18-r46-fit-cache.html
+          MANIFEST: examples/book-ad-systems/generated-r46/manifest.json
+          OUT_DIR: artifacts/r46/cached
+          AUDIO: artifacts/r46/track.m4a
+          REPORT: artifacts/r46/cached/report.json
+          JOBS: '12'
+          CONCURRENCIES: '2'
+          BITRATE: '3000000'
+        run: node .agents/skills/framewright/scripts/r42-profile-concurrency.mjs
+      - name: Analyze adoption gate
+        env:
+          BASELINE_REPORT: artifacts/r46/baseline/report.json
+          CACHED_REPORT: artifacts/r46/cached/report.json
+          PARITY_REPORT: artifacts/r46/parity.json
+          REPORT: artifacts/r46/report.json
+          SUMMARY: artifacts/r46/summary.md
+        run: node .agents/skills/framewright/scripts/r46-fit-cache-analyze.mjs
+      - name: Validate report completeness
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r46/report.json','utf8'));
+          if(r.schema!=='nightwill-r46-fit-cache-v1') throw new Error('wrong schema');
+          if(!r.crossParity?.pass||!r.crossParity?.cacheHealthy||r.crossParity.samples!==108) throw new Error('parity/cache exercise failed');
+          if(r.baseline.jobs!==36||r.cached.jobs!==36) throw new Error('incomplete workload');
+          for(const k of ['correctness','benefitGate','boundedCost','promoted']) if(typeof r[k]!=='boolean') throw new Error(`missing ${k}`);
+          if(r.promoted && !(r.correctness&&r.benefitGate&&r.boundedCost)) throw new Error('promotion without all gates');
+          console.log(JSON.stringify({decision:r.decision,aggregate:r.aggregate,perProfile:r.perProfile},null,2));
+          NODE
+      - name: Show result
+        if: always()
+        run: test -f artifacts/r46/summary.md && cat artifacts/r46/summary.md || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: r46-fit-cache-adoption
+          path: |
+            artifacts/r46/report.json
+            artifacts/r46/summary.md
+            artifacts/r46/parity.json
+            artifacts/r46/baseline/report.json
+            artifacts/r46/cached/report.json
+          retention-days: 14
