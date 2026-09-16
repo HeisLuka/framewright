@@ -14,7 +14,6 @@ const input=readJson(path.join(inputDir,'input-report.json'));
 const publishReady=readJson(path.join(inputDir,'publish-ready.json'));
 const request=readJson(path.resolve(input.request));
 const enqueue=readJson(path.join(root,'enqueue.json'));
-const worker=readJson(path.join(root,'worker.json'));
 const replay=readJson(path.join(root,'replay-enqueue.json'));
 
 must(input.schema==='newboo-i09-c35-physical-input-v1','wrong internal i09 input schema');
@@ -26,9 +25,6 @@ must(JSON.stringify(publishReady.items.map(x=>x.mode).sort())===JSON.stringify([
 must(request.schema==='framewright-c19-campaign-request-v1','builder did not emit current C19 campaign request');
 
 must(enqueue.duplicate===false&&enqueue.state==='pending','first enqueue must create one pending job');
-must(worker?.result?.status==='succeeded','I07 worker did not succeed');
-must(worker.result.attempt===1,'I07 physical campaign should succeed on first attempt');
-must(worker.result.job_id===enqueue.job_id,'worker job identity mismatch');
 must(replay.duplicate===true&&replay.state==='done','re-enqueue after success must dedupe to done state');
 must(replay.job_id===enqueue.job_id&&replay.request_sha256===enqueue.request_sha256,'replay enqueue identity mismatch');
 
@@ -39,6 +35,8 @@ const attemptFiles=fs.readdirSync(attemptsDir).filter(x=>/^\d{4}\.json$/.test(x)
 must(attemptFiles.length===1,`duplicate replay created extra physical attempts: ${attemptFiles.length}`);
 const attempt=readJson(path.join(attemptsDir,attemptFiles[0]));
 must(attempt.status==='succeeded'&&attempt.attempt===1,'canonical I07 attempt receipt invalid');
+must(attempt.job_id===jobId,'canonical I07 attempt job identity mismatch');
+must(attempt.request_sha256===enqueue.request_sha256,'canonical I07 attempt request identity mismatch');
 
 const resultDir=path.join(queue,'results',jobId);
 const run=readJson(path.join(resultDir,'run.json'));
@@ -135,7 +133,7 @@ const report={
   status:'PASS',
   job_id:jobId,
   request_sha256:enqueue.request_sha256,
-  first_attempt:worker.result.attempt,
+  first_attempt:attempt.attempt,
   duplicate_enqueue_state:replay.state,
   physical_attempt_count:attemptFiles.length,
   campaign_id:run.campaign_id,
