@@ -1,0 +1,133 @@
+{
+  "schema": "newboo-video-factory-bundle-v1",
+  "creative": {
+    "schema": "newboo-creative-spec-v1",
+    "creative_id": "nvc1_acda813a67f904ee65b73fa06c3aebae3588c04a9b94b252d3f9b738bcaca42e",
+    "book_id": "city-seven",
+    "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "template": {
+      "id": "book-ad-systems",
+      "version": "e18",
+      "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "visual_system": {
+      "id": "swiss",
+      "version": "v1"
+    },
+    "structural_variant": "hook-first",
+    "hook": {
+      "source": "human_verified",
+      "text": "A city with seven doors. Only one opens twice.",
+      "source_ref": "campaign-copy:v3"
+    },
+    "motion": {
+      "profile": "active",
+      "version": "e12-v1"
+    },
+    "art_direction": {
+      "mode": "cover-derived",
+      "algorithm": "cover-palette-v1",
+      "source_cover_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+      "palette": {
+        "background": "#F2EFE8",
+        "surface": "#FFFFFF",
+        "ink": "#101010",
+        "accent": "#D13C2F",
+        "secondary": "#315A7D"
+      }
+    },
+    "seed": 7,
+    "assets": [
+      {
+        "role": "cover",
+        "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "media_type": "image/jpeg",
+        "uri": "s3://example-bucket/covers/city-seven.jpg"
+      },
+      {
+        "role": "font_regular",
+        "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+        "media_type": "font/ttf",
+        "uri": "asset://dejavu-sans-regular"
+      },
+      {
+        "role": "font_bold",
+        "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+        "media_type": "font/ttf",
+        "uri": "asset://dejavu-sans-bold"
+      }
+    ]
+  },
+  "render": {
+    "schema": "newboo-render-spec-v1",
+    "render_spec_id": "nvr1_c34de9df55a936ed2269a405e5c949a4174ce36fa78785e5a79086cb5236238e",
+    "creative_id": "nvc1_acda813a67f904ee65b73fa06c3aebae3588c04a9b94b252d3f9b738bcaca42e",
+    "delivery": {
+      "id": "vertical-1080x1920-v1",
+      "width": 1080,
+      "height": 1920,
+      "fps": 30,
+      "duration_ms": 12000,
+      "safe_area_profile": "shorts-v1"
+    },
+    "runtime": {
+      "class": "FAST",
+      "scene_contract_version": "canvas-scene-v1",
+      "environment_id": "video-worker-chromium-v1",
+      "renderer": {
+        "id": "webcodecs-h264",
+        "version": "v1"
+      },
+      "encoder": {
+        "video_codec": "avc1.42001f",
+        "bitrate_bps": 2000000,
+        "pixel_format": "yuv420p"
+      },
+      "muxer": {
+        "id": "ffmpeg-stream-copy-aac",
+        "version": "6.1.1"
+      }
+    },
+    "assets": [
+      {
+        "role": "audio",
+        "sha256": "5555555555555555555555555555555555555555555555555555555555555555",
+        "media_type": "audio/wav",
+        "uri": "s3://example-bucket/audio/campaign-01.wav"
+      }
+    ],
+    "artifact_policy": {
+      "reuse": "prefer-existing",
+      "canonical_key": "render_spec_id"
+    }
+  },
+  "artifact": {
+    "schema": "newboo-render-artifact-v1",
+    "render_spec_id": "nvr1_c34de9df55a936ed2269a405e5c949a4174ce36fa78785e5a79086cb5236238e",
+    "output": {
+      "sha256": "6666666666666666666666666666666666666666666666666666666666666666",
+      "bytes": 1220892,
+      "mime_type": "video/mp4",
+      "duration_ms": 12006.6,
+      "frame_count": 360,
+      "storage_uri": "s3://example-bucket/video/nvr1_c34de9df55a936ed2269a405e5c949a4174ce36fa78785e5a79086cb5236238e.mp4"
+    },
+    "qa": {
+      "status": "pass",
+      "checks": [
+        { "id": "layout-overflow", "status": "pass", "details": { "warnings": 0 } },
+        { "id": "frame-count", "status": "pass", "details": { "expected": 360, "actual": 360 } },
+        { "id": "audio-stream", "status": "pass", "details": { "present": true } }
+      ]
+    },
+    "metrics": {
+      "wall_ms": 4400.7,
+      "encode_ms": 1322.9,
+      "mux_ms": 828.1
+    },
+    "invocation": {
+      "cache_hit": false,
+      "attempts": 1
+    }
+  }
+}
