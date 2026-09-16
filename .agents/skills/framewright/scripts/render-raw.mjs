@@ -14,10 +14,10 @@
 //   POST_MODULE=path/to/module.mjs   optional external post backend
 //
 // Every producer sends one atomic frame packet: RGBA bytes plus compact
-// per-frame controls. The OrderedFrameSink acknowledges the producer only after
-// that exact packet has been post-processed (when configured) and written to
-// ffmpeg in frame order. With one in-flight packet per worker, out-of-order
-// memory stays bounded by roughly tabs * RGBA frame size.
+// per-frame controls. External post-processing happens before the ordering
+// barrier, so different frames may be processed concurrently. OrderedFrameSink
+// only serializes the final writes to ffmpeg. With one in-flight request per
+// Chromium worker, the number of composition/post packets stays bounded by tabs.
 import puppeteer from "puppeteer";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -65,9 +65,13 @@ if (postModulePath && !fs.existsSync(postModulePath)) {
 await fsp.mkdir(path.dirname(out), { recursive: true });
 
 let postProcessor = null;
+let closePostProcessor = null;
+let postBackendInfo = null;
 if (postModulePath) {
   const module = await import(pathToFileURL(postModulePath).href);
   postProcessor = module.processFrame || module.default;
+  closePostProcessor = typeof module.close === "function" ? module.close : null;
+  postBackendInfo = module.backendInfo || null;
   if (typeof postProcessor !== "function") {
     throw new Error("POST_MODULE must export processFrame(packet, context) or a default function");
   }
@@ -118,6 +122,11 @@ let writtenRgbaBytes = 0;
 let metadataBytes = 0;
 let maxMetadataBytes = 0;
 let postMilliseconds = 0;
+let activePost = 0;
+let maxConcurrentPost = 0;
+let postCompletedFrames = 0;
+let postCompletionRegressions = 0;
+let highestCompletedPostFrame = -1;
 
 const asError = (value) => (
   value instanceof Error ? value : new Error(String(value || "raw render failed"))
@@ -169,6 +178,29 @@ const normalizePostResult = (result, frame) => {
     );
   }
   return rgba;
+};
+
+const processPacket = async (frame, packet) => {
+  if (!postProcessor) return packet;
+  const postStarted = performance.now();
+  activePost += 1;
+  maxConcurrentPost = Math.max(maxConcurrentPost, activePost);
+  try {
+    const result = await postProcessor(packet, {
+      frame,
+      width: frameWidth,
+      height: frameHeight,
+      fps,
+    });
+    const rgba = normalizePostResult(result, frame);
+    postCompletedFrames += 1;
+    if (frame < highestCompletedPostFrame) postCompletionRegressions += 1;
+    highestCompletedPostFrame = Math.max(highestCompletedPostFrame, frame);
+    return createFramePacket(rgba, packet.metadata, { expectedBytes: expectedFrameBytes });
+  } finally {
+    postMilliseconds += performance.now() - postStarted;
+    activePost -= 1;
+  }
 };
 
 const staticPath = (pathname) => {
@@ -242,7 +274,8 @@ const server = http.createServer((request, response) => {
         const metadataSize = Buffer.byteLength(JSON.stringify(packet.metadata), "utf8");
         metadataBytes += metadataSize;
         maxMetadataBytes = Math.max(maxMetadataBytes, metadataSize);
-        await frameSink.submit(frame, packet);
+        const processedPacket = await processPacket(frame, packet);
+        await frameSink.submit(frame, processedPacket);
         response.writeHead(204, { "Cache-Control": "no-store" });
         response.end();
       } catch (error) {
@@ -502,20 +535,8 @@ try {
       if (packet.metadata.frame !== frame) {
         throw new Error(`ordered packet mismatch: sink=${frame} metadata=${packet.metadata.frame}`);
       }
-      let rgba = packet.rgba;
-      if (postProcessor) {
-        const postStarted = performance.now();
-        const result = await postProcessor(packet, {
-          frame,
-          width: frameWidth,
-          height: frameHeight,
-          fps,
-        });
-        postMilliseconds += performance.now() - postStarted;
-        rgba = normalizePostResult(result, frame);
-      }
-      await streamWrite(ffmpeg.stdin, rgba);
-      writtenRgbaBytes += rgba.byteLength;
+      await streamWrite(ffmpeg.stdin, packet.rgba);
+      writtenRgbaBytes += packet.rgba.byteLength;
       writtenFrames += 1;
     },
   });
@@ -550,12 +571,16 @@ try {
     `raw render ${start}..${end - 1}/${total - 1}  ${frameWidth}x${frameHeight} @ ${fps} fps  tabs ${tabs}`,
   );
   console.log(`post backend ${postModulePath || "browser-inline"}`);
+  if (postBackendInfo) console.log(`post backend info ${JSON.stringify(postBackendInfo)}`);
   if (plates.length) {
     console.log(plates.map((plate) => `${plate.name}:${plate.len}`).join("  "));
   }
+  const inFlightBytes = (expectedFrameBytes + maxMetadataBytes) * tabs;
+  const pipelineBytes = (expectedFrameBytes * (postProcessor ? 2 : 1) + maxMetadataBytes) * tabs;
   console.log(
     `raw frame ${(expectedFrameBytes / 1024 / 1024).toFixed(2)} MiB; `
-    + `bounded reorder <= ~${(expectedFrameBytes * tabs / 1024 / 1024).toFixed(1)} MiB + compact metadata`,
+    + `bounded reorder <= ~${(inFlightBytes / 1024 / 1024).toFixed(1)} MiB; `
+    + `pipeline upper bound <= ~${(pipelineBytes / 1024 / 1024).toFixed(1)} MiB`,
   );
 
   let nextFrame = start;
@@ -611,7 +636,7 @@ try {
   const elapsedSeconds = (performance.now() - t0) / 1000;
   const outputBytes = (await fsp.stat(out)).size;
   const metrics = {
-    renderer: "raw-rgba-http-v1-frame-packet",
+    renderer: "raw-rgba-http-v2-parallel-post",
     html,
     output: out,
     seed,
@@ -626,14 +651,19 @@ try {
     framesPerSecond: count / Math.max(elapsedSeconds, 1e-9),
     bytesPerFrame: expectedFrameBytes,
     peakReorderBytesUpperBound: (expectedFrameBytes + maxMetadataBytes) * tabs,
+    peakPipelineBytesUpperBound: (expectedFrameBytes * (postProcessor ? 2 : 1) + maxMetadataBytes) * tabs,
     incomingRgbaBytes,
     writtenRgbaBytes,
     metadataBytes,
     maxMetadataBytes,
     postBackend: postModulePath || "browser-inline",
+    postBackendInfo,
     compositionOnly,
     postMilliseconds,
     postMillisecondsPerFrame: count ? postMilliseconds / count : 0,
+    maxConcurrentPost,
+    postCompletedFrames,
+    postCompletionRegressions,
     outputBytes,
     preset,
     crf,
@@ -660,6 +690,11 @@ try {
   try {
     if (browser) await browser.close();
   } catch {}
+  try {
+    if (closePostProcessor) await closePostProcessor();
+  } catch (error) {
+    if (!fatalError) console.error("post backend close failed", asError(error).message);
+  }
   if (server.listening) {
     await new Promise((resolve) => server.close(resolve));
   }
