@@ -66,6 +66,7 @@ jobs:
       - name: Container warm-worker smoke benchmark
         run: |
           docker run --rm \
+            -e CI=true \
             -e HTML=examples/book-ad-v0/index.html \
             -e PAYLOAD=examples/book-ad-v0/payload.example.json \
             -v "$PWD/artifacts:/artifacts" \
