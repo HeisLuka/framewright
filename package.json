@@ -14,6 +14,7 @@
     "info": "node scripts/look.mjs info",
     "audio": "node audio.mjs track.wav",
     "render": "node scripts/render.mjs frames 7 1920 5",
+    "render:raw": "node .agents/skills/framewright/scripts/render-raw.mjs out.mp4 7 1920 5",
     "build": "bash scripts/build.sh out.mp4",
     "make": "bash scripts/make.sh",
     "book-ad": "node .agents/skills/framewright/scripts/book-ad.mjs",
