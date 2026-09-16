@@ -6,7 +6,9 @@ on:
     paths:
       - 'contracts/video-factory-v1.schema.json'
       - 'contracts/factory-identity-v1.mjs'
+      - 'contracts/audio-identity-v1.mjs'
       - 'contracts/check-example-v1.mjs'
+      - 'contracts/check-i04-duration-audio.mjs'
       - 'contracts/examples/video-factory-v1.example.json'
       - 'docs/video-factory-contract-v1.md'
       - '.github/workflows/i01-factory-contract-v1.yml'
@@ -22,5 +24,9 @@ jobs:
           node-version: '20.20.2'
       - name: Parse schema and verify canonical identities
         run: node contracts/check-example-v1.mjs
-      - name: Syntax check identity helper
-        run: node --check contracts/factory-identity-v1.mjs
+      - name: Verify I04 duration and canonical audio invariants
+        run: node contracts/check-i04-duration-audio.mjs
+      - name: Syntax check identity helpers
+        run: |
+          node --check contracts/factory-identity-v1.mjs
+          node --check contracts/audio-identity-v1.mjs
