@@ -17,6 +17,7 @@ const repeats = Math.max(5, Math.min(100, Math.trunc(Number(process.env.REPEATS 
 const fps = Math.max(1, Number(process.env.FPS || 30));
 const baselineFullMs = Number(process.env.BASELINE_FULL_MS || 4136.563);
 const baselineMuxMs = Number(process.env.BASELINE_MUX_MS || 666.9);
+const avToleranceMs = Math.max(1, Number(process.env.AV_TOLERANCE_MS || 50));
 
 for (const file of [h264Path, wavPath, aacPath]) if (!fs.existsSync(file)) throw new Error(`missing input ${file}`);
 await fsp.mkdir(outDir, { recursive: true });
@@ -74,14 +75,17 @@ async function timedFfmpeg(args) {
   };
 }
 
+// Inputs are generated to the exact same 12s duration. Do not use -shortest here:
+// with timestamp-less raw H.264 it can make FFmpeg stop audio muxing early while
+// the final video timeline is still expanded to the requested frame rate.
 const modes = {
   current_wav_aac_mux: {
     output: path.join(outDir, 'current-wav-aac-mux.mp4'),
-    args(output) { return ['-y', '-fflags', '+genpts', '-r', String(fps), '-i', h264Path, '-i', wavPath, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', output]; },
+    args(output) { return ['-y', '-fflags', '+genpts', '-r', String(fps), '-i', h264Path, '-i', wavPath, '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', output]; },
   },
   cached_aac_copy_mux: {
     output: path.join(outDir, 'cached-aac-copy-mux.mp4'),
-    args(output) { return ['-y', '-fflags', '+genpts', '-r', String(fps), '-i', h264Path, '-i', aacPath, '-c:v', 'copy', '-c:a', 'copy', '-shortest', '-movflags', '+faststart', output]; },
+    args(output) { return ['-y', '-fflags', '+genpts', '-r', String(fps), '-i', h264Path, '-i', aacPath, '-c:v', 'copy', '-c:a', 'copy', '-movflags', '+faststart', output]; },
   },
   video_only_mux: {
     output: path.join(outDir, 'video-only-mux.mp4'),
@@ -122,6 +126,9 @@ for (const [id, rows] of Object.entries(results)) {
   const a = probe.streams.find((x) => x.codec_type === 'audio');
   const videoDuration = Number(v?.duration || probe.format?.duration || 0);
   const audioDuration = Number(a?.duration || 0);
+  const avDurationDeltaMs = a ? +(Math.abs(videoDuration - audioDuration) * 1000).toFixed(3) : null;
+  if (a && avDurationDeltaMs > avToleranceMs) throw new Error(`${id}: A/V duration delta ${avDurationDeltaMs}ms exceeds ${avToleranceMs}ms`);
+  if (Number(v?.nb_read_frames || 0) !== 360) throw new Error(`${id}: expected 360 video frames, got ${v?.nb_read_frames}`);
   summary[id] = {
     wallMs: stats(rows.map((x) => x.wallMs)),
     cpuMs: stats(rows.map((x) => x.cpuMs)),
@@ -130,21 +137,23 @@ for (const [id, rows] of Object.entries(results)) {
     peakRssBytes: stats(rows.map((x) => x.peakRssBytes)),
     outputBytes: fs.statSync(mode.output).size,
     videoElementarySha256: await videoHash(mode.output),
-    avDurationDeltaMs: a ? +(Math.abs(videoDuration - audioDuration) * 1000).toFixed(3) : null,
+    avDurationDeltaMs,
     probe,
   };
 }
+
+const videoHashes = new Set(Object.values(summary).map((x) => x.videoElementarySha256));
+if (videoHashes.size !== 1) throw new Error(`stream-copy video hash drift across modes: ${[...videoHashes].join(', ')}`);
 
 const A = summary.current_wav_aac_mux.wallMs.p50;
 const B = summary.cached_aac_copy_mux.wallMs.p50;
 const C = summary.video_only_mux.wallMs.p50;
 const cachedAacSavedMs = A - B;
-const remainingContainerAudioMs = B;
 const estimatedMuxMs = baselineMuxMs * (B / A);
 const estimatedFullMs = baselineFullMs - baselineMuxMs + estimatedMuxMs;
 const report = {
-  schema: 'framewright-r29-audio-mux-scout-v1',
-  fixture: { h264Bytes: fs.statSync(h264Path).size, wavBytes: fs.statSync(wavPath).size, cachedAacBytes: fs.statSync(aacPath).size, fps, repeats },
+  schema: 'framewright-r29-audio-mux-scout-v2',
+  fixture: { h264Bytes: fs.statSync(h264Path).size, wavBytes: fs.statSync(wavPath).size, cachedAacBytes: fs.statSync(aacPath).size, fps, repeats, avToleranceMs },
   baselineReference: { fullWallMs: baselineFullMs, audioMuxMs: baselineMuxMs, source: 'I02 corrected same-scene scout run 35134914213' },
   summary,
   decision: {
@@ -176,7 +185,7 @@ lines.push('', `Cached AAC removes **${cachedAacSavedMs.toFixed(1)} ms p50** fro
 lines.push(`If that same relative reduction transfers to the I02 full-job mux stage (${baselineMuxMs.toFixed(1)} ms), the prioritization estimate is **${(baselineFullMs-estimatedFullMs).toFixed(1)} ms** off a ${baselineFullMs.toFixed(1)} ms full job.`);
 lines.push(`Residual cached-AAC FFmpeg copy/mux p50 is **${B.toFixed(1)} ms**; video-only mux p50 is **${C.toFixed(1)} ms**.`);
 lines.push('', report.decision.inProcessMuxScoutRecommended ? '**Gate:** residual is still large enough to justify a bounded in-process/browser mux scout.' : '**Gate:** residual is below the in-process mux scout threshold; do not add another mux implementation yet.');
-lines.push('', 'All three outputs preserve the same elementary video SHA-256 if stream-copy semantics are correct; report.json contains ffprobe validation and hashes.');
+lines.push('', 'Validation gate: 360 video frames, full-duration audio within tolerance, and one identical elementary-video SHA-256 across all stream-copy modes.');
 const markdown = `${lines.join('\n')}\n`;
 await fsp.writeFile(summaryPath, markdown);
 console.log(markdown);
