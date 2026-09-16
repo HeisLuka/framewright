@@ -11,7 +11,7 @@ put(){ if [ -e "$2" ] && [ $FORCE = 0 ]; then echo "  keep   $2 (exists, use --f
 put "$SKILL/assets/skeleton.html" index.html
 put "$SKILL/assets/audio-template.mjs" audio.mjs
 put "$SKILL/assets/storyboard.md" storyboard.md
-for f in look.mjs render.mjs render-raw.mjs build.sh make.sh inject.mjs portrait.sh trace.py doctor.sh; do put "$HERE/$f" "scripts/$f"; done
+for f in look.mjs render.mjs render-raw.mjs bench-render.mjs build.sh make.sh inject.mjs portrait.sh trace.py doctor.sh; do put "$HERE/$f" "scripts/$f"; done
 chmod +x scripts/*.sh scripts/*.mjs 2>/dev/null || true
 if [ ! -f package.json ]; then cat > package.json <<'JSON'
 {
@@ -26,6 +26,7 @@ if [ ! -f package.json ]; then cat > package.json <<'JSON'
     "audio": "node audio.mjs track.wav",
     "render": "node scripts/render.mjs frames 7 1920 5",
     "render:raw": "node scripts/render-raw.mjs out.mp4 7 1920 5",
+    "bench:render": "node scripts/bench-render.mjs",
     "build": "bash scripts/build.sh out.mp4",
     "make": "bash scripts/make.sh"
   },
@@ -33,6 +34,6 @@ if [ ! -f package.json ]; then cat > package.json <<'JSON'
 }
 JSON
 echo "  write  package.json"; else echo "  keep   package.json"; fi
-if [ ! -f .gitignore ]; then printf 'node_modules/\nframes/\nframes-*/\nshots/\n*.mp4\n*.mov\n*.wav\n*.log\nportrait.js\n.venv/\n.DS_Store\n' > .gitignore; echo "  write  .gitignore"; else echo "  keep   .gitignore"; fi
+if [ ! -f .gitignore ]; then printf 'node_modules/\nframes/\nframes-*/\nshots/\n.bench/\n*.mp4\n*.mov\n*.wav\n*.log\nportrait.js\n.venv/\n.DS_Store\n' > .gitignore; echo "  write  .gitignore"; else echo "  keep   .gitignore"; fi
 echo
 echo "next: npm install   (or bash scripts/doctor.sh --install), then: node scripts/look.mjs shot 0 1200 7 and look at shots/f0000.png"
