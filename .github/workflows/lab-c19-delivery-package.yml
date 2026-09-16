@@ -37,11 +37,12 @@ jobs:
         run: npm install --no-save @napi-rs/canvas@1.0.9
       - name: Install FFmpeg + pinned fonts
         run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
-      - name: Syntax check
+      - name: Syntax and merged-contract checks
         run: |
           node --check .agents/skills/framewright/scripts/c19-build-delivery-package.mjs
           node --check .agents/skills/framewright/scripts/c19-validate-delivery-package.mjs
           node --check .agents/skills/framewright/scripts/c19-make-audio-spec-fixture.mjs
+          node contracts/check-i04-duration-audio.mjs
       - name: Prepare E15 source and C18 responsive delivery template
         run: |
           node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-c19.html
@@ -68,19 +69,34 @@ jobs:
           RENDERER: .agents/skills/framewright/scripts/node-canvas-batch.mjs
           NEAR_DUP_THRESHOLD: '0.015'
         run: node .agents/skills/framewright/scripts/e15-build-campaign-package.mjs examples/book-ad-systems/generated-e14/manifest.json examples/book-ad-systems/generated-e13/route-report.json artifacts/e15/batch.json artifacts/e15/diversity.json artifacts/e15/package
-      - name: Build C19 package with equivalent request orderings
+      - name: Build primary C19 package without inventing campaign soundtrack
         run: |
           mkdir -p artifacts/c19
           node .agents/skills/framewright/scripts/c19-build-delivery-package.mjs artifacts/e15/package examples/book-ad-systems/generated-e14/manifest.json artifacts/c19/delivery-package.json 'landscape,vertical,square,vertical' examples/book-ad-systems/index-e18-for-c19.html
           node .agents/skills/framewright/scripts/c19-build-delivery-package.mjs artifacts/e15/package examples/book-ad-systems/generated-e14/manifest.json artifacts/c19/delivery-package-check.json 'square,landscape,vertical' examples/book-ad-systems/index-e18-for-c19.html
           node .agents/skills/framewright/scripts/c19-build-delivery-package.mjs artifacts/e15/package examples/book-ad-systems/generated-e14/manifest.json artifacts/c19/vertical-only.json 'vertical' examples/book-ad-systems/index-e18-for-c19.html
-      - name: Exercise VC-7 AudioSpec producer path without inventing campaign audio
+      - name: Build canonical-audio adoption fixture for I02/I04
         run: |
-          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'anullsrc=r=48000:cl=mono' -t 12 -c:a pcm_s16le artifacts/c19/audio-source.wav
-          node .agents/skills/framewright/scripts/c19-make-audio-spec-fixture.mjs artifacts/c19/audio-source.wav artifacts/c19/audio-spec.json
-          node .agents/skills/framewright/scripts/c19-build-delivery-package.mjs artifacts/e15/package examples/book-ad-systems/generated-e14/manifest.json artifacts/c19/delivery-package-audio-adoption.json 'vertical,square,landscape' examples/book-ad-systems/index-e18-for-c19.html artifacts/c19/audio-spec.json
-      - name: Validate current factory identity, bounded expansion and determinism
-        run: node .agents/skills/framewright/scripts/c19-validate-delivery-package.mjs artifacts/c19/delivery-package.json artifacts/c19/delivery-package-check.json artifacts/e15/package artifacts/c19/vertical-only.json artifacts/c19/delivery-package-audio-adoption.json
+          mkdir -p artifacts/c19/audio
+          ffmpeg -hide_banner -loglevel error -y \
+            -f lavfi -i 'sine=frequency=110:sample_rate=48000:duration=12' \
+            -filter:a 'volume=0.06' -c:a pcm_s16le artifacts/c19/audio/source.wav
+          ffmpeg -hide_banner -loglevel error -y \
+            -i artifacts/c19/audio/source.wav -t 12 -vn -c:a aac -b:a 192k \
+            -movflags +faststart artifacts/c19/audio/canonical.m4a
+          node .agents/skills/framewright/scripts/c19-make-audio-spec-fixture.mjs artifacts/c19/audio/source.wav artifacts/c19/audio/canonical.m4a artifacts/c19/audio-fixture.json
+          node .agents/skills/framewright/scripts/c19-build-delivery-package.mjs artifacts/e15/package examples/book-ad-systems/generated-e14/manifest.json artifacts/c19/delivery-package-audio-adoption.json 'landscape,vertical,square,vertical' examples/book-ad-systems/index-e18-for-c19.html artifacts/c19/audio-fixture.json
+          node .agents/skills/framewright/scripts/c19-build-delivery-package.mjs artifacts/e15/package examples/book-ad-systems/generated-e14/manifest.json artifacts/c19/delivery-package-audio-adoption-check.json 'square,landscape,vertical' examples/book-ad-systems/index-e18-for-c19.html artifacts/c19/audio-fixture.json
+          node --input-type=module <<'NODE'
+          import {execFileSync} from 'node:child_process';
+          const j=JSON.parse(execFileSync('ffprobe',['-v','error','-show_entries','format=duration:stream=codec_type,codec_name,sample_rate,channels','-of','json','artifacts/c19/audio/canonical.m4a'],{encoding:'utf8'}));
+          const a=j.streams.find(x=>x.codec_type==='audio'),d=Number(j.format?.duration);
+          if(a?.codec_name!=='aac') throw new Error(`expected AAC, got ${a?.codec_name}`);
+          if(Math.abs(d-12)>.05) throw new Error(`canonical audio duration ${d}s != 12s`);
+          console.log(JSON.stringify({codec:a.codec_name,sampleRate:a.sample_rate,channels:a.channels,duration:d},null,2));
+          NODE
+      - name: Validate bounded expansion, I04 adoption and determinism
+        run: node .agents/skills/framewright/scripts/c19-validate-delivery-package.mjs artifacts/c19/delivery-package.json artifacts/c19/delivery-package-check.json artifacts/e15/package artifacts/c19/vertical-only.json artifacts/c19/delivery-package-audio-adoption.json artifacts/c19/delivery-package-audio-adoption-check.json artifacts/c19/audio/source.wav artifacts/c19/audio/canonical.m4a
       - name: Keep compact provenance inputs
         run: |
           mkdir -p artifacts/c19/source
@@ -89,7 +105,7 @@ jobs:
           cp examples/book-ad-systems/generated-e14/manifest.json artifacts/c19/source/e14-manifest.json
           cp examples/book-ad-systems/generated-e13/route-report.json artifacts/c19/source/e13-route-report.json
           cp examples/book-ad-systems/index-e18-for-c19.html artifacts/c19/source/responsive-delivery-template.html
-          rm -f artifacts/c19/delivery-package-check.json artifacts/c19/audio-source.wav
+          rm -f artifacts/c19/delivery-package-check.json artifacts/c19/delivery-package-audio-adoption-check.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
