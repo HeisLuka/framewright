@@ -1,0 +1,70 @@
+name: Lab C23 Cover Composition
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs'
+      - '.agents/skills/framewright/scripts/make-c23-composition-fixtures.mjs'
+      - '.agents/skills/framewright/scripts/c23-composition-audit.mjs'
+      - '.agents/skills/framewright/scripts/c23-summarize.mjs'
+      - '.agents/skills/framewright/scripts/c23-review-sheets.mjs'
+      - '.github/workflows/lab-c23-cover-composition.yml'
+  workflow_dispatch:
+
+jobs:
+  cover-composition:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install pinned renderer dependencies
+        run: npm install --no-save @napi-rs/canvas@1.0.9
+      - name: Install FFmpeg + pinned fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: |
+          node --check .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs
+          node --check .agents/skills/framewright/scripts/make-c23-composition-fixtures.mjs
+          node --check .agents/skills/framewright/scripts/c23-composition-audit.mjs
+          node --check .agents/skills/framewright/scripts/c23-summarize.mjs
+          node --check .agents/skills/framewright/scripts/c23-review-sheets.mjs
+      - name: Prepare current semantic stack and strict composition pairs
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-c23.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-c23.html examples/book-ad-systems/index-e12-c23-v2.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-c23-v2.html examples/book-ad-systems/index-e17-c23.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-c23.html examples/book-ad-systems/index-e17-e14-c23.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-c23.html examples/book-ad-systems/index-e18-c23.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-c23.html examples/book-ad-systems/index-c20-c23.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-c23.html examples/book-ad-systems/index-c22-c23.html
+          node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c22-c23.html examples/book-ad-systems/index-c23.html
+          node .agents/skills/framewright/scripts/make-c23-composition-fixtures.mjs examples/book-ad-systems/generated-c23
+      - name: Audit cover composition decisions
+        env:
+          HTML: examples/book-ad-systems/index-c23.html
+          MANIFEST: examples/book-ad-systems/generated-c23/manifest.json
+          AUDIT_REPORT: artifacts/c23/composition-audit.json
+        run: node .agents/skills/framewright/scripts/c23-composition-audit.mjs
+      - name: Render 36 fixed vs adaptive pairs
+        env:
+          HTML: examples/book-ad-systems/index-c23.html
+          MANIFEST: examples/book-ad-systems/generated-c23/manifest.json
+          OUT_DIR: artifacts/c23/videos
+          REPORT: artifacts/c23/batch.json
+          PRESET: veryfast
+          CRF: '22'
+        run: node .agents/skills/framewright/scripts/node-canvas-profile-batch.mjs
+      - name: Enforce composition cost and layout gates
+        run: node .agents/skills/framewright/scripts/c23-summarize.mjs artifacts/c23/batch.json artifacts/c23/composition-audit.json artifacts/c23/summary.json
+      - name: Build paired review sheets
+        run: node .agents/skills/framewright/scripts/c23-review-sheets.mjs artifacts/c23/batch.json artifacts/c23/review
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c23-cover-composition
+          path: artifacts/c23/
+          retention-days: 14
