@@ -2,7 +2,7 @@
 
 ## Product boundary
 
-C27 does not attempt to predict virality offline. It turns a verified reason to care about a book into a deterministic semantic timeline that the renderer can execute later.
+C27 does not attempt to predict virality offline. It turns a verified reason to care about a book into a deterministic semantic timeline that the renderer executes.
 
 The product order is:
 
@@ -39,13 +39,22 @@ The planner emits a versioned plan with:
 - CTA treatment;
 - hook / pre-reveal / reveal / CTA / end checkpoints.
 
-The initial semantic roles are:
+The semantic vocabulary is:
 
-`HOOK -> TENSION -> DESIRE_PAYOFF -> BOOK_REVEAL -> optional CTA`
+`HOOK -> required TENSION -> optional DESIRE_PAYOFF -> BOOK_REVEAL -> optional CTA`
 
-The book reveal can move through the middle roles. It is not forced to frame 0.
+The reveal can move through the narrative roles and its start frame is also explicitly targeted in time. On 7s+ profiles the desired reveal positions are approximately 22% / 40% / 57% of the clip for early / mid / late, clamped to feasible role minimums. This means a truthful two-beat angle can still have distinct mid and late reveal timing without inventing a third sentence.
 
-For 7s+ full grammar the angle must provide verified `tension` and verified `payoff` sources. This prevents nominally different reveal modes from collapsing to the same semantic sequence.
+A structured `title` or `author` atom is forbidden before `BOOK_REVEAL`. This preserves the product meaning of reveal timing: late reveal means the book identity itself has not already leaked through a nominal payoff beat.
+
+## Two useful failed assumptions
+
+The implementation caught two cases of fake experimental diversity before merge:
+
+1. With only one middle beat, a sequence-only planner made nominal `mid` and `late` reveals collapse to the same role order. The fix was to make reveal timing temporal, not to force another piece of copy.
+2. The first workaround required a third payoff atom and used `title` for two-sentence fixtures. Visual review showed that this leaked the book identity before a declared late reveal. The workaround was rejected. Payoff is now optional and structured identity leakage before reveal is a contract error.
+
+A separate confound was also removed: render seed is fixed per book across its entire angle x reveal matrix, so background/motion variation cannot masquerade as narrative divergence.
 
 ## Compatibility with C24
 
@@ -53,35 +62,40 @@ C27 preserves the C24 duration semantics:
 
 - 3s: hook-only teaser;
 - 5s: hook -> book reveal, no explicit CTA role;
-- 7/9/12/15s: full grammar with book reveal and optional explicit CTA.
+- 7/9/12/15s: full grammar with tension, book reveal and optional payoff / explicit CTA.
 
-The planner owns exact semantic frame allocation. The runtime should execute the plan rather than infer duration from media side effects.
+The planner owns exact semantic frame allocation. The runtime executes the plan rather than inferring duration from media side effects.
 
 ## Phase A controlled matrix
 
-The first fixture matrix uses six existing E08 books with two verified angle entry points per book and three reveal timings:
+The fixture matrix uses six existing E08 books with two verified angle entry points per book and three reveal timings:
 
 `6 books x 2 angles x 3 reveal timings = 36 NarrativePlans`
 
-Visual system, typography, motion, cover treatment and delivery profile are intentionally absent from this first pass. C27 first proves the semantic contract before pixels can hide a bad narrative model.
+The CTA treatment is fixed to `intent`; the seed is fixed within each book. Visual system, typography, motion, cover treatment, platform profile and delivery profile are held fixed by the render fixture. The controlled axes are therefore angle and reveal timing.
 
-For this lab fixture, angle text is constructed only from exact E08 hook sentences and exact BookPayload fields. Reordering is a controlled mechanism test, not a claim that these are production-quality hooks.
+For this lab fixture, angle text is constructed only from exact E08 hook sentences and exact BookPayload fields. Reordering is a mechanism test, not a claim that these are production-quality hooks.
 
-## Machine-verifiable gates
+## Renderer contract and machine gates
 
-`c27-narrative-audit.mjs` checks:
+The C27 adapter reuses the existing C20-C26 visual primitives. `hook`, `tension`, and `desire_payoff` use the same hook renderer; `book_reveal` uses the existing book renderer with the generic hook suppressed; `cta` uses exact plan-owned CTA copy. Legacy fixed `/03` page numbering is suppressed because NarrativePlan can contain a variable number of semantic roles.
+
+CI checks:
 
 - deterministic replay;
 - exact copy provenance / no invented text;
 - exact frame coverage with no gaps or overlaps;
 - strict `early < mid < late` reveal start order;
+- no structured title/author identity leak before reveal;
 - semantic divergence between the two angles beyond the opening hook;
-- compatibility with all six C24 duration profiles.
-
-A separate self-test exercises the planner without Chromium or FFmpeg.
+- compatibility with all six C24 duration profiles;
+- exact `NarrativePlan -> Canvas plate schedule` parity;
+- inherited C26 safe-zone capture on multiple frames of every semantic role;
+- zero layout warnings;
+- final MP4 duration/frame count;
+- six distinct outputs per book for 2 angles x 3 reveal timings;
+- checkpoint review sheets for visual inspection.
 
 ## What this does not prove
 
-Passing C27 does not prove that a video is viral, persuasive, attractive, readable in motion, or semantically honest enough for publication. Human review is still required for meaning and creative quality. Real retention, rewatches, shares, saves, CTA actions, and downstream book actions require live publishing.
-
-The next renderer pass should therefore be controlled: take representative NarrativePlans, hold the visual implementation fixed, render hook / pre-reveal / reveal / CTA checkpoints, and inspect whether the semantic difference survives the visual system without introducing layout or readability failures.
+Passing C27 does not prove that a video is viral, persuasive, attractive, or semantically strong enough for publication. Machine gates prove that the intended narrative mechanism was executed faithfully. Visual/semantic review is still required for creative quality, and real retention, rewatches, shares, saves, CTA actions, and downstream book actions require live publishing.
