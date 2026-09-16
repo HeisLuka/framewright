@@ -1,0 +1,58 @@
+name: E20 transport payload size
+
+on:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - ".agents/skills/framewright/scripts/bench-transport-payload-size.mjs"
+      - ".github/workflows/e20-transport-payload-size.yml"
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund
+      - run: node --check .agents/skills/framewright/scripts/bench-transport-payload-size.mjs
+      - name: Payload size 720
+        env:
+          DEPTH: "2"
+        run: |
+          mkdir -p artifacts
+          node .agents/skills/framewright/scripts/bench-transport-payload-size.mjs artifacts/e20-720.json 720 24
+      - name: Payload size 1080
+        env:
+          DEPTH: "2"
+        run: node .agents/skills/framewright/scripts/bench-transport-payload-size.mjs artifacts/e20-1080.json 1080 12
+      - name: Summary
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const profiles = ['720', '1080'].map((size) => JSON.parse(fs.readFileSync(`artifacts/e20-${size}.json`, 'utf8')));
+          const summary = {
+            experiment: 'E20-transport-payload-size-summary',
+            profiles: profiles.map((p) => ({
+              width: p.width,
+              height: p.height,
+              depth: p.depth,
+              confirmedAt1_5x: p.hypothesis.confirmedAt1_5x,
+              nv12SizedSpeedupVsRgba: p.hypothesis.nv12SizedSpeedupVsRgba,
+              results: p.results.map(({label,ratio,payloadBytes,millisecondsPerPayload,payloadsPerSecond,mebibytesPerSecond,speedupVsRgba}) => ({label,ratio,payloadBytes,millisecondsPerPayload,payloadsPerSecond,mebibytesPerSecond,speedupVsRgba})),
+            })),
+          };
+          fs.writeFileSync('artifacts/e20-summary.json', JSON.stringify(summary, null, 2) + '\n');
+          console.log(JSON.stringify(summary, null, 2));
+          NODE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e20-transport-payload-size
+          path: |
+            artifacts/e20-720.json
+            artifacts/e20-1080.json
+            artifacts/e20-summary.json
