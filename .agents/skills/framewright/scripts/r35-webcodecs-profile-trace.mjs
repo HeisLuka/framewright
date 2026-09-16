@@ -76,14 +76,17 @@ try{
 
  const matrixSpecs=[
   {profile:'baseline',codec:PROFILES.baseline,hint:'',latencyMode:'realtime',bitrate:anchorBitrate},
+  {profile:'baseline',codec:PROFILES.baseline,hint:'',latencyMode:'quality',bitrate:anchorBitrate},
   {profile:'high',codec:PROFILES.high,hint:'',latencyMode:'realtime',bitrate:anchorBitrate},
+  {profile:'high',codec:PROFILES.high,hint:'',latencyMode:'quality',bitrate:anchorBitrate},
   {profile:'high',codec:PROFILES.high,hint:'text',latencyMode:'realtime',bitrate:anchorBitrate},
   {profile:'high',codec:PROFILES.high,hint:'text',latencyMode:'quality',bitrate:anchorBitrate},
   {profile:'main',codec:PROFILES.main,hint:'text',latencyMode:'quality',bitrate:anchorBitrate},
  ];
  const matrix=[];for(const spec of matrixSpecs)matrix.push(await encodePolicy(spec));
  const supportedMatrix=matrix.filter(x=>x.supported);
- const pref=supportedMatrix.find(x=>x.spec.profile==='high'&&x.spec.hint==='text'&&x.spec.latencyMode==='quality')||supportedMatrix.find(x=>x.spec.profile==='high'&&x.spec.hint==='text')||supportedMatrix.find(x=>x.spec.profile==='high')||supportedMatrix.find(x=>x.spec.profile==='main'&&x.spec.hint==='text')||supportedMatrix[0];
+ // Fine-search the current production winner, not a merely supported but unvalidated policy.
+ const pref=supportedMatrix.find(x=>x.spec.profile==='baseline'&&!x.spec.hint&&x.spec.latencyMode==='realtime')||supportedMatrix[0];
  if(!pref)throw new Error('no WebCodecs H264 candidate supported');
  const fine=[];for(const bitrate of fineBitrates){if(bitrate===anchorBitrate&&pref.spec.bitrate===anchorBitrate){fine.push({...pref,aliasOfMatrix:true});continue;}fine.push(await encodePolicy({...pref.spec,bitrate}));}
 
@@ -92,7 +95,7 @@ try{
  const x=rows.find(r=>r.id==='x264-high-crf22');if(!x)throw new Error('missing x264 row');for(const r of rows)r.passVsX264=Object.keys(rois).every(k=>r.metrics[k].ssim>=x.metrics[k].ssim);
  const webPasses=rows.filter(r=>r.spec?.kind!=='x264'&&r.passVsX264).sort((a,b)=>a.bytes-b.bytes||a.encodeMs-b.encodeMs);const best=webPasses[0]||null;
 
- // Observational trace only. Never compare this traced encode wall to the untraced performance rows.
+ // Observational trace only. Trace the actual production anchor; traced wall is excluded from timing comparisons.
  const traceClient=await browser.target().createCDPSession();
  const systemInfo=await traceClient.send('SystemInfo.getInfo').catch(e=>({error:String(e)}));
  const browserVersion=await traceClient.send('Browser.getVersion').catch(e=>({error:String(e)}));
@@ -111,6 +114,6 @@ try{
  const lines=rows.map(r=>`| ${r.id} | ${r.probe?.profile||'?'} | ${(r.bytes/1048576).toFixed(2)} MiB | ${(r.encodeMs/1000).toFixed(2)} s | ${r.summary.ssimMean} | ${r.summary.ssimWorst} | ${r.passVsX264?'PASS':'FAIL'} |`).join('\n');
  const supportLines=support.map(s=>`| ${s.profile} | ${s.hint||'default'} | ${s.latencyMode} | ${s.supported?'yes':'no'} | ${s.returnedCodec||''} |`).join('\n');
  const traceTop=(traceSummary.groups||[]).slice(0,12).map(g=>`- ${g.cat} :: ${g.name} — count ${g.count}, total ${g.totalDurMs} ms`).join('\n')||`- ${traceSummary.error||'no matching trace events'}`;
- const md=`# R35 WebCodecs profile/content-hint + trace scout\n\nSame Chromium Canvas raster and the same R31 semantic ROIs are used for every codec candidate. x264 is explicitly High Profile CRF22. Tracing is a separate observational 60-frame encode and is excluded from timing comparisons.\n\n## Support probe\n\n| profile | contentHint | latency | supported | returned codec |\n|---|---|---|---|---|\n${supportLines}\n\n## Rate/quality matrix\n\n| policy | emitted profile | bytes | encode wall | ROI SSIM mean | ROI SSIM worst | every ROI >= x264 |\n|---|---|---:|---:|---:|---:|---|\n${lines}\n\nDecision: ${best?`smallest passing WebCodecs output is **${best.id}** at ${(best.bytes/1048576).toFixed(2)} MiB (${((best.bytes/x.bytes-1)*100).toFixed(1)}% bytes vs x264 High CRF22).`:'no tested WebCodecs policy clears every x264 semantic ROI.'}\n\n## Trace observations\n\n${traceTop}\n`;
+ const md=`# R35 WebCodecs profile/content-hint + trace scout\n\nSame Chromium Canvas raster and the same R31 semantic ROIs are used for every codec candidate. x264 is explicitly High Profile CRF22. Tracing is a separate observational 60-frame encode of the production anchor and is excluded from timing comparisons.\n\n## Support probe\n\n| profile | contentHint | latency | supported | returned codec |\n|---|---|---|---|---|\n${supportLines}\n\n## Rate/quality matrix\n\n| policy | emitted profile | bytes | encode wall | ROI SSIM mean | ROI SSIM worst | every ROI >= x264 |\n|---|---|---:|---:|---:|---:|---|\n${lines}\n\nDecision: ${best?`smallest passing WebCodecs output is **${best.id}** at ${(best.bytes/1048576).toFixed(2)} MiB (${((best.bytes/x.bytes-1)*100).toFixed(1)}% bytes vs x264 High CRF22).`:'no tested WebCodecs policy clears every x264 semantic ROI.'}\n\n## Trace observations\n\n${traceTop}\n`;
  await fsp.writeFile(path.join(outDir,'summary.md'),md);console.log(md);
 }finally{if(browser)await browser.close();await new Promise(ok=>server.close(ok));}
