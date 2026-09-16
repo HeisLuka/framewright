@@ -1,0 +1,66 @@
+name: R38 Native WebCodecs Capacity
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/r38-native-capacity.mjs'
+      - '.github/workflows/r38-native-capacity.yml'
+      - 'docs/r38-native-capacity.md'
+  workflow_dispatch:
+
+jobs:
+  native-capacity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20.20.2
+      - name: Install dependencies
+        run: |
+          npm install
+          npm install --no-save @napi-rs/canvas @napi-rs/webcodecs
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax check
+        run: node --check .agents/skills/framewright/scripts/r38-native-capacity.mjs
+      - name: Prepare exact C18 fixture
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-for-r38.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-e12-for-r38.html examples/book-ad-systems/index-e17-for-r38.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-for-r38.html examples/book-ad-systems/index-e17-e14-for-r38.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-for-r38.html examples/book-ad-systems/index-e18-for-r38.html
+          node .agents/skills/framewright/scripts/make-e18-responsive-variant-fixtures.mjs examples/book-ad-systems/generated-r38
+      - name: Run bounded capacity matrix
+        env:
+          HTML: examples/book-ad-systems/index-e18-for-r38.html
+          MANIFEST: examples/book-ad-systems/generated-r38/manifest.json
+          OUT_DIR: artifacts/r38
+          REPORT: artifacts/r38/report.json
+          JOBS: 8
+          BITRATE: 3000000
+          CONCURRENCY: 1,2,3,4
+        run: node .agents/skills/framewright/scripts/r38-native-capacity.mjs
+      - name: Validate report
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const r=JSON.parse(fs.readFileSync('artifacts/r38/report.json','utf8'));
+          if(r.schema!=='framewright-r38-native-capacity-v1') throw new Error('wrong schema');
+          if(r.results.length!==8) throw new Error(`expected 8 scenarios, got ${r.results.length}`);
+          for(const x of r.results){
+            if(x.jobs<1 || x.failures.length) throw new Error(`${x.backend} c${x.concurrency} failed`);
+            if(!(x.meanEncodedBytes>100000)) throw new Error(`${x.backend} c${x.concurrency} implausible output bytes`);
+          }
+          console.log(JSON.stringify(r.decision,null,2));
+          NODE
+      - name: Show result
+        run: cat artifacts/r38/summary.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r38-native-capacity
+          path: |
+            artifacts/r38/report.json
+            artifacts/r38/summary.md
+          retention-days: 14
