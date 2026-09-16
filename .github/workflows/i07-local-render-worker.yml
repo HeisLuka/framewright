@@ -1,0 +1,31 @@
+name: I07 Local Render Worker
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/local-render-worker.mjs'
+      - '.agents/skills/framewright/scripts/enqueue-local-render-job.mjs'
+      - 'contracts/check-i07-local-render-worker.mjs'
+      - 'docs/i07-local-render-worker.md'
+      - 'package.json'
+      - '.gitignore'
+      - '.github/workflows/i07-local-render-worker.yml'
+  workflow_dispatch:
+
+jobs:
+  queue-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Syntax checks
+        run: |
+          node --check .agents/skills/framewright/scripts/local-render-worker.mjs
+          node --check .agents/skills/framewright/scripts/enqueue-local-render-job.mjs
+          node --check contracts/check-i07-local-render-worker.mjs
+      - name: Queue contract checks
+        run: node contracts/check-i07-local-render-worker.mjs
