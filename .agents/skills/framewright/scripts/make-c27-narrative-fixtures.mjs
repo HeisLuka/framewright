@@ -43,22 +43,23 @@ const ANGLES={
   ]
 };
 const timings=['early','mid','late'];
-const manifest={schema:'framewright-c27-narrative-fixtures-v1',policy:'c27-narrative-v1',books:Object.keys(ANGLES).length,anglesPerBook:2,revealTimings:timings,items:[]};
+const manifest={schema:'framewright-c27-narrative-fixtures-v1',policy:'c27-narrative-v1',books:Object.keys(ANGLES).length,anglesPerBook:2,revealTimings:timings,ctaTreatment:'intent',items:[]};
 let n=0;
 for(const [bookId,angles] of Object.entries(ANGLES)){
   const book=byId.get(bookId);if(!book)throw new Error(`missing E08 book ${bookId}`);
   for(const angle of angles){
     for(const revealTiming of timings){
       n++;
-      const input={book,angle,duration_seconds:9,fps:30,reveal_timing:revealTiming,cta_treatment:'soft_reveal',seed:100+n};
+      // CTA treatment is fixed across the controlled matrix so the only semantic axes are angle and reveal timing.
+      const input={book,angle,duration_seconds:9,fps:30,reveal_timing:revealTiming,cta_treatment:'intent',seed:100+n};
       const plan=planNarrative(input);
       const stem=`${String(n).padStart(2,'0')}-${bookId}-${angle.id}-${revealTiming}`;
       const inputFile=`input-${stem}.json`,planFile=`plan-${stem}.json`;
       fs.writeFileSync(path.join(outDir,inputFile),JSON.stringify(input,null,2));
       fs.writeFileSync(path.join(outDir,planFile),JSON.stringify(plan,null,2));
-      manifest.items.push({id:stem,bookId,angleId:angle.id,angleType:angle.type,revealTiming,durationSeconds:9,inputFile,planFile,narrativePlanId:plan.narrative_plan_id,revealFrame:plan.checkpoints.reveal});
+      manifest.items.push({id:stem,bookId,angleId:angle.id,angleType:angle.type,revealTiming,durationSeconds:9,ctaTreatment:'intent',inputFile,planFile,narrativePlanId:plan.narrative_plan_id,revealFrame:plan.checkpoints.reveal,ctaFrame:plan.checkpoints.cta});
     }
   }
 }
 fs.writeFileSync(path.join(outDir,'manifest.json'),JSON.stringify(manifest,null,2));
-console.log(`C27 generated ${manifest.items.length} NarrativePlans: ${manifest.books} books x ${manifest.anglesPerBook} verified angles x ${timings.length} reveal timings`);
+console.log(`C27 generated ${manifest.items.length} NarrativePlans: ${manifest.books} books x ${manifest.anglesPerBook} verified angles x ${timings.length} reveal timings; CTA=intent fixed`);
