@@ -13,11 +13,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Record base image digest
+      - name: Validate pinned base image
         run: |
           mkdir -p artifacts
-          docker pull node:20.20.2-bookworm-slim
-          docker image inspect node:20.20.2-bookworm-slim --format '{{json .RepoDigests}}' | tee artifacts/base-image-digests.json
+          BASE=$(awk 'NR==1{sub(/^FROM /,""); print}' Dockerfile.worker-lab)
+          echo "$BASE" | tee artifacts/base-image-ref.txt
+          docker pull "$BASE"
+          docker image inspect "$BASE" --format '{{json .RepoDigests}}' | tee artifacts/base-image-digests.json
 
       - name: Build worker image
         run: |
