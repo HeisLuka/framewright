@@ -22,6 +22,7 @@ portrait.js
 *.log
 tmp/
 .local-render-queue/
+.codex-lab/
 
 # --- source material and personal files: photos and footage stay local ---
 *.jpg
