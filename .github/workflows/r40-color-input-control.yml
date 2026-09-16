@@ -62,6 +62,8 @@ jobs:
             if(!Number.isFinite(c.wallOverhead)) throw new Error(`${m}: missing wallOverhead`);
           }
           if(typeof r.decision?.apiLevelBt709ControlValidated!=='boolean'||typeof r.decision?.fallbackMeasuredReference!=='boolean') throw new Error('missing decision');
+          if(r.decision.apiLevelBt709ControlValidated===r.decision.fallbackMeasuredReference) throw new Error('decision must select exactly one color contract path');
+          if(r.decision.apiLevelBt709ControlValidated!==Boolean(r.decision.winner)) throw new Error('winner/control decision mismatch');
           console.log(JSON.stringify(r.decision,null,2));
           NODE
       - name: Show result
