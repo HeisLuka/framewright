@@ -1,0 +1,153 @@
+name: E28 WebCodecs fast-path prototype
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [video-engine-v0]
+    paths:
+      - "src/webcodecs-fast-path.mjs"
+      - "test/webcodecs-fast-path.test.mjs"
+      - ".agents/skills/framewright/scripts/render-webcodecs.mjs"
+      - ".agents/skills/framewright/scripts/book-ad-fast.mjs"
+      - ".github/workflows/e28-webcodecs-fast-prototype.yml"
+      - "package.json"
+
+jobs:
+  prototype:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: npm install --no-audit --no-fund
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Syntax and unit tests
+        run: |
+          node --check .agents/skills/framewright/scripts/render-webcodecs.mjs
+          node --check .agents/skills/framewright/scripts/book-ad-fast.mjs
+          npm test
+
+      - name: Build deterministic fixture assets
+        run: |
+          mkdir -p .bench/e28/artifacts
+          cat > .bench/e28/book.json <<'JSON'
+          {
+            "public_id": "e28-fast-book",
+            "title": "The River Station",
+            "subtitle": "A city remembers every train that never arrived",
+            "author_name": "Framewright Lab",
+            "description": "At the last station before the river, a map begins changing overnight. Every missing street points to the same impossible platform.",
+            "genres": ["Mystery"],
+            "tags": ["city", "map", "station"]
+          }
+          JSON
+          cat > .bench/e28/cover.svg <<'SVG'
+          <svg xmlns="http://www.w3.org/2000/svg" width="900" height="1350" viewBox="0 0 900 1350">
+            <rect width="900" height="1350" fill="#eadfc9"/>
+            <rect x="70" y="70" width="760" height="1210" fill="none" stroke="#13283c" stroke-width="10"/>
+            <path d="M120 970 C300 820 580 1120 780 900" fill="none" stroke="#d76540" stroke-width="24"/>
+            <text x="450" y="300" font-size="78" text-anchor="middle" font-family="serif" fill="#13283c">THE RIVER</text>
+            <text x="450" y="390" font-size="78" text-anchor="middle" font-family="serif" fill="#13283c">STATION</text>
+            <text x="450" y="1180" font-size="34" text-anchor="middle" font-family="sans-serif" fill="#13283c">FRAMEWRIGHT LAB</text>
+          </svg>
+          SVG
+          ffmpeg -y -v error -f lavfi -i "sine=frequency=220:sample_rate=48000:duration=15" -c:a pcm_s16le .bench/e28/track.wav
+
+      - name: First production-shaped render
+        run: |
+          node .agents/skills/framewright/scripts/book-ad-fast.mjs \
+            --book-json .bench/e28/book.json \
+            --cover-file .bench/e28/cover.svg \
+            --strict-assets \
+            --track .bench/e28/track.wav \
+            --width 720 \
+            --seed 7 \
+            --out .bench/e28/first.mp4 \
+            --job-out .bench/e28/job.json \
+            --artifact-dir .bench/e28/artifacts
+
+      - name: Repeat identical render through artifact cache
+        run: |
+          node .agents/skills/framewright/scripts/book-ad-fast.mjs \
+            --book-json .bench/e28/book.json \
+            --cover-file .bench/e28/cover.svg \
+            --strict-assets \
+            --track .bench/e28/track.wav \
+            --width 720 \
+            --seed 7 \
+            --out .bench/e28/second.mp4 \
+            --artifact-dir .bench/e28/artifacts
+
+      - name: Different seed must create a different render id
+        run: |
+          node .agents/skills/framewright/scripts/book-ad-fast.mjs \
+            --book-json .bench/e28/book.json \
+            --cover-file .bench/e28/cover.svg \
+            --strict-assets \
+            --track .bench/e28/track.wav \
+            --width 720 \
+            --seed 8 \
+            --out .bench/e28/seed8.mp4 \
+            --artifact-dir .bench/e28/artifacts
+
+      - name: Verify artifact contract
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import fsp from 'node:fs/promises';
+          import path from 'node:path';
+
+          const first = JSON.parse(await fsp.readFile('.bench/e28/first.mp4.render.json', 'utf8'));
+          const second = JSON.parse(await fsp.readFile('.bench/e28/second.mp4.render.json', 'utf8'));
+          const seed8 = JSON.parse(await fsp.readFile('.bench/e28/seed8.mp4.render.json', 'utf8'));
+
+          assert.equal(first.kind, 'framewright-render-artifact');
+          assert.equal(first.renderer, 'webcodecs-h264-v1');
+          assert.equal(first.input.frames, 450);
+          assert.equal(first.input.width, 720);
+          assert.equal(first.input.bitrate, 1_000_000);
+          assert.equal(Number(first.output.video.nb_read_frames), 450);
+          assert.equal(first.output.video.codec_name, 'h264');
+          assert.equal(first.output.audio.codec_name, 'aac');
+          assert.equal(first.invocation.cacheHit, false);
+
+          assert.equal(second.renderId, first.renderId);
+          assert.equal(second.invocation.cacheHit, true);
+          assert.equal(second.output.sha256, first.output.sha256);
+          assert.notEqual(seed8.renderId, first.renderId);
+          assert.equal(seed8.invocation.cacheHit, false);
+
+          const cachedMp4 = path.join('.bench/e28/artifacts', `${first.renderId}.mp4`);
+          const cachedJson = path.join('.bench/e28/artifacts', `${first.renderId}.json`);
+          assert.ok(fs.existsSync(cachedMp4));
+          assert.ok(fs.existsSync(cachedJson));
+          assert.equal((await fsp.stat('.bench/e28/first.mp4')).size, (await fsp.stat('.bench/e28/second.mp4')).size);
+
+          console.log(JSON.stringify({
+            renderId: first.renderId,
+            firstWallSeconds: first.metrics.wallSeconds,
+            firstFps: first.metrics.framesPerSecond,
+            mp4Bytes: first.output.bytes,
+            cachedSecond: second.invocation.cacheHit,
+            seed8RenderId: seed8.renderId,
+          }, null, 2));
+          NODE
+
+      - name: Probe final MP4
+        run: |
+          ffprobe -v error -show_entries format=duration,size -show_entries stream=index,codec_type,codec_name,width,height -of json .bench/e28/first.mp4
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: e28-webcodecs-fast-prototype
+          path: .bench/e28
