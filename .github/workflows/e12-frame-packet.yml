@@ -21,6 +21,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm install --no-audit --no-fund
+      - name: Install FFmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
       - run: npm test
       - run: node --check .agents/skills/framewright/scripts/render-raw.mjs
       - run: node --check .agents/skills/framewright/scripts/post-identity.mjs
