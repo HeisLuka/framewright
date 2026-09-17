@@ -1,0 +1,24 @@
+name: C38 Template Variability
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/template-variability-v1.mjs'
+      - 'contracts/template-variability-v1.schema.json'
+      - 'contracts/template-variability-registry.v1.json'
+      - 'contracts/check-template-variability-v1.mjs'
+      - 'docs/c38-template-variability-contract.md'
+      - '.github/workflows/c38-template-variability.yml'
+  workflow_dispatch:
+
+jobs:
+  template-variability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check template variability contract
+        run: node contracts/check-template-variability-v1.mjs

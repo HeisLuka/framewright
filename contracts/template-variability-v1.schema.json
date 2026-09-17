@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://newboo.example/schemas/template-variability-v1.schema.json",
+  "title": "NEwBOO Template Variability v1",
+  "$defs": {
+    "stableId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{0,95}$"
+    },
+    "requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["axis", "any_of"],
+      "properties": {
+        "axis": {
+          "enum": ["structural_layout", "visual_system", "typography", "motion_grammar", "asset_staging", "graphic_devices"]
+        },
+        "any_of": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/stableId"}
+        }
+      }
+    },
+    "option": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version", "supported_semantic_roles", "supported_duration_seconds", "supported_aspects", "required_asset_kinds", "requires"],
+      "properties": {
+        "id": {"$ref": "#/$defs/stableId"},
+        "version": {"type": "integer", "minimum": 1},
+        "supported_semantic_roles": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["hook", "tension", "desire_payoff", "book_reveal", "cta"]}
+        },
+        "supported_duration_seconds": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": [3, 5, 7, 9, 12, 15]}
+        },
+        "supported_aspects": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"enum": ["vertical", "square", "landscape"]}
+        },
+        "required_asset_kinds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/stableId"}
+        },
+        "requires": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/requirement"}
+        }
+      }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["structural_layout", "visual_system", "typography", "motion_grammar", "asset_staging", "graphic_devices"],
+      "properties": {
+        "structural_layout": {"$ref": "#/$defs/stableId"},
+        "visual_system": {"$ref": "#/$defs/stableId"},
+        "typography": {"$ref": "#/$defs/stableId"},
+        "motion_grammar": {"$ref": "#/$defs/stableId"},
+        "asset_staging": {"$ref": "#/$defs/stableId"},
+        "graphic_devices": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/stableId"}
+        }
+      }
+    },
+    "registry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "version", "registry_id", "axes", "legacy_presets"],
+      "properties": {
+        "schema": {"const": "newboo-template-variability-registry-v1"},
+        "version": {"const": 1},
+        "registry_id": {
+          "type": "string",
+          "pattern": "^(auto|nbtvr1_[a-f0-9]{64})$"
+        },
+        "axes": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["structural_layout", "visual_system", "typography", "motion_grammar", "asset_staging", "graphic_devices"],
+          "properties": {
+            "structural_layout": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/option"}},
+            "visual_system": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/option"}},
+            "typography": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/option"}},
+            "motion_grammar": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/option"}},
+            "asset_staging": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/option"}},
+            "graphic_devices": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/option"}}
+          }
+        },
+        "legacy_presets": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/selection"}
+        }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema", "registry_id", "template_variant_id", "axes"],
+      "properties": {
+        "schema": {"const": "newboo-template-variant-v1"},
+        "registry_id": {"type": "string", "pattern": "^nbtvr1_[a-f0-9]{64}$"},
+        "template_variant_id": {"type": "string", "pattern": "^nbtv1_[a-f0-9]{64}$"},
+        "axes": {"$ref": "#/$defs/selection"}
+      }
+    }
+  },
+  "oneOf": [
+    {"$ref": "#/$defs/registry"},
+    {"$ref": "#/$defs/variant"}
+  ]
+}

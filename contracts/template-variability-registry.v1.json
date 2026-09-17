@@ -1,0 +1,207 @@
+{
+  "schema": "newboo-template-variability-registry-v1",
+  "version": 1,
+  "registry_id": "auto",
+  "axes": {
+    "structural_layout": [
+      {
+        "id": "layout_swiss_editorial_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": [{"axis": "visual_system", "any_of": ["swiss"]}]
+      },
+      {
+        "id": "layout_newspaper_editorial_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": [{"axis": "visual_system", "any_of": ["newspaper"]}]
+      },
+      {
+        "id": "layout_paper_collage_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": [{"axis": "visual_system", "any_of": ["paper"]}]
+      }
+    ],
+    "visual_system": [
+      {
+        "id": "newspaper",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": []
+      },
+      {
+        "id": "paper",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": []
+      },
+      {
+        "id": "swiss",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": []
+      }
+    ],
+    "typography": [
+      {
+        "id": "type_swiss_sans_scale_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": [{"axis": "visual_system", "any_of": ["swiss"]}]
+      },
+      {
+        "id": "type_newspaper_hierarchy_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": [{"axis": "visual_system", "any_of": ["newspaper"]}]
+      },
+      {
+        "id": "type_paper_shadow_display_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": [{"axis": "visual_system", "any_of": ["paper"]}]
+      }
+    ],
+    "motion_grammar": [
+      {
+        "id": "motion_swiss_slide_fade_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": [{"axis": "visual_system", "any_of": ["swiss"]}]
+      },
+      {
+        "id": "motion_newspaper_staged_fade_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": [{"axis": "visual_system", "any_of": ["newspaper"]}]
+      },
+      {
+        "id": "motion_paper_tape_slide_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": [{"axis": "visual_system", "any_of": ["paper"]}]
+      }
+    ],
+    "asset_staging": [
+      {
+        "id": "stage_swiss_cover_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": ["cover"],
+        "requires": [{"axis": "visual_system", "any_of": ["swiss"]}]
+      },
+      {
+        "id": "stage_newspaper_framed_cover_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": ["cover"],
+        "requires": [{"axis": "visual_system", "any_of": ["newspaper"]}]
+      },
+      {
+        "id": "stage_paper_tilted_cover_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": ["cover"],
+        "requires": [{"axis": "visual_system", "any_of": ["paper"]}]
+      }
+    ],
+    "graphic_devices": [
+      {
+        "id": "device_swiss_grid_rules_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": [{"axis": "visual_system", "any_of": ["swiss"]}]
+      },
+      {
+        "id": "device_newspaper_masthead_rules_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": [{"axis": "visual_system", "any_of": ["newspaper"]}]
+      },
+      {
+        "id": "device_paper_tape_marks_v1",
+        "version": 1,
+        "supported_semantic_roles": ["book_reveal", "cta", "hook"],
+        "supported_duration_seconds": [3, 5, 7, 9, 12, 15],
+        "supported_aspects": ["landscape", "square", "vertical"],
+        "required_asset_kinds": [],
+        "requires": [{"axis": "visual_system", "any_of": ["paper"]}]
+      }
+    ]
+  },
+  "legacy_presets": {
+    "swiss": {
+      "structural_layout": "layout_swiss_editorial_v1",
+      "visual_system": "swiss",
+      "typography": "type_swiss_sans_scale_v1",
+      "motion_grammar": "motion_swiss_slide_fade_v1",
+      "asset_staging": "stage_swiss_cover_v1",
+      "graphic_devices": ["device_swiss_grid_rules_v1"]
+    },
+    "newspaper": {
+      "structural_layout": "layout_newspaper_editorial_v1",
+      "visual_system": "newspaper",
+      "typography": "type_newspaper_hierarchy_v1",
+      "motion_grammar": "motion_newspaper_staged_fade_v1",
+      "asset_staging": "stage_newspaper_framed_cover_v1",
+      "graphic_devices": ["device_newspaper_masthead_rules_v1"]
+    },
+    "paper": {
+      "structural_layout": "layout_paper_collage_v1",
+      "visual_system": "paper",
+      "typography": "type_paper_shadow_display_v1",
+      "motion_grammar": "motion_paper_tape_slide_v1",
+      "asset_staging": "stage_paper_tilted_cover_v1",
+      "graphic_devices": ["device_paper_tape_marks_v1"]
+    }
+  }
+}
