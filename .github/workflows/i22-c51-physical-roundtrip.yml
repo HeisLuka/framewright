@@ -1,0 +1,81 @@
+name: I22 C51 Physical Roundtrip
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/make-i22-layout-ofat-fixture.mjs'
+      - '.agents/skills/framewright/scripts/i22-observe-layout.mjs'
+      - '.agents/skills/framewright/scripts/i22-infer-semantic-observation.mjs'
+      - '.agents/skills/framewright/scripts/i22-layout-benchmark.mjs'
+      - 'contracts/inverse-observation-fusion-v1.mjs'
+      - 'examples/book-ad-systems/index-c45-template-variant.html'
+      - '.github/workflows/i22-c51-physical-roundtrip.yml'
+  workflow_dispatch:
+
+jobs:
+  layout-roundtrip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install ffmpeg and pinned fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax and C51 contract gate
+        run: |
+          node --check .agents/skills/framewright/scripts/make-i22-layout-ofat-fixture.mjs
+          node --check .agents/skills/framewright/scripts/i22-observe-layout.mjs
+          node --check .agents/skills/framewright/scripts/i22-infer-semantic-observation.mjs
+          node --check .agents/skills/framewright/scripts/i22-layout-benchmark.mjs
+          node contracts/check-c51-inverse-observation-fusion.mjs
+      - name: Generate canonical C27 source pack
+        run: |
+          mkdir -p .bench/i22
+          node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs .bench/i22/c27-fixtures
+      - name: Build canonical 9s AAC
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=220:sample_rate=48000' -t 9 -c:a pcm_s16le .bench/i22/source.wav
+          ffmpeg -hide_banner -loglevel error -y -i .bench/i22/source.wav -t 9 -c:a aac -b:a 192k -movflags +faststart .bench/i22/canonical-audio.m4a
+      - name: Build six-layout physical source corpus
+        run: |
+          node .agents/skills/framewright/scripts/make-i22-layout-ofat-fixture.mjs \
+            .bench/i22/c27-fixtures \
+            examples/book-ad-systems/index-c45-template-variant.html \
+            .bench/i22/source.wav \
+            .bench/i22/canonical-audio.m4a \
+            .bench/i22/source-input
+      - name: Render source corpus through canonical FAST factory
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/i22/source-input/campaign.json \
+            --out-dir .bench/i22/source-run \
+            --artifact-dir .bench/i22/source-artifacts
+      - name: Sealed MP4-only layout observation and C51 fit
+        run: |
+          node .agents/skills/framewright/scripts/i22-layout-benchmark.mjs \
+            --video-dir .bench/i22/source-run/video \
+            --input-dir .bench/i22/source-input \
+            --canonical-artifacts .bench/i22/source-run/canonical-artifacts.json \
+            --work-dir .bench/i22/inverse \
+            --out .bench/i22/layout-benchmark.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i22-c51-physical-layout-inversion
+          path: |
+            .bench/i22/source-input/
+            .bench/i22/source-run/canonical-artifacts.json
+            .bench/i22/source-run/run.json
+            .bench/i22/source-run/video/
+            .bench/i22/inverse/
+            .bench/i22/layout-benchmark.json
+          retention-days: 14
