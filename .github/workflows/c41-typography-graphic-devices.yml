@@ -1,0 +1,23 @@
+name: C41 Typography Graphic Devices
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/typography-graphic-device-library-v2.json'
+      - 'contracts/typography-graphic-device-library-v2.mjs'
+      - 'contracts/check-c41-typography-graphic-devices.mjs'
+      - 'docs/c41-typography-graphic-devices.md'
+      - '.github/workflows/c41-typography-graphic-devices.yml'
+  workflow_dispatch:
+
+jobs:
+  typography-graphic-devices:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check typography and graphic-device library
+        run: node contracts/check-c41-typography-graphic-devices.mjs
