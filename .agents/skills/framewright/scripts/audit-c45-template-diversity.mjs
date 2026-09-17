@@ -32,8 +32,8 @@ assert.equal(new Set(canonical1.artifacts.map(a=>a.creative_id)).size,40);
 assert.equal(new Set(canonical1.artifacts.map(a=>a.render_spec_id)).size,40);
 assert.equal(new Set(canonical1.artifacts.map(a=>a.output.sha256)).size,40,'physical MP4s must not collapse to identical bytes');
 assert.ok(canonical1.artifacts.every(a=>a.qa?.status==='pass'));
-assert.ok(canonical1.artifacts.every(a=>a.output.frame_count===150));
-assert.ok(canonical1.artifacts.every(a=>Math.abs(a.output.duration_ms-5000)<=40));
+assert.ok(canonical1.artifacts.every(a=>a.output.frame_count===270));
+assert.ok(canonical1.artifacts.every(a=>Math.abs(a.output.duration_ms-9000)<=40));
 assert.equal(campaign.selected.some(x=>x.selection_id==='c45-unrendered-control'),false);
 assert.equal(canonical1.artifacts.some(x=>x.selection_id==='c45-unrendered-control'),false);
 const batchByCandidate=new Map(batch.assignments.map(x=>[x.candidate_id,x]));
@@ -43,7 +43,7 @@ for(const row of manifest.variants){
 }
 fs.rmSync(reviewDir,{recursive:true,force:true});fs.mkdirSync(path.join(reviewDir,'thumbs'),{recursive:true});fs.mkdirSync(path.join(reviewDir,'samples'),{recursive:true});
 const artifactBySelection=new Map(canonical1.artifacts.map(a=>[a.selection_id,a]));
-const sampleTimes=[0.55,2.5,4.35];
+const sampleTimes=[0.75,4.5,8.15];
 const rows=[];const checkpointHashes=sampleTimes.map(()=>new Set());const signatures=new Set();
 for(const row of manifest.variants){
   const artifact=artifactBySelection.get(row.selection_id);assert.ok(artifact,`artifact missing ${row.selection_id}`);
@@ -54,7 +54,7 @@ for(const row of manifest.variants){
     const p=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-y','-ss',String(sampleTimes[i]),'-i',mp4,'-frames:v','1',out],{encoding:'utf8'});assert.equal(p.status,0,p.stderr);const h=sha(out);hashes.push(h);checkpointHashes[i].add(h);
   }
   const thumb=path.join(reviewDir,'thumbs',`${row.selection_id}.jpg`);
-  const t=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-y','-ss','2.5','-i',mp4,'-frames:v','1','-vf','scale=270:-2','-q:v','3',thumb],{encoding:'utf8'});assert.equal(t.status,0,t.stderr);
+  const t=spawnSync('ffmpeg',['-hide_banner','-loglevel','error','-y','-ss','4.5','-i',mp4,'-frames:v','1','-vf','scale=270:-2','-q:v','3',thumb],{encoding:'utf8'});assert.equal(t.status,0,t.stderr);
   const signature=hashes.join(':');signatures.add(signature);
   rows.push({...row,render_spec_id:artifact.render_spec_id,artifact_sha256:artifact.output.sha256,sample_sha256:hashes,thumbnail:`thumbs/${row.selection_id}.jpg`});
 }
@@ -64,7 +64,7 @@ assert.ok(checkpointHashes[1].size>=18,`middle checkpoint diversity too low: ${c
 assert.ok(checkpointHashes[2].size>=18,`late checkpoint diversity too low: ${checkpointHashes[2].size}`);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const cards=rows.map(r=>`<article><img src="${esc(r.thumbnail)}"><h2>${esc(r.selection_id)}</h2><p><code>${esc(r.template_variant_id.slice(-12))}</code></p><dl>${Object.entries(r.axes).map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(Array.isArray(v)?v.join(', '):v)}</dd>`).join('')}</dl><label><input type="checkbox"> near-duplicate</label><label><input type="checkbox"> unreadable</label><label><input type="checkbox"> weak composition</label><label><input type="checkbox"> motion indistinct</label></article>`).join('\n');
-const html=`<!doctype html><meta charset="utf-8"><title>C45 human review</title><style>body{font:14px system-ui;margin:24px;background:#eee}header{max-width:900px;margin:auto auto 24px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:18px}article{background:white;padding:12px;border-radius:12px}img{width:100%;height:auto;background:#ddd}h2{margin:.5em 0}dl{display:grid;grid-template-columns:110px 1fr;gap:3px 8px}dt{font-weight:700}dd{margin:0;overflow-wrap:anywhere}label{display:block;margin-top:6px}</style><header><h1>C45 — 40-video template diversity review</h1><p>Same book + same C27 semantic schedule. Review visual distinctness only. Machine checks are descriptive; this sheet does not assign a creativity score.</p><p>Flag near-duplicates, unreadable combinations, weak compositions, or motion that is visually indistinguishable despite a different family ID.</p></header><main class="grid">${cards}</main>`;
+const html=`<!doctype html><meta charset="utf-8"><title>C45 human review</title><style>body{font:14px system-ui;margin:24px;background:#eee}header{max-width:900px;margin:auto auto 24px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:18px}article{background:white;padding:12px;border-radius:12px}img{width:100%;height:auto;background:#ddd}h2{margin:.5em 0}dl{display:grid;grid-template-columns:110px 1fr;gap:3px 8px}dt{font-weight:700}dd{margin:0;overflow-wrap:anywhere}label{display:block;margin-top:6px}</style><header><h1>C45 — 40-video template diversity review</h1><p>Same book + same canonical 9s C27 semantic schedule. Review visual distinctness only. Machine checks are descriptive; this sheet does not assign a creativity score.</p><p>Flag near-duplicates, unreadable combinations, weak compositions, or motion that is visually indistinguishable despite a different family ID.</p></header><main class="grid">${cards}</main>`;
 fs.writeFileSync(path.join(reviewDir,'index.html'),html);
 const report={schema:'c45-template-diversity-physical-acceptance-v1',campaign_id:campaign.campaign_id,count:40,narrative_plan_id:manifest.narrative_plan_id,semantic_schedule_sha256:manifest.variants[0].semantic_schedule_sha256,unique:{template_variants:40,scene_programs:40,payloads:40,creative_ids:40,render_specs:40,artifact_sha256:40,three_checkpoint_signatures:signatures.size},checkpoint_unique_png_sha256:checkpointHashes.map(x=>x.size),batch_id:batch.batch_id,diversity_policy_id:batch.policy_id,min_transition_distance:batch.min_observed_transition_distance,axis_distribution:batch.axis_distribution,cache_replay:{first_run_hits:run1.cache_hits,second_run_hits:run2.cache_hits,canonical_manifest_equal:true},reserve_suppressed:true,human_review_pack:'review/index.html',rows};
 fs.writeFileSync(path.join(reviewDir,'acceptance.json'),JSON.stringify(report,null,2)+'\n');console.log(JSON.stringify({...report,rows:undefined},null,2));
