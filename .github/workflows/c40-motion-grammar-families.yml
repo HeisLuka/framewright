@@ -1,0 +1,23 @@
+name: C40 Motion Grammar Families
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/motion-grammar-families-v2.json'
+      - 'contracts/motion-grammar-families-v2.mjs'
+      - 'contracts/check-c40-motion-grammar-families.mjs'
+      - 'docs/c40-motion-grammar-families.md'
+      - '.github/workflows/c40-motion-grammar-families.yml'
+  workflow_dispatch:
+
+jobs:
+  motion-grammar-families:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check bounded motion grammar families
+        run: node contracts/check-c40-motion-grammar-families.mjs
