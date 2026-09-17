@@ -11,10 +11,13 @@ const registry=loadSemanticSceneObjectFamilyRegistry();
 const candidateManifest=[],testManifest=[],truth={};
 const q=(x)=>Math.round(x*1e6)/1e6;
 function perturbed(f,phase){const p={};for(const [k,s] of Object.entries(f.parameters)){if(s.type==='number')p[k]=q(s.min+(s.max-s.min)*phase);else if(s.type==='integer')p[k]=Math.round(s.min+(s.max-s.min)*phase);else if(s.type==='boolean')p[k]=phase>.5?!s.default:s.default;else if(s.type==='enum'){const i=Math.min(s.values.length-1,Math.max(0,Math.floor(phase*s.values.length)));p[k]=s.values[i];}}return p;}
+const anchors=[{name:'default',seed:41,params:f=>({})},{name:'low',seed:19,params:f=>perturbed(f,.22)},{name:'high',seed:97,params:f=>perturbed(f,.78)}];
 for(const f of registry.families){
-  const c=resolveSemanticSceneObject({family_id:f.id,role:f.supported_roles[0],params:{},seed:41});
-  const cName=`${f.id}.json`;fs.writeFileSync(path.join(out,'candidates',cName),JSON.stringify({program:c},null,2));
-  candidateManifest.push({file:cName,family_id:f.id,domain:f.domain,topology:f.topology});
+  for(const a of anchors){
+    const params=a.params(f),program=resolveSemanticSceneObject({family_id:f.id,role:f.supported_roles[0],params,seed:a.seed});
+    const cName=`${f.id}--${a.name}.json`;fs.writeFileSync(path.join(out,'candidates',cName),JSON.stringify({program},null,2));
+    candidateManifest.push({file:cName,family_id:f.id,domain:f.domain,topology:f.topology,anchor:a.name,seed:a.seed});
+  }
   for(const t of [{mode:'same_seed',seed:41,phase:.34},{mode:'cross_seed',seed:73,phase:.67}]){
     const params=perturbed(f,t.phase),program=resolveSemanticSceneObject({family_id:f.id,role:f.supported_roles[0],params,seed:t.seed});
     const id='t_'+crypto.createHash('sha256').update(`${f.id}|${t.mode}|${JSON.stringify(params)}`).digest('hex').slice(0,16),file=`${id}.json`;
