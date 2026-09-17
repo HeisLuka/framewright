@@ -3,7 +3,7 @@ import {spawnSync} from 'node:child_process';
 import {existsSync,mkdirSync,readFileSync,readdirSync,rmSync,writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-const DIR=path.dirname(fileURLToPath(import.meta.url)),OBSERVER=path.join(DIR,'i26-observe-motion-multi-aspect.mjs'),INFERER=path.join(DIR,'i22-infer-semantic-observation.mjs');
+const DIR=path.dirname(fileURLToPath(import.meta.url)),OBSERVER=path.join(DIR,'i23-observe-motion.mjs'),INFERER=path.join(DIR,'i22-infer-semantic-observation.mjs');
 function parseArgs(){const args=process.argv.slice(2),o={};for(let i=0;i<args.length;i++){if(!args[i].startsWith('--'))throw new Error(`unexpected ${args[i]}`);o[args[i].slice(2)]=args[++i];}for(const key of ['video-dir','input-dir','canonical-artifacts','work-dir'])if(!o[key])throw new Error(`--${key} required`);return o;}
 function runMaybe(script,args){const r=spawnSync(process.execPath,[script,...args],{encoding:'utf8',maxBuffer:256*1024*1024});if(r.error)return{ok:false,error:r.error.message};if(r.status!==0)return{ok:false,error:`${path.basename(script)} failed (${r.status}): ${(r.stderr||r.stdout).slice(-5000)}`};return{ok:true};}
 function rankOf(fit,truth){const i=(fit?.candidates||[]).findIndex(c=>c.value===truth);return i<0?null:i+1;}
