@@ -1,0 +1,141 @@
+{
+  "schema": "newboo-semantic-scene-object-family-registry-v1",
+  "version": 1,
+  "families": [
+    {
+      "id": "scene_botanical_cluster_v1",
+      "version": 1,
+      "domain": "nature",
+      "topology": "radial_branch_cluster",
+      "supported_roles": ["hook", "tension", "desire_payoff", "book_reveal", "cta"],
+      "parameters": {
+        "stem_count": {"type": "integer", "min": 3, "max": 9, "default": 6},
+        "leaf_count": {"type": "integer", "min": 6, "max": 32, "default": 18},
+        "spread": {"type": "number", "min": 0.2, "max": 0.9, "default": 0.58},
+        "bloom_ratio": {"type": "number", "min": 0, "max": 0.65, "default": 0.22}
+      },
+      "lowering": {"primitive_kinds": ["line", "circle"], "max_ops": 96},
+      "observation_signature": {"branching": 0.82, "human_figure": 0, "radial": 0.62, "rectilinear": 0.05, "path_like": 0.3, "node_edge": 0.34, "repetition": 0.72, "bar_series": 0, "particle_cloud": 0.38, "horizon": 0}
+    },
+    {
+      "id": "scene_cloud_weather_v1",
+      "version": 1,
+      "domain": "nature",
+      "topology": "layered_weather_field",
+      "supported_roles": ["hook", "tension", "desire_payoff", "book_reveal"],
+      "parameters": {
+        "cloud_count": {"type": "integer", "min": 2, "max": 7, "default": 4},
+        "rain_density": {"type": "number", "min": 0, "max": 1, "default": 0.35},
+        "wind": {"type": "number", "min": -0.6, "max": 0.6, "default": 0.18},
+        "layer_spread": {"type": "number", "min": 0.25, "max": 0.9, "default": 0.62}
+      },
+      "lowering": {"primitive_kinds": ["circle", "line"], "max_ops": 112},
+      "observation_signature": {"branching": 0.05, "human_figure": 0, "radial": 0.28, "rectilinear": 0.05, "path_like": 0.42, "node_edge": 0.08, "repetition": 0.7, "bar_series": 0, "particle_cloud": 0.72, "horizon": 0.46}
+    },
+    {
+      "id": "scene_constellation_v1",
+      "version": 1,
+      "domain": "space",
+      "topology": "sparse_star_graph",
+      "supported_roles": ["hook", "tension", "desire_payoff", "book_reveal", "cta"],
+      "parameters": {
+        "star_count": {"type": "integer", "min": 5, "max": 18, "default": 10},
+        "connection_density": {"type": "number", "min": 0.12, "max": 0.55, "default": 0.28},
+        "radial_bias": {"type": "number", "min": 0, "max": 1, "default": 0.24},
+        "twinkle": {"type": "number", "min": 0, "max": 1, "default": 0.3}
+      },
+      "lowering": {"primitive_kinds": ["circle", "line"], "max_ops": 128},
+      "observation_signature": {"branching": 0.18, "human_figure": 0, "radial": 0.28, "rectilinear": 0, "path_like": 0.35, "node_edge": 0.88, "repetition": 0.42, "bar_series": 0, "particle_cloud": 0.7, "horizon": 0}
+    },
+    {
+      "id": "scene_moon_phases_v1",
+      "version": 1,
+      "domain": "space",
+      "topology": "ordered_radial_phases",
+      "supported_roles": ["hook", "tension", "desire_payoff", "book_reveal"],
+      "parameters": {
+        "phase_count": {"type": "integer", "min": 3, "max": 8, "default": 5},
+        "phase_offset": {"type": "number", "min": 0, "max": 1, "default": 0.1},
+        "radius": {"type": "number", "min": 0.045, "max": 0.11, "default": 0.075},
+        "arc": {"type": "number", "min": 0.25, "max": 0.9, "default": 0.58}
+      },
+      "lowering": {"primitive_kinds": ["circle", "line"], "max_ops": 40},
+      "observation_signature": {"branching": 0, "human_figure": 0, "radial": 0.78, "rectilinear": 0.05, "path_like": 0.52, "node_edge": 0.18, "repetition": 0.92, "bar_series": 0, "particle_cloud": 0.18, "horizon": 0.12}
+    },
+    {
+      "id": "scene_bridge_road_v1",
+      "version": 1,
+      "domain": "built_environment",
+      "topology": "perspective_corridor",
+      "supported_roles": ["hook", "tension", "desire_payoff", "book_reveal"],
+      "parameters": {
+        "lane_count": {"type": "integer", "min": 2, "max": 6, "default": 3},
+        "pillar_count": {"type": "integer", "min": 2, "max": 8, "default": 4},
+        "vanishing_y": {"type": "number", "min": 0.22, "max": 0.55, "default": 0.38},
+        "span": {"type": "number", "min": 0.45, "max": 0.92, "default": 0.78}
+      },
+      "lowering": {"primitive_kinds": ["line", "rect", "bar"], "max_ops": 72},
+      "observation_signature": {"branching": 0.05, "human_figure": 0, "radial": 0.12, "rectilinear": 0.9, "path_like": 0.92, "node_edge": 0.22, "repetition": 0.58, "bar_series": 0.18, "particle_cloud": 0, "horizon": 0.7}
+    },
+    {
+      "id": "scene_topographic_map_v1",
+      "version": 1,
+      "domain": "information",
+      "topology": "nested_contours",
+      "supported_roles": ["hook", "tension", "desire_payoff", "book_reveal"],
+      "parameters": {
+        "contour_count": {"type": "integer", "min": 3, "max": 9, "default": 6},
+        "marker_count": {"type": "integer", "min": 0, "max": 6, "default": 2},
+        "eccentricity": {"type": "number", "min": 0, "max": 0.55, "default": 0.22},
+        "route_strength": {"type": "number", "min": 0, "max": 1, "default": 0.35}
+      },
+      "lowering": {"primitive_kinds": ["circle", "line"], "max_ops": 72},
+      "observation_signature": {"branching": 0.08, "human_figure": 0, "radial": 0.68, "rectilinear": 0.08, "path_like": 0.8, "node_edge": 0.28, "repetition": 0.82, "bar_series": 0, "particle_cloud": 0.12, "horizon": 0.08}
+    },
+    {
+      "id": "scene_ripple_wave_v1",
+      "version": 1,
+      "domain": "abstract",
+      "topology": "concentric_waves",
+      "supported_roles": ["hook", "tension", "desire_payoff", "book_reveal", "cta"],
+      "parameters": {
+        "ring_count": {"type": "integer", "min": 3, "max": 12, "default": 7},
+        "center_x": {"type": "number", "min": 0.25, "max": 0.75, "default": 0.5},
+        "center_y": {"type": "number", "min": 0.25, "max": 0.75, "default": 0.5},
+        "asymmetry": {"type": "number", "min": 0, "max": 0.5, "default": 0.12}
+      },
+      "lowering": {"primitive_kinds": ["circle", "line"], "max_ops": 32},
+      "observation_signature": {"branching": 0, "human_figure": 0, "radial": 1, "rectilinear": 0, "path_like": 0.5, "node_edge": 0.02, "repetition": 0.95, "bar_series": 0, "particle_cloud": 0.05, "horizon": 0}
+    },
+    {
+      "id": "scene_flow_field_v1",
+      "version": 1,
+      "domain": "abstract",
+      "topology": "vector_flow_field",
+      "supported_roles": ["hook", "tension", "desire_payoff", "book_reveal", "cta"],
+      "parameters": {
+        "vector_count": {"type": "integer", "min": 12, "max": 48, "default": 28},
+        "swirl": {"type": "number", "min": -1, "max": 1, "default": 0.4},
+        "coherence": {"type": "number", "min": 0.2, "max": 1, "default": 0.72},
+        "length": {"type": "number", "min": 0.025, "max": 0.11, "default": 0.065}
+      },
+      "lowering": {"primitive_kinds": ["line", "circle"], "max_ops": 112},
+      "observation_signature": {"branching": 0.06, "human_figure": 0, "radial": 0.42, "rectilinear": 0.12, "path_like": 0.72, "node_edge": 0.12, "repetition": 0.78, "bar_series": 0, "particle_cloud": 0.62, "horizon": 0}
+    },
+    {
+      "id": "scene_mechanism_v1",
+      "version": 1,
+      "domain": "built_environment",
+      "topology": "linked_radial_mechanism",
+      "supported_roles": ["hook", "tension", "desire_payoff", "book_reveal"],
+      "parameters": {
+        "gear_count": {"type": "integer", "min": 2, "max": 6, "default": 4},
+        "teeth": {"type": "integer", "min": 6, "max": 16, "default": 10},
+        "linkage": {"type": "number", "min": 0, "max": 1, "default": 0.65},
+        "rotation_phase": {"type": "number", "min": 0, "max": 1, "default": 0.18}
+      },
+      "lowering": {"primitive_kinds": ["circle", "line", "rect"], "max_ops": 144},
+      "observation_signature": {"branching": 0.12, "human_figure": 0, "radial": 0.88, "rectilinear": 0.38, "path_like": 0.25, "node_edge": 0.72, "repetition": 0.76, "bar_series": 0.1, "particle_cloud": 0.08, "horizon": 0}
+    }
+  ]
+}
