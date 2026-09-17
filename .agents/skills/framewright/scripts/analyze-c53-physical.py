@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import json, math, sys
 from pathlib import Path
-from collections import Counter, defaultdict
+from collections import Counter
 import cv2
 import numpy as np
 
@@ -41,8 +41,7 @@ def descriptor(im):
     if lines is not None:
         for q in lines[:,0]:
             dx,dy=q[2]-q[0],q[3]-q[1]; a=(math.degrees(math.atan2(dy,dx))%180); L=math.hypot(dx,dy); lh[min(11,int(a//15))]+=L
-    blocks=[unit(occ),unit(px),unit(py),unit(hu),unit(oh),unit(rh),unit(comp),unit(lh)]
-    return unit(np.concatenate(blocks))
+    return unit(np.concatenate([unit(occ),unit(px),unit(py),unit(hu),unit(oh),unit(rh),unit(comp),unit(lh)]))
 
 def dist(a,b): return float(1-np.dot(a,b))
 
@@ -51,13 +50,19 @@ for row in CAND:
     mp4=renders/'candidates'/row['file'].replace('.json','.mp4')
     cand.append((row,descriptor(midframe(mp4))))
 
-# Inference intentionally finishes before truth.json is read.
+# Inference intentionally finishes before truth.json is read. Candidate labels are registry knowledge;
+# test family IDs are opaque until predictions have been persisted in memory.
 pred=[]
 for row in TEST:
-    mp4=renders/'tests'/row['file'].replace('.json','.mp4'); d=descriptor(midframe(mp4)); ranked=sorted([(dist(d,cd),c['family_id']) for c,cd in cand])
+    mp4=renders/'tests'/row['file'].replace('.json','.mp4'); d=descriptor(midframe(mp4))
+    family_best={}
+    for c,cd in cand:
+        dd=dist(d,cd); cur=family_best.get(c['family_id'])
+        if cur is None or dd<cur[0]: family_best[c['family_id']]=(dd,c.get('anchor'))
+    ranked=sorted((v[0],fam,v[1]) for fam,v in family_best.items())
     best,runner=ranked[0],ranked[1]; margin=runner[0]-best[0]
     state='accepted' if best[0] < .42 and margin > .012 else 'ambiguous'
-    pred.append({'id':row['id'],'mode':row['mode'],'state':state,'prediction':best[1] if state=='accepted' else None,'best_family':best[1],'residual':round(best[0],6),'runner_up':runner[1],'runner_up_residual':round(runner[0],6),'runner_up_margin':round(margin,6)})
+    pred.append({'id':row['id'],'mode':row['mode'],'state':state,'prediction':best[1] if state=='accepted' else None,'best_family':best[1],'best_anchor':best[2],'residual':round(best[0],6),'runner_up':runner[1],'runner_up_anchor':runner[2],'runner_up_residual':round(runner[0],6),'runner_up_margin':round(margin,6)})
 
 truth=json.loads((corpus/'truth.json').read_text())
 for p in pred:
@@ -69,6 +74,6 @@ def summarize(rows):
 summary={'all':summarize(pred)}
 for mode in sorted(set(x['mode'] for x in pred)): summary[mode]=summarize([x for x in pred if x['mode']==mode])
 conf=Counter((x['truth_family'],x['best_family']) for x in pred if not x['best_correct'])
-report={'schema':'c53-physical-semantic-object-inverse-v1','thresholds':{'max_residual':.42,'min_margin':.012},'summary':summary,'hard_confusions':[{'truth':a,'predicted':b,'count':n} for (a,b),n in conf.most_common(20)],'predictions':pred}
+report={'schema':'c53-physical-semantic-object-inverse-v2-multiprototype','thresholds':{'max_residual':.42,'min_margin':.012},'candidate_anchors':sorted(set(x.get('anchor') for x in CAND)),'summary':summary,'hard_confusions':[{'truth':a,'predicted':b,'count':n} for (a,b),n in conf.most_common(20)],'predictions':pred}
 (root/'analysis.json').write_text(json.dumps(report,indent=2))
 print(json.dumps(report,indent=2))
