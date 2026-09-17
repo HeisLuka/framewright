@@ -1,0 +1,82 @@
+name: I23 C51 Motion Roundtrip
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/make-i23-motion-ofat-fixture.mjs'
+      - '.agents/skills/framewright/scripts/i23-observe-motion.mjs'
+      - '.agents/skills/framewright/scripts/i23-motion-benchmark.mjs'
+      - '.agents/skills/framewright/scripts/i22-infer-semantic-observation.mjs'
+      - 'contracts/inverse-observation-fusion-v1.mjs'
+      - 'contracts/motion-grammar-families-v2.json'
+      - 'examples/book-ad-systems/index-c45-template-variant.html'
+      - '.github/workflows/i23-c51-motion-roundtrip.yml'
+  workflow_dispatch:
+
+jobs:
+  motion-roundtrip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install ffmpeg and pinned fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax and C51 contract gate
+        run: |
+          node --check .agents/skills/framewright/scripts/make-i23-motion-ofat-fixture.mjs
+          node --check .agents/skills/framewright/scripts/i23-observe-motion.mjs
+          node --check .agents/skills/framewright/scripts/i23-motion-benchmark.mjs
+          node --check .agents/skills/framewright/scripts/i22-infer-semantic-observation.mjs
+          node contracts/check-c51-inverse-observation-fusion.mjs
+      - name: Generate canonical C27 source pack
+        run: |
+          mkdir -p .bench/i23
+          node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs .bench/i23/c27-fixtures
+      - name: Build canonical 9s AAC
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=220:sample_rate=48000' -t 9 -c:a pcm_s16le .bench/i23/source.wav
+          ffmpeg -hide_banner -loglevel error -y -i .bench/i23/source.wav -t 9 -c:a aac -b:a 192k -movflags +faststart .bench/i23/canonical-audio.m4a
+      - name: Build six-motion physical source corpus
+        run: |
+          node .agents/skills/framewright/scripts/make-i23-motion-ofat-fixture.mjs \
+            .bench/i23/c27-fixtures \
+            examples/book-ad-systems/index-c45-template-variant.html \
+            .bench/i23/source.wav \
+            .bench/i23/canonical-audio.m4a \
+            .bench/i23/source-input
+      - name: Render source corpus through canonical FAST factory
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/i23/source-input/campaign.json \
+            --out-dir .bench/i23/source-run \
+            --artifact-dir .bench/i23/source-artifacts
+      - name: Sealed MP4-only asset-track observation and C51 fit
+        run: |
+          node .agents/skills/framewright/scripts/i23-motion-benchmark.mjs \
+            --video-dir .bench/i23/source-run/video \
+            --input-dir .bench/i23/source-input \
+            --canonical-artifacts .bench/i23/source-run/canonical-artifacts.json \
+            --work-dir .bench/i23/inverse \
+            --out .bench/i23/motion-benchmark.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i23-c51-physical-motion-inversion
+          path: |
+            .bench/i23/source-input/
+            .bench/i23/source-run/canonical-artifacts.json
+            .bench/i23/source-run/run.json
+            .bench/i23/source-run/video/
+            .bench/i23/inverse/
+            .bench/i23/motion-benchmark.json
+          retention-days: 14
