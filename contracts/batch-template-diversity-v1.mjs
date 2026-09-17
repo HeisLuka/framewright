@@ -20,9 +20,18 @@ const SINGLE_AXES=BATCH_TEMPLATE_DIVERSITY_AXES.filter(axis=>axis!=='graphic_dev
 function assert(condition,message){if(!condition)throw new Error(message);}
 function isObject(value){return Boolean(value)&&typeof value==='object'&&!Array.isArray(value);}
 function stableSort(values){return [...values].sort((a,b)=>String(a).localeCompare(String(b)));}
-function graphicKey(value){return stableSort(Array.isArray(value)?value:[]).join('+');}
+function normalizeAxes(axes){
+  return {
+    structural_layout:axes.structural_layout,
+    visual_system:axes.visual_system,
+    typography:axes.typography,
+    motion_grammar:axes.motion_grammar,
+    asset_staging:axes.asset_staging,
+    graphic_devices:stableSort(axes.graphic_devices||[]),
+  };
+}
+function graphicKey(value){return stableSort(Array.isArray(value)?value:[value]).filter(Boolean).join('+');}
 function axisValue(axes,axis){return axis==='graphic_devices'?graphicKey(axes.graphic_devices):axes[axis];}
-function tupleProjection(axes){return Object.fromEntries(BATCH_TEMPLATE_DIVERSITY_AXES.map(axis=>[axis,axisValue(axes,axis)]));}
 function tupleKey(axes){return BATCH_TEMPLATE_DIVERSITY_AXES.map(axis=>`${axis}=${axisValue(axes,axis)}`).join('|');}
 function stableRank(seed,candidateId){return sha256Canonical({seed,candidate_id:candidateId});}
 
@@ -90,14 +99,14 @@ function normalizeCandidate(candidate){
   return {
     candidate_id:candidate.candidate_id,
     template_variant_id:variant.template_variant_id,
-    axes:tupleProjection(variant.axes),
+    axes:normalizeAxes(variant.axes),
   };
 }
 
 function optionCap(batchSize,bps){return Math.ceil(batchSize*bps/10000);}
 function wouldExceedCaps(counts,candidate,batchSize,policy){
   for(const axis of BATCH_TEMPLATE_DIVERSITY_AXES){
-    const value=candidate.axes[axis];
+    const value=axisValue(candidate.axes,axis);
     const current=counts[axis].get(value)||0;
     if(current+1>optionCap(batchSize,policy.max_option_share_bps[axis]))return true;
   }
@@ -105,7 +114,7 @@ function wouldExceedCaps(counts,candidate,batchSize,policy){
 }
 function incrementCounts(counts,candidate){
   for(const axis of BATCH_TEMPLATE_DIVERSITY_AXES){
-    const value=candidate.axes[axis];
+    const value=axisValue(candidate.axes,axis);
     counts[axis].set(value,(counts[axis].get(value)||0)+1);
   }
 }
