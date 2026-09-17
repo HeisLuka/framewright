@@ -75,7 +75,7 @@ export function classifyStructuralCopyDensity(copy={}){
   const author=typeof copy.author==='string'?copy.author.trim():'';
   const cta=typeof copy.cta==='string'?copy.cta.trim():'';
   const weighted=hook.length+title.length*0.8+author.length*0.35+cta.length*0.35;
-  return weighted<=150?'short':weighted<=275?'medium':'long';
+  return weighted<=80?'short':weighted<=180?'medium':'long';
 }
 
 export function loadStructuralLayoutFamilyRegistry(){
@@ -205,5 +205,5 @@ export function estimatePrimaryTextCapacity(layout){
   const primary=layout?.slots?.primary_text;
   if(!primary)return 0;
   const aspectFactor=layout.aspect==='landscape'?0.92:layout.aspect==='square'?1:1.05;
-  return Math.floor(area(primary)/1000*aspectFactor);
+  return Math.floor(area(primary)/450*aspectFactor);
 }
