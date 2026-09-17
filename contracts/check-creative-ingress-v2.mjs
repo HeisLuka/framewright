@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { computeContextHash } from './creative-proposal-v1.mjs';
+import { computeCopyLanguageHash } from './compositional-copy-v1.mjs';
 import { computeRenderSpecId, sha256Canonical } from './factory-identity-v1.mjs';
 import {
   CREATIVE_INGRESS_SCHEMA,
@@ -20,11 +21,14 @@ const pack=readJson('./examples/context-pack-v1.example.json');
 pack.capabilities.delivery_profiles=['instagram_reels','square_feed','landscape_feed'];
 pack.context_hash=computeContextHash(pack);
 const language=readJson('./examples/copy-language-v1.example.json');
+language.context_hash=pack.context_hash;
+language.copy_language_hash=computeCopyLanguageHash(language);
 
 function migrate(relative){
   const ingress=readJson(relative);
   ingress.schema=CREATIVE_INGRESS_SCHEMA;
   ingress.context_hash=pack.context_hash;
+  if(ingress.mode==='verified_composition')ingress.payload.copy_language_hash=language.copy_language_hash;
   delete ingress.payload.presentation.delivery_profile;
   return ingress;
 }
@@ -110,7 +114,7 @@ const deliveries={
 };
 const renderIds=Object.fromEntries(Object.entries(deliveries).map(([id,delivery])=>[id,computeRenderSpecId({...renderBase,delivery})]));
 assert.equal(new Set(Object.values(renderIds)).size,3,'delivery profiles did not produce distinct RenderSpec identities');
-assert.equal(trusted.program.program_id, trustedReordered.program.program_id,'delivery-independent program identity drifted');
+assert.equal(trusted.program.program_id,trustedReordered.program.program_id,'delivery-independent program identity drifted');
 
 let missingResolver=null;
 try{await processCreativeIngress({ingress:trustedIngress,loadContextPack:null});}catch(error){missingResolver=error;}
