@@ -1,0 +1,22 @@
+name: C43 Template Variant Composer
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/template-variant-composer-v1.mjs'
+      - 'contracts/check-c43-template-variant-composer.mjs'
+      - 'docs/c43-template-variant-composer.md'
+      - '.github/workflows/c43-template-variant-composer.yml'
+  workflow_dispatch:
+
+jobs:
+  template-variant-composer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check template variant composer
+        run: node contracts/check-c43-template-variant-composer.mjs
