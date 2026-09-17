@@ -5,7 +5,7 @@ on:
     branches: [lab/i25-c39-c40-joint-holdout, lab/framewright-research]
     paths:
       - '.agents/skills/framewright/scripts/make-i26-aspect-motion-holdout.mjs'
-      - '.agents/skills/framewright/scripts/i26-observe-motion-multi-aspect.mjs'
+      - '.agents/skills/framewright/scripts/i23-observe-motion.mjs'
       - '.agents/skills/framewright/scripts/i26-aspect-motion-benchmark.mjs'
       - '.agents/skills/framewright/scripts/i22-infer-semantic-observation.mjs'
       - 'contracts/inverse-observation-fusion-v1.mjs'
@@ -31,7 +31,7 @@ jobs:
       - name: Syntax and inherited inverse gates
         run: |
           node --check .agents/skills/framewright/scripts/make-i26-aspect-motion-holdout.mjs
-          node --check .agents/skills/framewright/scripts/i26-observe-motion-multi-aspect.mjs
+          node --check .agents/skills/framewright/scripts/i23-observe-motion.mjs
           node --check .agents/skills/framewright/scripts/i26-aspect-motion-benchmark.mjs
           node --check .agents/skills/framewright/scripts/i22-infer-semantic-observation.mjs
           node contracts/check-c51-inverse-observation-fusion.mjs
