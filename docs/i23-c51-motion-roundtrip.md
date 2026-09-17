@@ -42,8 +42,41 @@ Translation is solved against the same center-based affine ordering used by the 
 1. Phase A persists every MP4-derived observation and C51 inference result before hidden truth is opened.
 2. Phase B opens source payloads only to score the persisted results against `template_scene_program.motion_recipe.family_id`.
 
-The first physical run hard-gates only source-byte identity, minimum measured track coverage, and zero forward identity/recipe leakage. C40 accepted/correct/top-1/top-3/MRR metrics are diagnostic until the pixel estimator earns a promotion threshold. This prevents tuning CI to a desired label accuracy before observing real residuals.
+Forward SceneProgram/TemplateVariant identities and forward recipe fields are checked for leakage in the persisted inference output.
 
-## Promotion rule
+## First physical evidence
 
-Do not weaken C51 residual/margin thresholds to make I23 pass. If C40 recovery is weak, improve pixel-to-affine measurement while keeping the observer family-agnostic. Once controlled OFAT evidence is stable, promote the achieved recovery threshold to a hard gate, then attack less controlled production-shaped clips.
+The first GitHub Actions physical run (`35251117114`) rendered six canonical FAST MP4s and recovered all six C40 motion families from pixels alone:
+
+- source hashes exact: `6/6`;
+- asset tracks observed: `6/6`, with `9/9` requested samples on every clip;
+- C51 state accepted: `6/6`;
+- correct hidden C40 family: `6/6`;
+- top-1 correct: `6/6`;
+- top-3 correct: `6/6`;
+- mean reciprocal rank: `1.0`;
+- mean motion coverage: `1.0`;
+- forward identity/recipe leakage: `0`.
+
+Representative top-1 fit residuals were `0.000000` for editorial cuts, `0.010404` for restrained parallax, `0.013110` for staggered type, `0.015620` for directional slide, `0.021448` for scale-depth reveal, and `0.050243` for rhythmic cards. The smallest observed runner-up margin was still `0.095495`, well above the unchanged C51 minimum margin of `0.025`.
+
+This is a qualitative improvement over the earlier C50 scalar frame-energy probe: the controlled C50 motion OFAT reached only `2/6` top-1 and `4/6` top-3, whereas semantic affine measurement reaches `6/6` top-1 without changing the C51 matcher thresholds.
+
+## Promoted acceptance gate
+
+The controlled I23 benchmark now hard-gates all of the following:
+
+- exact physical source identity;
+- a measured asset track with at least five samples for every clip;
+- zero forward identity/recipe leakage;
+- `6/6` C51 acceptance;
+- `6/6` correct hidden C40 family;
+- `6/6` top-1 recovery.
+
+Do not weaken C51 residual/margin thresholds to preserve this gate. Future failures should improve pixel-to-affine measurement or honestly expose a scope boundary.
+
+## Scope boundary
+
+I23 does **not** establish generic motion decompilation for arbitrary video. The promoted claim is deliberately narrower: controlled canonical 9 s vertical C27 output, `stage_hero_cover_v2`, split-editorial layout, one fixed cover/book, and the six currently registered C40 families.
+
+The next useful experiment is robustness under nuisance variation while keeping the C40 family hidden: multiple covers/books first, then layout and delivery-profile variation. Only after those holdouts should the pixel observer be treated as a reusable external-reference motion extractor.
