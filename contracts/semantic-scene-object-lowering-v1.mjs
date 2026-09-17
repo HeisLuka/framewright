@@ -1,3 +1,4 @@
 import {lowerOrganic} from './semantic-scene-object-lowering-organic-v1.mjs';
 import {lowerStructured} from './semantic-scene-object-lowering-structured-v1.mjs';
-export function lowerSemanticSceneObject(id,params,seed){return id.startsWith('scene_tree_')||id.startsWith('scene_landscape_')||id.startsWith('scene_person_')||id.startsWith('scene_crowd_')||id.startsWith('scene_planet_')||id.startsWith('scene_orbit_')?lowerOrganic(id,params,seed):lowerStructured(id,params,seed);}
+const ORGANIC_PREFIXES=['scene_tree_','scene_landscape_','scene_person_','scene_crowd_','scene_planet_','scene_orbit_','scene_botanical_','scene_cloud_','scene_constellation_','scene_moon_'];
+export function lowerSemanticSceneObject(id,params,seed){return ORGANIC_PREFIXES.some(prefix=>id.startsWith(prefix))?lowerOrganic(id,params,seed):lowerStructured(id,params,seed);}
