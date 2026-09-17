@@ -1,0 +1,31 @@
+name: C51 Inverse Observation Fusion
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/inverse-observation-fusion-v1.mjs'
+      - 'contracts/check-c51-inverse-observation-fusion.mjs'
+      - 'contracts/structural-layout-families-v2.*'
+      - 'contracts/motion-grammar-families-v2.*'
+      - 'contracts/inverse-creative-compiler-v1.mjs'
+      - '.github/workflows/c51-inverse-observation-fusion.yml'
+  workflow_dispatch:
+
+jobs:
+  contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Syntax
+        run: |
+          node --check contracts/inverse-observation-fusion-v1.mjs
+          node --check contracts/check-c51-inverse-observation-fusion.mjs
+      - name: C51 registry fitting acceptance
+        run: node contracts/check-c51-inverse-observation-fusion.mjs
+      - name: Historical C50 inverse baseline remains replayable
+        run: node contracts/check-c50-inverse-creative-compiler.mjs
