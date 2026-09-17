@@ -6,7 +6,7 @@ import {createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {compileDeliveryPackage,serializeDeliveryPackage} from '../../../../contracts/c19-delivery-package-v1.mjs';
-import {canonicalJson,sha256Canonical} from '../../../../contracts/factory-identity-v1.mjs';
+import {canonicalJson} from '../../../../contracts/factory-identity-v1.mjs';
 
 const SCRIPT_DIR=path.dirname(fileURLToPath(import.meta.url));
 const ROOT=path.resolve(SCRIPT_DIR,'../../../..');
@@ -38,8 +38,7 @@ for(const row of deliveryPackage.renders){
   if(!selected)throw new Error(`${row.selection_id}: compiled creative missing`);
   const exec=executionMap.selections?.[row.selection_id];
   if(!exec)throw new Error(`${row.selection_id}: execution mapping missing`);
-  const basePayload=JSON.parse(await fsp.readFile(path.resolve(exec.payload),'utf8'));
-  const actualPayloadSha=sha256Canonical(basePayload);
+  const actualPayloadSha=shaBytes(await fsp.readFile(path.resolve(exec.payload)));
   if(actualPayloadSha!==selected.creative.payload_sha256)throw new Error(`${row.selection_id}: CreativeSpec payload_sha256 mismatch: expected ${selected.creative.payload_sha256}, got ${actualPayloadSha}`);
   const bundle={schema:'newboo-video-factory-bundle-v1',creative:selected.creative,render:row.render};
   const stem=row.render.render_spec_id;
