@@ -1,0 +1,23 @@
+import assert from 'node:assert/strict';
+import { canonicalizeObservationIR, decompileObservation, inferMotionGrammarCandidates, validateObservationIR } from './inverse-creative-compiler-v1.mjs';
+import { loadMotionGrammarFamilyRegistry } from './motion-grammar-families-v2.mjs';
+
+const raw={source_sha256:'a'.repeat(64),media:{width:1080,height:1920,fps:30,duration_seconds:9},cut_times_seconds:[3.4000000000000004,1.2000000000000002],motion_energy:Array.from({length:30},(_,i)=>({t:i/10,value:i%8===0?0.8:0.12+((i%5)*0.03)})),coverage:{temporal:1,motion:1,layout:0,typography:0,appearance:0,assets:0},residuals:['layout:not_observed_v1']};
+const observation=canonicalizeObservationIR(raw),replay=canonicalizeObservationIR(raw);
+assert.equal(observation.observation_id,replay.observation_id,'observation replay must be deterministic');
+assert.deepEqual(observation.cut_times_seconds,[1.2,3.4],'canonical time quantization failed');
+assert.equal(validateObservationIR(observation).valid,true);
+const tampered=structuredClone(observation);tampered.media.width=999;assert.equal(validateObservationIR(tampered).valid,false,'identity tamper must fail');
+const allFamilies=loadMotionGrammarFamilyRegistry().families.map(item=>item.id).sort();
+const candidates=inferMotionGrammarCandidates(observation,{limit:allFamilies.length});
+assert.equal(candidates.length,allFamilies.length,'every bounded C40 family must be rankable');
+assert.deepEqual(candidates.map(item=>item.value).sort(),allFamilies,'candidate vocabulary must equal C40 registry');
+assert.ok(candidates.every(item=>item.confidence>=0&&item.confidence<=1));
+assert.ok(candidates.every(item=>item.evidence?.method==='bounded_c40_motion_envelope_v1'));
+const result=decompileObservation(observation);
+assert.equal(result.schema,'newboo-inverse-creative-result-v1');
+assert.equal(result.recovered.delivery.aspect,'vertical');
+assert.equal(result.recovered.motion_grammar.length,3,'v1 result should expose top-3 motion candidates');
+for(const axis of ['structural_layout','typography','asset_staging','graphic_devices','visual_system'])assert.ok(result.unresolved.some(item=>item.axis===axis),`${axis} must remain explicitly unresolved`);
+assert.ok(!JSON.stringify(result).includes('scene_program_id'),'decompiler result must not invent hidden SceneProgram identity');
+console.log(JSON.stringify({ok:true,observation_id:observation.observation_id,result_id:result.result_id,top3:result.recovered.motion_grammar.map(item=>[item.value,item.confidence])},null,2));

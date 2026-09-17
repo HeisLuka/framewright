@@ -1,0 +1,131 @@
+name: C50 Inverse Creative Compiler
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/inverse-creative-compiler-v1.mjs'
+      - 'contracts/check-c50-inverse-creative-compiler.mjs'
+      - '.agents/skills/framewright/scripts/c50-observe-video.mjs'
+      - '.agents/skills/framewright/scripts/c50-infer-observation.mjs'
+      - '.agents/skills/framewright/scripts/c50-roundtrip-benchmark.mjs'
+      - '.agents/skills/framewright/scripts/make-c50-motion-ofat-fixture.mjs'
+      - 'docs/c50-inverse-creative-compiler.md'
+      - 'docs/c50-benchmark-acceptance.md'
+      - '.github/workflows/c50-inverse-creative-compiler.yml'
+  workflow_dispatch:
+
+jobs:
+  physical-roundtrip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install ffmpeg and pinned fallback fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          ffmpeg -version | head -1
+      - name: Contract and syntax gates
+        run: |
+          node --check contracts/inverse-creative-compiler-v1.mjs
+          node --check contracts/check-c50-inverse-creative-compiler.mjs
+          node --check .agents/skills/framewright/scripts/c50-observe-video.mjs
+          node --check .agents/skills/framewright/scripts/c50-infer-observation.mjs
+          node --check .agents/skills/framewright/scripts/c50-roundtrip-benchmark.mjs
+          node --check .agents/skills/framewright/scripts/make-c50-motion-ofat-fixture.mjs
+          node contracts/check-c50-inverse-creative-compiler.mjs
+          node contracts/check-c49-template-campaign-selection.mjs
+      - name: Generate canonical C27 source pack
+        run: |
+          mkdir -p .bench/c50
+          node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs .bench/c50/c27-fixtures
+      - name: Build canonical 9s AAC artifact
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=220:sample_rate=48000' -t 9 -c:a pcm_s16le .bench/c50/source.wav
+          ffmpeg -hide_banner -loglevel error -y -i .bench/c50/source.wav -t 9 -c:a aac -b:a 192k -movflags +faststart .bench/c50/canonical-audio.m4a
+
+      # Ecological batch: real C49 selection with several axes varying together.
+      - name: Materialize ecological C49-selected C43 variants
+        run: |
+          node .agents/skills/framewright/scripts/make-c49-production-selection-fixture.mjs \
+            .bench/c50/c27-fixtures \
+            examples/book-ad-systems/index-c45-template-variant.html \
+            .bench/c50/source.wav \
+            .bench/c50/canonical-audio.m4a \
+            .bench/c50/ecological-input
+      - name: Render ecological batch through canonical factory
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/c50/ecological-input/campaign.json \
+            --out-dir .bench/c50/ecological-run \
+            --artifact-dir .bench/c50/ecological-artifacts
+      - name: Score sealed ecological inverse benchmark
+        run: |
+          node .agents/skills/framewright/scripts/c50-roundtrip-benchmark.mjs \
+            --video-dir .bench/c50/ecological-run/video \
+            --input-dir .bench/c50/ecological-input \
+            --canonical-artifacts .bench/c50/ecological-run/canonical-artifacts.json \
+            --work-dir .bench/c50/ecological-inverse \
+            --out .bench/c50/ecological-benchmark.json
+
+      # Controlled batch: every non-motion axis is invariant; each C40 family appears once.
+      - name: Materialize controlled one-factor C40 motion variants
+        run: |
+          node .agents/skills/framewright/scripts/make-c50-motion-ofat-fixture.mjs \
+            .bench/c50/c27-fixtures \
+            examples/book-ad-systems/index-c45-template-variant.html \
+            .bench/c50/source.wav \
+            .bench/c50/canonical-audio.m4a \
+            .bench/c50/motion-ofat-input
+      - name: Render controlled motion batch through canonical factory
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/c50/motion-ofat-input/campaign.json \
+            --out-dir .bench/c50/motion-ofat-run \
+            --artifact-dir .bench/c50/motion-ofat-artifacts
+      - name: Score sealed controlled motion benchmark
+        run: |
+          node .agents/skills/framewright/scripts/c50-roundtrip-benchmark.mjs \
+            --video-dir .bench/c50/motion-ofat-run/video \
+            --input-dir .bench/c50/motion-ofat-input \
+            --canonical-artifacts .bench/c50/motion-ofat-run/canonical-artifacts.json \
+            --work-dir .bench/c50/motion-ofat-inverse \
+            --out .bench/c50/motion-ofat-benchmark.json
+
+      - name: Compact evidence
+        if: always()
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          for(const [label,file] of [['ecological','.bench/c50/ecological-benchmark.json'],['motion_ofat','.bench/c50/motion-ofat-benchmark.json']]){
+            if(!fs.existsSync(file))continue;
+            const b=JSON.parse(fs.readFileSync(file,'utf8'));
+            console.log(JSON.stringify({label,videos:b.videos,hard_gates:b.hard_gates,diagnostic:b.diagnostic,rows:b.rows.map(r=>({selection_id:r.selection_id,ground:r.ground_truth_motion_grammar,rank:r.motion_rank,top3:r.motion_top3,candidates:r.motion_candidates}))},null,2));
+          }
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c50-inverse-creative-compiler
+          path: |
+            .bench/c50/ecological-benchmark.json
+            .bench/c50/ecological-inverse/
+            .bench/c50/ecological-input/materialization-manifest.json
+            .bench/c50/ecological-run/canonical-artifacts.json
+            .bench/c50/ecological-run/video/
+            .bench/c50/motion-ofat-benchmark.json
+            .bench/c50/motion-ofat-inverse/
+            .bench/c50/motion-ofat-input/materialization-manifest.json
+            .bench/c50/motion-ofat-run/canonical-artifacts.json
+            .bench/c50/motion-ofat-run/video/
+          retention-days: 14
