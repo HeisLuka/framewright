@@ -40,7 +40,9 @@ This path is suitable for LLM-authored bounded JSON: the LLM chooses stable IDs,
 
 The current lower-bound design space is:
 
-`6 layouts × 3 visual systems × 6 typography × 6 motion × 6 staging × 9 devices = 104,976 variants`.
+`6 layouts × 3 visual systems × 6 typography × 6 motion × 6 staging × 9 devices = 34,992 variants`.
+
+That is already far beyond the required useful bounded space, so v1 intentionally stays with one graphic device instead of inflating the combinatorics for a larger headline number.
 
 Selection is a pure deterministic hash of:
 
@@ -78,7 +80,7 @@ C43 requires:
 
 - canonical registry replay;
 - automatic policy validation and content-addressed policy ID;
-- design space >= 100,000 bounded variants;
+- a large finite bounded design space; v1 proves 34,992 combinations;
 - explicit key-order invariance;
 - visible axis changes changing template identity;
 - incompatible option rejection before render;
