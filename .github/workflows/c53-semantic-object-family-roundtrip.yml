@@ -1,0 +1,84 @@
+name: C53 Semantic Object Physical Family Round-Trip
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/semantic-scene-object-*'
+      - 'examples/book-ad-systems/index-c53-semantic-object.html'
+      - '.agents/skills/framewright/scripts/make-c53-semantic-object-family-fixture.mjs'
+      - '.agents/skills/framewright/scripts/observe-c53-semantic-object-family.mjs'
+      - '.agents/skills/framewright/scripts/evaluate-c53-semantic-object-family.mjs'
+      - '.github/workflows/c53-semantic-object-family-roundtrip.yml'
+  workflow_dispatch:
+
+jobs:
+  physical-family-roundtrip:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          ffmpeg -version | head -1
+      - name: Contract and syntax gates
+        run: |
+          node --check .agents/skills/framewright/scripts/make-c53-semantic-object-family-fixture.mjs
+          node --check .agents/skills/framewright/scripts/observe-c53-semantic-object-family.mjs
+          node --check .agents/skills/framewright/scripts/evaluate-c53-semantic-object-family.mjs
+          node .agents/skills/framewright/scripts/audit-c52-semantic-scene-objects.mjs
+      - name: Build canonical 3s AAC
+        run: |
+          mkdir -p .bench/c53
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=220:sample_rate=48000' -t 3 -c:a pcm_s16le .bench/c53/source.wav
+          ffmpeg -hide_banner -loglevel error -y -i .bench/c53/source.wav -t 3 -c:a aac -b:a 192k -movflags +faststart .bench/c53/canonical-audio.m4a
+      - name: Compile sealed target plus reference-bank campaign
+        run: |
+          node .agents/skills/framewright/scripts/make-c53-semantic-object-family-fixture.mjs \
+            examples/book-ad-systems/index-c53-semantic-object.html \
+            .bench/c53/source.wav \
+            .bench/c53/canonical-audio.m4a \
+            .bench/c53/input
+      - name: Canonical physical render
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/c53/input/campaign.json \
+            --out-dir .bench/c53/run \
+            --artifact-dir .bench/c53/canonical-artifacts
+      - name: Phase A pixel-only family inference
+        run: |
+          node .agents/skills/framewright/scripts/observe-c53-semantic-object-family.mjs \
+            .bench/c53/input/public-bank.json \
+            .bench/c53/run/canonical-artifacts.json \
+            .bench/c53/run \
+            .bench/c53/phase-a-inference.json
+      - name: Phase B hidden-truth evaluation
+        run: |
+          node .agents/skills/framewright/scripts/evaluate-c53-semantic-object-family.mjs \
+            .bench/c53/phase-a-inference.json \
+            .bench/c53/input/hidden-truth.json \
+            .bench/c53/evaluation.json
+      - name: Compact receipt
+        if: always()
+        run: |
+          test -f .bench/c53/evaluation.json && node -e "const r=require('./.bench/c53/evaluation.json'); console.log(JSON.stringify({targets:r.targets,accepted:r.accepted,correct:r.correct,wrong:r.wrong,ambiguous:r.ambiguous,coverage:r.coverage,accepted_accuracy:r.accepted_accuracy},null,2))" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c53-semantic-object-family-roundtrip
+          path: |
+            .bench/c53/input/public-bank.json
+            .bench/c53/input/hidden-truth.json
+            .bench/c53/run/canonical-artifacts.json
+            .bench/c53/phase-a-inference.json
+            .bench/c53/evaluation.json
+          retention-days: 14
