@@ -8,7 +8,7 @@ import {
   validateSemanticSceneObjectProgram,
   fitSemanticSceneObjectCandidates,
   semanticSceneObjectSignatureDistance,
-} from '../../../contracts/semantic-scene-object-families-v1.mjs';
+} from '../../../../contracts/semantic-scene-object-families-v1.mjs';
 
 const registry=loadSemanticSceneObjectFamilyRegistry();
 const validation=validateSemanticSceneObjectFamilyRegistry(registry);
