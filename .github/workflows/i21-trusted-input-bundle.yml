@@ -9,6 +9,7 @@ on:
       - 'contracts/check-i21-trusted-input-bundle.mjs'
       - '.agents/skills/framewright/scripts/install-trusted-input-bundle.mjs'
       - 'docs/i21-trusted-input-bundle.md'
+      - 'docs/i21-newboo-producer-map.md'
       - '.github/workflows/i21-trusted-input-bundle.yml'
 
 jobs:
