@@ -1,0 +1,33 @@
+name: C44 Batch Template Diversity
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/batch-template-diversity-v1.mjs'
+      - 'contracts/check-c44-batch-template-diversity.mjs'
+      - 'contracts/template-variant-composer-v1.mjs'
+      - 'contracts/template-variability-v1.mjs'
+      - 'contracts/template-variability-registry.v1.json'
+      - 'contracts/structural-layout-families-v2.*'
+      - 'contracts/motion-grammar-families-v2.*'
+      - 'contracts/typography-graphic-device-library-v2.*'
+      - 'contracts/cover-asset-staging-families-v2.*'
+      - '.github/workflows/c44-batch-template-diversity.yml'
+  workflow_dispatch:
+
+jobs:
+  c44:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax
+        run: |
+          node --check contracts/batch-template-diversity-v1.mjs
+          node --check contracts/check-c44-batch-template-diversity.mjs
+      - name: C44 deterministic anti-repeat acceptance
+        run: node contracts/check-c44-batch-template-diversity.mjs
