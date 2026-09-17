@@ -1,0 +1,193 @@
+name: I20 Multi-Format E2E
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/make-i20-multi-format-request.mjs'
+      - '.agents/skills/framewright/scripts/i20-semantic-profile-audit.mjs'
+      - '.github/workflows/i20-multi-format-e2e.yml'
+      - 'docs/i20-multi-format-e2e.md'
+  workflow_dispatch:
+
+jobs:
+  queue-factory-parity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install ffmpeg and fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax and queue regressions
+        run: |
+          node --check .agents/skills/framewright/scripts/make-i20-multi-format-request.mjs
+          node --check .agents/skills/framewright/scripts/i20-semantic-profile-audit.mjs
+          node contracts/check-i07-local-render-worker.mjs
+      - name: Generate verified C27 source pack
+        run: |
+          mkdir -p .bench/i20
+          node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs .bench/i20/c27-fixtures
+      - name: Build current responsive C27 runtime template
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-i20.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-i20.html examples/book-ad-systems/index-c22-i20.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-c22-i20.html examples/book-ad-systems/index-e17-i20.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-i20.html examples/book-ad-systems/index-e17-e14-i20.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-i20.html examples/book-ad-systems/index-e18-i20.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-i20.html examples/book-ad-systems/index-c20-i20.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-i20.html examples/book-ad-systems/index-c21-i20.html
+          node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c21-i20.html examples/book-ad-systems/index-c23-i20.html
+          node .agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs examples/book-ad-systems/index-c23-i20.html examples/book-ad-systems/index-c24-i20.html
+          node .agents/skills/framewright/scripts/prepare-c25-typography-axis.mjs examples/book-ad-systems/index-c24-i20.html examples/book-ad-systems/index-c25-i20.html
+          node .agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs examples/book-ad-systems/index-c25-i20.html examples/book-ad-systems/index-c26-i20.html examples/book-ad-systems/platform-ui-profiles.v1.json
+          node .agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs examples/book-ad-systems/index-c26-i20.html examples/book-ad-systems/index-c27-i20.html
+      - name: Build canonical AAC + profile-independent matrix request
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=220:sample_rate=48000' -t 9 -c:a pcm_s16le .bench/i20/source.wav
+          ffmpeg -hide_banner -loglevel error -y -i .bench/i20/source.wav -t 9 -c:a aac -b:a 192k -movflags +faststart .bench/i20/canonical-audio.m4a
+          node .agents/skills/framewright/scripts/make-i03-campaign-fixture.mjs \
+            .bench/i20/c27-fixtures \
+            examples/book-ad-systems/index-c27-i20.html \
+            .bench/i20/source.wav \
+            .bench/i20/canonical-audio.m4a \
+            .bench/i20/i03-input
+          node .agents/skills/framewright/scripts/make-i19-multi-profile-fixture.mjs \
+            .bench/i20/i03-input/campaign.json \
+            .bench/i20/input/campaign.json
+          node .agents/skills/framewright/scripts/make-i20-multi-format-request.mjs \
+            .bench/i20/input/campaign.json \
+            .bench/i20/i03-input/execution-map.json \
+            .bench/i20/request.json \
+            .bench/i20/payloads
+      - name: Audit semantic safe zones on 3 systems x 3 profiles
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/i20-semantic-profile-audit.mjs \
+            examples/book-ad-systems/index-c27-i20.html \
+            .bench/i20/request.json \
+            .bench/i20/semantic-audit.json
+      - name: Prepare byte-distinct replay and retry requests
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const request=JSON.parse(fs.readFileSync('.bench/i20/request.json','utf8'));
+          fs.writeFileSync('.bench/i20/request-replay.json',JSON.stringify(request));
+          const retry=structuredClone(request);
+          const lateAudio=path.resolve('.bench/i20/late-audio.m4a');
+          for(const selected of retry.selected)selected.execution.audio=lateAudio;
+          fs.writeFileSync('.bench/i20/request-retry.json',JSON.stringify(retry,null,2)+'\n');
+          NODE
+      - name: Enqueue then recover abandoned physical job
+        run: |
+          QUEUE=.bench/i20/queue
+          node .agents/skills/framewright/scripts/enqueue-local-render-job.mjs --request .bench/i20/request.json --queue "$QUEUE" --workspace "$PWD" > .bench/i20/enqueue-a.json
+          JOB_A=$(node -e "console.log(require('./.bench/i20/enqueue-a.json').job_id)")
+          mv "$QUEUE/pending/$JOB_A" "$QUEUE/running/$JOB_A"
+          test -d "$QUEUE/running/$JOB_A"
+          CI=1 node .agents/skills/framewright/scripts/local-render-worker-standard.mjs --queue "$QUEUE" --workspace "$PWD" --once | tee .bench/i20/worker-a.log
+          test -d "$QUEUE/done/$JOB_A"
+      - name: Byte-distinct local job reuses canonical RenderSpec artifacts
+        run: |
+          QUEUE=.bench/i20/queue
+          node .agents/skills/framewright/scripts/enqueue-local-render-job.mjs --request .bench/i20/request-replay.json --queue "$QUEUE" --workspace "$PWD" > .bench/i20/enqueue-b.json
+          JOB_A=$(node -e "console.log(require('./.bench/i20/enqueue-a.json').job_id)")
+          JOB_B=$(node -e "console.log(require('./.bench/i20/enqueue-b.json').job_id)")
+          test "$JOB_A" != "$JOB_B"
+          CI=1 node .agents/skills/framewright/scripts/local-render-worker-standard.mjs --queue "$QUEUE" --workspace "$PWD" --once | tee .bench/i20/worker-b.log
+          test -d "$QUEUE/done/$JOB_B"
+      - name: Retry same failed job after external audio dependency appears
+        run: |
+          QUEUE=.bench/i20/queue
+          rm -f .bench/i20/late-audio.m4a
+          node .agents/skills/framewright/scripts/enqueue-local-render-job.mjs --request .bench/i20/request-retry.json --queue "$QUEUE" --workspace "$PWD" > .bench/i20/enqueue-c.json
+          JOB_C=$(node -e "console.log(require('./.bench/i20/enqueue-c.json').job_id)")
+          CI=1 node .agents/skills/framewright/scripts/local-render-worker-standard.mjs --queue "$QUEUE" --workspace "$PWD" --once | tee .bench/i20/worker-c-failed.log
+          test -d "$QUEUE/failed/$JOB_C"
+          cp .bench/i20/canonical-audio.m4a .bench/i20/late-audio.m4a
+          CI=1 node .agents/skills/framewright/scripts/local-render-worker-standard.mjs --queue "$QUEUE" --workspace "$PWD" --once --retry "$JOB_C" | tee .bench/i20/worker-c-retry.log
+          test -d "$QUEUE/done/$JOB_C"
+      - name: Validate factory identity, reserve suppression, recovery, retry and cache
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const queue='.bench/i20/queue';
+          const enq=name=>JSON.parse(fs.readFileSync(`.bench/i20/enqueue-${name}.json`,'utf8'));
+          const A=enq('a'),B=enq('b'),C=enq('c');
+          assert.equal(new Set([A.job_id,B.job_id,C.job_id]).size,3,'local byte identities should differ');
+          const result=job=>{
+            const dir=path.join(queue,'results',job.job_id);
+            return{
+              run:JSON.parse(fs.readFileSync(path.join(dir,'run.json'),'utf8')),
+              manifest:JSON.parse(fs.readFileSync(path.join(dir,'canonical-artifacts.json'),'utf8')),
+              dir,
+            };
+          };
+          const a=result(A),b=result(B),c=result(C);
+          for(const row of [a,b,c]){
+            assert.equal(row.manifest.selected_creatives,3);
+            assert.equal(row.manifest.render_specs,9);
+            assert.equal(row.manifest.reserves,2);
+            assert.equal(row.manifest.artifacts.length,9);
+            assert.equal(new Set(row.manifest.artifacts.map(x=>x.creative_id)).size,3);
+            assert.equal(new Set(row.manifest.artifacts.map(x=>x.render_spec_id)).size,9);
+            assert.ok(row.manifest.artifacts.every(x=>x.qa.status==='pass'));
+            assert.ok(row.manifest.artifacts.every(x=>x.physical_binding?.payload_sha256&&x.physical_binding?.template_sha256));
+            const byCreative=new Map();
+            for(const artifact of row.manifest.artifacts){
+              const profiles=byCreative.get(artifact.creative_id)||[];profiles.push(artifact.delivery_profile_id);byCreative.set(artifact.creative_id,profiles);
+              assert.notEqual(artifact.delivery_profile_id,'vertical-youtube-shorts-unrequested-v1');
+              const dims=artifact.qa.checks.find(x=>x.id==='output-dimensions');
+              const binding=artifact.qa.checks.find(x=>x.id==='delivery-scene-binding');
+              const audio=artifact.qa.checks.find(x=>x.id==='audio-stream');
+              assert.ok(dims&&binding&&audio,JSON.stringify(artifact.qa));
+              assert.equal(audio.details.present,true);
+            }
+            for(const profiles of byCreative.values())assert.deepEqual([...profiles].sort(),['landscape-generic-v1','square-generic-v1','vertical-instagram-reels-v1']);
+          }
+          const ids=row=>row.manifest.artifacts.map(x=>x.render_spec_id).sort();
+          const shas=row=>row.manifest.artifacts.map(x=>[x.render_spec_id,x.output.sha256]).sort((x,y)=>x[0].localeCompare(y[0]));
+          assert.deepEqual(ids(a),ids(b));assert.deepEqual(ids(a),ids(c));
+          assert.deepEqual(shas(a),shas(b));assert.deepEqual(shas(a),shas(c));
+          assert.equal(a.run.canonical_manifest_sha256,b.run.canonical_manifest_sha256);
+          assert.equal(a.run.canonical_manifest_sha256,c.run.canonical_manifest_sha256);
+          assert.equal(a.run.cache_hits,0);
+          assert.equal(b.run.cache_hits,9);
+          assert.equal(c.run.cache_hits,9);
+          const attempt=(job,n)=>JSON.parse(fs.readFileSync(path.join(queue,'done',job.job_id,'attempts',`${String(n).padStart(4,'0')}.json`),'utf8'));
+          assert.equal(attempt(A,1).status,'succeeded');
+          assert.equal(attempt(B,1).status,'succeeded');
+          assert.equal(attempt(C,1).status,'failed');
+          assert.match(attempt(C,1).error.message,/missing canonical audio/);
+          assert.equal(attempt(C,2).status,'succeeded');
+          assert.equal(attempt(C,2).canonical_manifest_sha256,a.run.canonical_manifest_sha256);
+          const semantic=JSON.parse(fs.readFileSync('.bench/i20/semantic-audit.json','utf8'));
+          assert.equal(semantic.count,9);assert.equal(semantic.totalViolations,0);assert.deepEqual(semantic.errors,[]);
+          const request=JSON.parse(fs.readFileSync('.bench/i20/request.json','utf8'));
+          const copies=request.selected.map(x=>JSON.parse(fs.readFileSync(x.execution.payload,'utf8'))).map(x=>({title:x.title,hook:x.hook,cta:x.cta}));
+          assert.ok(copies.every(x=>JSON.stringify(x)===JSON.stringify(copies[0])),'profile/system matrix manually rewrote visible copy');
+          console.log(JSON.stringify({localJobs:[A.job_id,B.job_id,C.job_id],canonicalManifest:a.run.canonical_manifest_sha256,renderSpecs:ids(a),cacheHits:{physical:a.run.cache_hits,replay:b.run.cache_hits,retry:c.run.cache_hits},retryAttempts:[attempt(C,1).status,attempt(C,2).status],semanticViolations:semantic.totalViolations},null,2));
+          NODE
+      - name: Exact request re-enqueue dedupes after completion
+        run: |
+          node .agents/skills/framewright/scripts/enqueue-local-render-job.mjs --request .bench/i20/request.json --queue .bench/i20/queue --workspace "$PWD" > .bench/i20/enqueue-a-again.json
+          node - <<'NODE'
+          const first=require('./.bench/i20/enqueue-a.json'),again=require('./.bench/i20/enqueue-a-again.json');
+          if(first.job_id!==again.job_id||again.duplicate!==true||again.state!=='done')throw new Error(JSON.stringify({first,again}));
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i20-multi-format-e2e
+          path: .bench/i20/
+          retention-days: 14
