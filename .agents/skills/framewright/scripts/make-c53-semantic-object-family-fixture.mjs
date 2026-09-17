@@ -9,7 +9,7 @@ const html=path.resolve(process.argv[2]||'examples/book-ad-systems/index-c53-sem
 const audioSource=path.resolve(process.argv[3]||'.bench/c53/source.wav');
 const audioArtifact=path.resolve(process.argv[4]||'.bench/c53/canonical-audio.m4a');
 const outDir=path.resolve(process.argv[5]||'.bench/c53/input');
-const TARGET_SEED=901,REFERENCE_SEEDS=[101,202,303],DURATION_SECONDS=3,FPS=30;
+const TARGET_SEED=901,REFERENCE_SEEDS=[101,202,303],DURATION_SECONDS=3,FPS=30,BOOK_ID='c53-semantic-object-benchmark';
 const shaBytes=b=>createHash('sha256').update(b).digest('hex'),shaFile=f=>shaBytes(fs.readFileSync(f));
 const rel=f=>path.relative(process.cwd(),f).split(path.sep).join('/');
 for(const f of [html,audioSource,audioArtifact])if(!fs.existsSync(f))throw new Error(`missing C53 input ${f}`);
@@ -23,9 +23,9 @@ assertCanonicalAudioArtifact(audioSpec,canonicalAudio,audioBytes);
 const template={id:'semantic-scene-object-benchmark',version:'c53-object-runtime-v1',sha256:templateSha256};
 const selected=[],targets=[],references=[],truthTargets=[];
 function addSelection({selectionId,program,seed,kind}){
-  const payload={schema:'c53-semantic-object-payload-v1',delivery_profile:'vertical',semantic_object_program:program};
+  const payload={schema:'c53-semantic-object-payload-v1',book_id:BOOK_ID,delivery_profile:'vertical',semantic_object_program:program};
   const bytes=Buffer.from(JSON.stringify(payload,null,2)+'\n'),payloadSha256=shaBytes(bytes),payloadFile=path.join(outDir,`${selectionId}.payload.json`);fs.writeFileSync(payloadFile,bytes);
-  selected.push({selection_id:selectionId,creative:{schema:'newboo-creative-spec-v1',book_id:'c53-semantic-object-benchmark',payload_sha256:payloadSha256,template,visual_system:{id:'semantic-object-monochrome',version:'v1'},structural_variant:'semantic-object-safe-stage',hook:{source:'c53_benchmark',text:'semantic object benchmark',source_ref:'c53:benchmark'},motion:{profile:'static',version:'v1'},art_direction:{mode:'semantic-object-benchmark',algorithm:'c52-bounded-primitives-v1',palette:{background:'#f4f1e8',surface:'#f4f1e8',ink:'#111111',accent:'#111111',secondary:'#111111'}},seed,assets:[],semantic_object_program_id:program.object_program_id},timeline:{source:'c53:static-object',policy_version:'c53-object-runtime-v1',duration_ms:durationMs,frame_count:frameCount},requested_delivery_profile_ids:['vertical-c53-v1'],render_assets:[{role:'scene_payload',sha256:payloadSha256,media_type:'application/json',uri:`execution://${selectionId}/payload`}],audio:{spec:audioSpec,artifact:canonicalAudio},execution:{html:rel(html),payload:rel(payloadFile),audio:rel(audioArtifact),template_id:template.id,template_version:template.version}});
+  selected.push({selection_id:selectionId,creative:{schema:'newboo-creative-spec-v1',book_id:BOOK_ID,payload_sha256:payloadSha256,template,visual_system:{id:'semantic-object-monochrome',version:'v1'},structural_variant:'semantic-object-safe-stage',hook:{source:'c53_benchmark',text:'semantic object benchmark',source_ref:'c53:benchmark'},motion:{profile:'static',version:'v1'},art_direction:{mode:'semantic-object-benchmark',algorithm:'c52-bounded-primitives-v1',palette:{background:'#f4f1e8',surface:'#f4f1e8',ink:'#111111',accent:'#111111',secondary:'#111111'}},seed,assets:[],semantic_object_program_id:program.object_program_id},timeline:{source:'c53:static-object',policy_version:'c53-object-runtime-v1',duration_ms:durationMs,frame_count:frameCount},requested_delivery_profile_ids:['vertical-c53-v1'],render_assets:[{role:'scene_payload',sha256:payloadSha256,media_type:'application/json',uri:`execution://${selectionId}/payload`}],audio:{spec:audioSpec,artifact:canonicalAudio},execution:{html:rel(html),payload:rel(payloadFile),audio:rel(audioArtifact),template_id:template.id,template_version:template.version}});
   return {selection_id:selectionId,payload_sha256:payloadSha256,object_program_id:program.object_program_id,kind};
 }
 let targetIndex=0,referenceIndex=0;
