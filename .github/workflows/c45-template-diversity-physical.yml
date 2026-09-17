@@ -1,0 +1,98 @@
+name: C45 40-Video Template Diversity Physical Acceptance
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'examples/book-ad-systems/index-c45-template-variant.html'
+      - '.agents/skills/framewright/scripts/make-c45-template-diversity-fixture.mjs'
+      - '.agents/skills/framewright/scripts/audit-c45-template-diversity.mjs'
+      - 'contracts/template-variant-composer-v1.mjs'
+      - 'contracts/batch-template-diversity-v1.mjs'
+      - 'contracts/structural-layout-families-v2.*'
+      - 'contracts/motion-grammar-families-v2.*'
+      - 'contracts/typography-graphic-device-library-v2.*'
+      - 'contracts/cover-asset-staging-families-v2.*'
+      - '.agents/skills/framewright/scripts/run-video-factory.mjs'
+      - '.agents/skills/framewright/scripts/render-factory-fast.mjs'
+      - '.agents/skills/framewright/scripts/render-webcodecs.mjs'
+      - '.github/workflows/c45-template-diversity-physical.yml'
+  workflow_dispatch:
+
+jobs:
+  physical-diversity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install ffmpeg and pinned fallback fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          ffmpeg -version | head -1
+      - name: Syntax and upstream contract gates
+        run: |
+          node --check .agents/skills/framewright/scripts/make-c45-template-diversity-fixture.mjs
+          node --check .agents/skills/framewright/scripts/audit-c45-template-diversity.mjs
+          node --check .agents/skills/framewright/scripts/run-video-factory.mjs
+          node --check .agents/skills/framewright/scripts/render-factory-fast.mjs
+          node contracts/check-c43-template-variant-composer.mjs
+          node contracts/check-c44-batch-template-diversity.mjs
+      - name: Generate canonical C27 source pack
+        run: |
+          mkdir -p .bench/c45
+          node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs .bench/c45/c27-fixtures
+      - name: Build canonical 9s AAC artifact
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=220:sample_rate=48000' -t 9 -c:a pcm_s16le .bench/c45/source.wav
+          ffmpeg -hide_banner -loglevel error -y -i .bench/c45/source.wav -t 9 -c:a aac -b:a 192k -movflags +faststart .bench/c45/canonical-audio.m4a
+      - name: Compile fixed 40-variant campaign
+        run: |
+          node .agents/skills/framewright/scripts/make-c45-template-diversity-fixture.mjs \
+            .bench/c45/c27-fixtures \
+            examples/book-ad-systems/index-c45-template-variant.html \
+            .bench/c45/source.wav \
+            .bench/c45/canonical-audio.m4a \
+            .bench/c45/input
+      - name: First canonical physical render
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/c45/input/campaign.json \
+            --out-dir .bench/c45/run1 \
+            --artifact-dir .bench/c45/canonical-artifacts
+      - name: Exact cache replay
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/c45/input/campaign.json \
+            --out-dir .bench/c45/run2 \
+            --artifact-dir .bench/c45/canonical-artifacts
+      - name: Audit physical diversity and build human review pack
+        run: |
+          node .agents/skills/framewright/scripts/audit-c45-template-diversity.mjs \
+            .bench/c45/input .bench/c45/run1 .bench/c45/run2 .bench/c45/review
+      - name: Compact acceptance receipt
+        if: always()
+        run: |
+          test -f .bench/c45/review/acceptance.json && node -e "const r=require('./.bench/c45/review/acceptance.json'); console.log(JSON.stringify({count:r.count,unique:r.unique,checkpoints:r.checkpoint_unique_png_sha256,minTransition:r.min_transition_distance,cache:r.cache_replay,reserve:r.reserve_suppressed},null,2))" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c45-template-diversity-physical-review
+          path: |
+            .bench/c45/input/
+            .bench/c45/run1/canonical-artifacts.json
+            .bench/c45/run1/run.json
+            .bench/c45/run1/video/
+            .bench/c45/run2/canonical-artifacts.json
+            .bench/c45/run2/run.json
+            .bench/c45/review/
+          retention-days: 14
