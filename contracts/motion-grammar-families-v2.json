@@ -1,0 +1,66 @@
+{
+  "schema": "newboo-motion-grammar-family-registry-v2",
+  "version": 2,
+  "families": [
+    {
+      "id": "motion_editorial_cuts_v2",
+      "version": 2,
+      "signature": "editorial_cuts",
+      "enter_fraction": 0.08,
+      "settle_fraction": 0.18,
+      "text": {"dx": 0, "dy": 0, "scale_from": 1, "rotate_deg": 0, "opacity_from": 0},
+      "asset": {"dx": 0, "dy": 0, "scale_from": 1, "rotate_deg": 0, "opacity_from": 0},
+      "cta": {"dx": 0, "dy": 0, "scale_from": 1, "rotate_deg": 0, "opacity_from": 0}
+    },
+    {
+      "id": "motion_staggered_type_v2",
+      "version": 2,
+      "signature": "staggered_type",
+      "enter_fraction": 0.18,
+      "settle_fraction": 0.42,
+      "text": {"dx": 0, "dy": 52, "scale_from": 1, "rotate_deg": 0, "opacity_from": 0},
+      "asset": {"dx": 0, "dy": 28, "scale_from": 0.98, "rotate_deg": 0, "opacity_from": 0.15},
+      "cta": {"dx": 0, "dy": 34, "scale_from": 1, "rotate_deg": 0, "opacity_from": 0}
+    },
+    {
+      "id": "motion_directional_slide_v2",
+      "version": 2,
+      "signature": "directional_slide",
+      "enter_fraction": 0.14,
+      "settle_fraction": 0.38,
+      "text": {"dx": -72, "dy": 0, "scale_from": 1, "rotate_deg": 0, "opacity_from": 0.1},
+      "asset": {"dx": 72, "dy": 0, "scale_from": 1, "rotate_deg": 0, "opacity_from": 0.15},
+      "cta": {"dx": 0, "dy": 46, "scale_from": 1, "rotate_deg": 0, "opacity_from": 0}
+    },
+    {
+      "id": "motion_scale_depth_reveal_v2",
+      "version": 2,
+      "signature": "scale_depth",
+      "enter_fraction": 0.12,
+      "settle_fraction": 0.4,
+      "text": {"dx": 0, "dy": 24, "scale_from": 0.94, "rotate_deg": 0, "opacity_from": 0.05},
+      "asset": {"dx": 0, "dy": 0, "scale_from": 0.86, "rotate_deg": 0, "opacity_from": 0.1},
+      "cta": {"dx": 0, "dy": 20, "scale_from": 0.92, "rotate_deg": 0, "opacity_from": 0}
+    },
+    {
+      "id": "motion_restrained_parallax_v2",
+      "version": 2,
+      "signature": "restrained_parallax",
+      "enter_fraction": 0.16,
+      "settle_fraction": 0.44,
+      "text": {"dx": -24, "dy": 34, "scale_from": 0.99, "rotate_deg": 0, "opacity_from": 0.1},
+      "asset": {"dx": 30, "dy": -28, "scale_from": 0.97, "rotate_deg": 0, "opacity_from": 0.2},
+      "cta": {"dx": 18, "dy": 24, "scale_from": 0.99, "rotate_deg": 0, "opacity_from": 0}
+    },
+    {
+      "id": "motion_rhythmic_cards_v2",
+      "version": 2,
+      "signature": "rhythmic_cards",
+      "enter_fraction": 0.16,
+      "settle_fraction": 0.46,
+      "text": {"dx": -36, "dy": 42, "scale_from": 0.96, "rotate_deg": -2.5, "opacity_from": 0.05},
+      "asset": {"dx": 42, "dy": 36, "scale_from": 0.93, "rotate_deg": 3.5, "opacity_from": 0.1},
+      "cta": {"dx": 0, "dy": 38, "scale_from": 0.95, "rotate_deg": 1.5, "opacity_from": 0}
+    }
+  ]
+}
