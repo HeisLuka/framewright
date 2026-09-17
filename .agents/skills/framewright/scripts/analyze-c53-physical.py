@@ -18,6 +18,49 @@ def midframe(path):
 def unit(v):
     v=np.asarray(v,np.float32).ravel(); n=float(np.linalg.norm(v)); return v/(n+1e-9)
 
+def circle_topology(gray):
+    h,w=gray.shape; s=min(h,w)
+    blur=cv2.GaussianBlur(gray,(5,5),1.1)
+    cs=cv2.HoughCircles(blur,cv2.HOUGH_GRADIENT,dp=1.2,minDist=max(10,int(s*.035)),param1=100,param2=22,minRadius=max(4,int(s*.008)),maxRadius=int(s*.40))
+    if cs is None: return np.zeros(12,np.float32)
+    a=np.asarray(cs[0],np.float32)
+    if len(a)>32: a=a[np.argsort(a[:,2])[-32:]]
+    xy=a[:,:2]; rr=a[:,2]/s
+    c=xy.mean(axis=0); centered=(xy-c)/s
+    if len(xy)>=2:
+        cov=np.cov(centered.T); ev=np.sort(np.linalg.eigvalsh(cov))[::-1]; linearity=1-float(ev[1]/(ev[0]+1e-9))
+    else: linearity=0
+    center_disp=float(np.mean(np.linalg.norm(centered,axis=1)))
+    med=np.median(xy,axis=0); concentric=float(np.mean(np.linalg.norm((xy-med)/s,axis=1)))
+    radius_cv=float(rr.std()/(rr.mean()+1e-9))
+    return np.array([
+        min(len(a),32)/32, rr.mean(), rr.std(), radius_cv,
+        c[0]/w,c[1]/h, center_disp, concentric, linearity,
+        float(np.ptp(xy[:,0])/w),float(np.ptp(xy[:,1])/h),float(np.ptp(rr))
+    ],np.float32)
+
+def line_topology(lines,shape):
+    h,w=shape; diag=math.hypot(w,h)
+    if lines is None or not len(lines): return np.zeros(14,np.float32)
+    rec=[]
+    for q in lines[:,0]:
+        x1,y1,x2,y2=map(float,q); dx=x2-x1;dy=y2-y1;L=math.hypot(dx,dy); a=(math.degrees(math.atan2(dy,dx))%180);rec.append((x1,y1,x2,y2,L,a))
+    horiz=[r for r in rec if min(r[5],180-r[5])<12]; vert=[r for r in rec if abs(r[5]-90)<12]
+    long=[r for r in rec if r[4]>.28*min(w,h)]
+    def pos_stats(rs,axis):
+        if not rs:return (0,0)
+        vals=[((r[1]+r[3])/2)/h if axis=='y' else ((r[0]+r[2])/2)/w for r in rs]
+        return float(np.mean(vals)),float(np.std(vals))
+    hy,hs=pos_stats(horiz,'y');vx,vs=pos_stats(vert,'x')
+    lengths=np.array([r[4]/diag for r in rec],np.float32)
+    return np.array([
+        min(len(rec),80)/80,min(len(horiz),30)/30,min(len(vert),30)/30,min(len(long),30)/30,
+        hy,hs,vx,vs,float(lengths.mean()),float(lengths.std()),float(lengths.max()),
+        sum(r[4] for r in horiz)/(sum(r[4] for r in rec)+1e-9),
+        sum(r[4] for r in vert)/(sum(r[4] for r in rec)+1e-9),
+        sum(r[4] for r in long)/(sum(r[4] for r in rec)+1e-9)
+    ],np.float32)
+
 def descriptor(im):
     h,w=im.shape[:2]; m=int(min(h,w)*.045); im=im[m:h-m,m:w-m]
     gray=cv2.cvtColor(im,cv2.COLOR_BGR2GRAY)
@@ -41,7 +84,9 @@ def descriptor(im):
     if lines is not None:
         for q in lines[:,0]:
             dx,dy=q[2]-q[0],q[3]-q[1]; a=(math.degrees(math.atan2(dy,dx))%180); L=math.hypot(dx,dy); lh[min(11,int(a//15))]+=L
-    return unit(np.concatenate([unit(occ),unit(px),unit(py),unit(hu),unit(oh),unit(rh),unit(comp),unit(lh)]))
+    ct=circle_topology(gray); lt=line_topology(lines,gray.shape)
+    # Block-wise normalization prevents a large occupancy grid from drowning the topology channels.
+    return unit(np.concatenate([unit(occ),unit(px),unit(py),unit(hu),unit(oh),unit(rh),unit(comp),unit(lh),unit(ct)*1.35,unit(lt)*1.35]))
 
 def dist(a,b): return float(1-np.dot(a,b))
 
@@ -74,6 +119,6 @@ def summarize(rows):
 summary={'all':summarize(pred)}
 for mode in sorted(set(x['mode'] for x in pred)): summary[mode]=summarize([x for x in pred if x['mode']==mode])
 conf=Counter((x['truth_family'],x['best_family']) for x in pred if not x['best_correct'])
-report={'schema':'c53-physical-semantic-object-inverse-v2-multiprototype','thresholds':{'max_residual':.42,'min_margin':.012},'candidate_anchors':sorted(set(x.get('anchor') for x in CAND)),'summary':summary,'hard_confusions':[{'truth':a,'predicted':b,'count':n} for (a,b),n in conf.most_common(20)],'predictions':pred}
+report={'schema':'c53-physical-semantic-object-inverse-v3-topology','thresholds':{'max_residual':.42,'min_margin':.012},'candidate_anchors':sorted(set(x.get('anchor') for x in CAND)),'summary':summary,'hard_confusions':[{'truth':a,'predicted':b,'count':n} for (a,b),n in conf.most_common(30)],'predictions':pred}
 (root/'analysis.json').write_text(json.dumps(report,indent=2))
 print(json.dumps(report,indent=2))
