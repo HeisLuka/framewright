@@ -1,0 +1,47 @@
+name: C44 inverse creative compiler
+
+on:
+  pull_request:
+    paths:
+      - 'contracts/inverse-creative-compiler-v1.mjs'
+      - 'contracts/check-c44-inverse-creative-compiler.mjs'
+      - '.agents/skills/framewright/scripts/c44-observe-video.mjs'
+      - 'docs/c44-inverse-creative-compiler.md'
+      - '.github/workflows/c44-inverse-creative-compiler.yml'
+  push:
+    branches:
+      - 'lab/c44-inverse-creative-compiler'
+    paths:
+      - 'contracts/inverse-creative-compiler-v1.mjs'
+      - 'contracts/check-c44-inverse-creative-compiler.mjs'
+      - '.agents/skills/framewright/scripts/c44-observe-video.mjs'
+      - 'docs/c44-inverse-creative-compiler.md'
+      - '.github/workflows/c44-inverse-creative-compiler.yml'
+
+jobs:
+  contract-and-observer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Contract checks
+        run: node contracts/check-c44-inverse-creative-compiler.mjs
+      - name: Build deterministic synthetic MP4
+        run: |
+          ffmpeg -hide_banner -loglevel error \
+            -f lavfi -i color=c=black:s=1080x1920:r=30:d=1 \
+            -f lavfi -i color=c=white:s=1080x1920:r=30:d=1 \
+            -f lavfi -i color=c=black:s=1080x1920:r=30:d=1 \
+            -filter_complex '[0:v][1:v][2:v]concat=n=3:v=1:a=0,format=yuv420p[v]' \
+            -map '[v]' -c:v libx264 -pix_fmt yuv420p /tmp/c44-smoke.mp4
+      - name: Physical observer smoke test
+        run: |
+          node .agents/skills/framewright/scripts/c44-observe-video.mjs \
+            --video /tmp/c44-smoke.mp4 \
+            --out /tmp/c44-observation.json \
+            --scene-threshold 0.15 \
+            --sample-fps 10
+          node --input-type=module -e "import fs from 'node:fs'; const x=JSON.parse(fs.readFileSync('/tmp/c44-observation.json','utf8')); if(x.media.width!==1080||x.media.height!==1920) process.exit(1); if(!Array.isArray(x.motion_energy)) process.exit(1); if(!String(x.observation_id).startsWith('nbobs1_')) process.exit(1); console.log(JSON.stringify({cuts:x.cut_times_seconds.length,motion_samples:x.motion_energy.length,observation_id:x.observation_id},null,2));"
