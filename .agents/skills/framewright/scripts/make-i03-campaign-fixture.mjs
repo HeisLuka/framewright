@@ -3,7 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createHash} from 'node:crypto';
 import {computeAudioSpecId, assertCanonicalAudioArtifact} from '../../../../contracts/audio-identity-v1.mjs';
-import {canonicalJson} from '../../../../contracts/factory-identity-v1.mjs';
 
 const fixtureDir=path.resolve(process.argv[2]||'artifacts/i03/c27-fixtures');
 const c27Html=path.resolve(process.argv[3]||'examples/book-ad-systems/index-c27-i03.html');
@@ -12,7 +11,6 @@ const audioArtifact=path.resolve(process.argv[5]||'artifacts/i03/canonical-audio
 const outDir=path.resolve(process.argv[6]||'artifacts/i03/input');
 const shaBytes=bytes=>createHash('sha256').update(bytes).digest('hex');
 const shaFile=file=>shaBytes(fs.readFileSync(file));
-const shaCanonical=value=>shaBytes(canonicalJson(value));
 
 for(const file of [c27Html,audioSource,audioArtifact,path.join(fixtureDir,'manifest.json')])if(!fs.existsSync(file))throw new Error(`missing I03 fixture input: ${file}`);
 const manifest=JSON.parse(fs.readFileSync(path.join(fixtureDir,'manifest.json'),'utf8'));
@@ -41,7 +39,8 @@ const basePayload={
   pacing_mode:'c27-narrative-v1',
   narrative_plan:plan,
 };
-const payloadSha256=shaCanonical(basePayload);
+const payloadBytes=Buffer.from(JSON.stringify(basePayload,null,2)+'\n');
+const payloadSha256=shaBytes(payloadBytes);
 const templateSha256=shaFile(c27Html);
 const coverSha256=shaFile(runtimeCoverPath);
 if(coverSha256!==shaFile(coverPath))throw new Error('runtime cover copy hash drift');
@@ -101,7 +100,7 @@ fs.mkdirSync(outDir,{recursive:true});
 const payloadFile=path.join(outDir,'selected-winter-map.payload.json');
 const campaignFile=path.join(outDir,'campaign.json');
 const executionFile=path.join(outDir,'execution-map.json');
-fs.writeFileSync(payloadFile,JSON.stringify(basePayload,null,2)+'\n');
+fs.writeFileSync(payloadFile,payloadBytes);
 fs.writeFileSync(campaignFile,JSON.stringify(request,null,2)+'\n');
 fs.writeFileSync(executionFile,JSON.stringify({
   schema:'framewright-i03-execution-map-v1',

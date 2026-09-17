@@ -66,6 +66,20 @@ async function atomicJson(filename, value) {
   await fsp.writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
   await fsp.rename(tmp, filename);
 }
+async function renderWithPool(poolUrl, job) {
+  const response = await fetch(`${poolUrl.replace(/\/+$/, '')}/render`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(job),
+  });
+  const text = await response.text();
+  let result = null;
+  try { result = text ? JSON.parse(text) : null; } catch {}
+  if (!response.ok || result?.ok === false) {
+    throw new Error(`warm WebCodecs pool render failed (${response.status}): ${result?.error || text.slice(-2000)}`);
+  }
+  return result;
+}
 
 const options = parseArgs(process.argv.slice(2));
 const bundlePath = path.resolve(INVOCATION_CWD, String(options.bundle || process.env.FACTORY_BUNDLE || ''));
@@ -82,6 +96,7 @@ const receiptPath = path.resolve(INVOCATION_CWD, String(options['receipt-out'] |
 const artifactDir = options['artifact-dir'] ? path.resolve(INVOCATION_CWD, String(options['artifact-dir'])) : (process.env.FW_ARTIFACT_DIR ? path.resolve(process.env.FW_ARTIFACT_DIR) : null);
 const force = flag(options.force || process.env.FORCE);
 const retries = int(options.retries ?? process.env.WEBCODECS_RETRIES, 1, '--retries');
+const poolUrl = String(process.env.WEBCODECS_POOL_URL || '').trim().replace(/\/+$/, '');
 const artifactMp4 = artifactDir ? path.join(artifactDir, `${plan.canonical_artifact_key}.mp4`) : null;
 const artifactReceipt = artifactDir ? path.join(artifactDir, `${plan.canonical_artifact_key}.json`) : null;
 await fsp.mkdir(path.dirname(out), { recursive: true });
@@ -138,12 +153,30 @@ const innerEnv = {
 if (process.env.HTML) innerEnv.HTML = path.resolve(INVOCATION_CWD, process.env.HTML);
 if (scenePayloadPath) innerEnv.PAYLOAD = scenePayloadPath;
 if (process.env.CI) innerEnv.CI = process.env.CI;
+if (poolUrl && !innerEnv.HTML) throw new Error('WEBCODECS_POOL_URL requires HTML so the canonical scene can be fully navigated in the warm pool');
+if (poolUrl && !scenePayloadPath) throw new Error('WEBCODECS_POOL_URL requires a physical scene PAYLOAD');
 
 let lastError = null, attemptsUsed = 0;
 for (let attempt = 0; attempt <= retries; attempt += 1) {
   attemptsUsed = attempt + 1;
   try {
-    await run(process.execPath, [INNER_RENDERER, rawVideo, String(bundle.creative.seed), String(plan.delivery.width), String(plan.video.bitrate_bps)], innerEnv);
+    if (poolUrl) {
+      await renderWithPool(poolUrl, {
+        html: innerEnv.HTML,
+        payload: scenePayloadPath,
+        out: rawVideo,
+        report: innerReport,
+        seed: bundle.creative.seed,
+        width: plan.delivery.width,
+        expectedHeight: plan.delivery.height,
+        bitrate: plan.video.bitrate_bps,
+        codec: plan.video.codec,
+        latencyMode: 'realtime',
+        fingerprint: flag(process.env.WEBCODECS_POOL_FINGERPRINT),
+      });
+    } else {
+      await run(process.execPath, [INNER_RENDERER, rawVideo, String(bundle.creative.seed), String(plan.delivery.width), String(plan.video.bitrate_bps)], innerEnv);
+    }
     lastError = null;
     break;
   } catch (error) {
@@ -189,7 +222,13 @@ const receipt = {
   render_spec_id: plan.render_spec_id,
   output: { sha256: await sha256File(out), bytes: (await fsp.stat(out)).size, mime_type: 'video/mp4', duration_ms: Number(media.format?.duration || 0) * 1000, frame_count: Number(video.nb_read_frames), storage_uri: artifactMp4 || out },
   qa: { status: 'pass', checks },
-  metrics: { inner_total_run_ms: inner.totalRunMs || null, runtime_plan_schema: plan.schema, scene_payload_sha256: payloadBinding?.sha256 || null },
+  metrics: {
+    inner_total_run_ms: inner.totalRunMs || null,
+    runtime_plan_schema: plan.schema,
+    scene_payload_sha256: payloadBinding?.sha256 || null,
+    runtime_pool: inner.pool || null,
+    state_fingerprint: inner.browser?.stateFingerprint || null,
+  },
   invocation: { cache_hit: false, attempts: attemptsUsed },
 };
 if (artifactMp4 && artifactReceipt) {

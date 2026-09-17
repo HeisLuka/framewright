@@ -83,10 +83,18 @@ async function verifyPhysicalBinding(requestRow, compiledCreative, binding) {
   if (String(payload.book_id) !== String(compiledCreative.book_id)) {
     throw new Error(`${requestRow.selection_id}: physical payload book_id does not match CreativeSpec`);
   }
-  if (String(payload.hook) !== String(compiledCreative.hook?.text)) {
-    throw new Error(`${requestRow.selection_id}: physical payload hook does not match CreativeSpec hook`);
+  const narrativeHook = payload.narrative_plan?.roles
+    ?.find(role => role?.role === 'hook')
+    ?.atoms?.[0]?.text;
+  if (narrativeHook != null && String(narrativeHook) !== String(compiledCreative.hook?.text)) {
+    throw new Error(`${requestRow.selection_id}: narrative_plan hook atom does not match CreativeSpec hook`);
   }
-  return { html, payloadPath, payloadSha, templateSha };
+  if (compiledCreative.hook?.source_ref?.includes(':hook') && narrativeHook == null) {
+    throw new Error(`${requestRow.selection_id}: CreativeSpec hook claims narrative-plan provenance but physical payload has no hook atom`);
+  }
+  const audioPath = binding.audio ? path.resolve(INVOCATION_CWD, binding.audio) : null;
+  if (audioPath && !fs.existsSync(audioPath)) throw new Error(`${requestRow.selection_id}: missing canonical audio ${audioPath}`);
+  return { html, payloadPath, payloadSha, templateSha, audioPath };
 }
 
 const options = parseArgs(process.argv.slice(2));
@@ -108,12 +116,15 @@ const creativeBySelection = new Map(packageManifest.selected.map(row => [row.sel
 const stableArtifacts = [];
 const runArtifacts = [];
 
-for (const row of packageManifest.renders) {
+async function processRender(row) {
   const requestRow = requestBySelection.get(row.selection_id);
   const creative = creativeBySelection.get(row.selection_id);
   if (!requestRow || !creative) throw new Error(`${row.selection_id}: package/request selection mismatch`);
   const binding = requireExecutionBinding(requestRow, creative);
   const physical = await verifyPhysicalBinding(requestRow, creative, binding);
+  if (row.render.audio && !physical.audioPath && !process.env.CANONICAL_AUDIO_PATH) {
+    throw new Error(`${row.selection_id}: RenderSpec declares audio but execution.audio / CANONICAL_AUDIO_PATH is missing`);
+  }
 
   const bundle = {
     schema: 'newboo-video-factory-bundle-v1',
@@ -128,40 +139,64 @@ for (const row of packageManifest.renders) {
   await fsp.mkdir(path.dirname(output), { recursive: true });
   await fsp.mkdir(path.dirname(receiptPath), { recursive: true });
 
-  await run(process.execPath, [FAST,
+  const fastArgs = [
+    FAST,
     '--bundle', bundlePath,
     '--out', output,
     '--artifact-dir', artifactDir,
     '--receipt-out', receiptPath,
-  ], { HTML: physical.html, PAYLOAD: physical.payloadPath, CI: process.env.CI || '' });
+  ];
+  if (row.render.audio && physical.audioPath) fastArgs.push('--audio', physical.audioPath);
+  await run(process.execPath, fastArgs, { HTML: physical.html, PAYLOAD: physical.payloadPath, CI: process.env.CI || '' });
 
   const receipt = JSON.parse(await fsp.readFile(receiptPath, 'utf8'));
   if (receipt.render_spec_id !== row.render.render_spec_id) throw new Error(`${row.render.render_spec_id}: receipt identity mismatch`);
   if (receipt.qa?.status !== 'pass') throw new Error(`${row.render.render_spec_id}: runtime QA did not pass`);
 
-  stableArtifacts.push({
-    selection_id: row.selection_id,
-    delivery_profile_id: row.delivery_profile_id,
-    creative_id: creative.creative_id,
-    render_spec_id: row.render.render_spec_id,
-    physical_binding: {
-      payload_sha256: physical.payloadSha,
-      template_sha256: physical.templateSha,
+  return {
+    stable: {
+      selection_id: row.selection_id,
+      delivery_profile_id: row.delivery_profile_id,
+      creative_id: creative.creative_id,
+      render_spec_id: row.render.render_spec_id,
+      physical_binding: {
+        payload_sha256: physical.payloadSha,
+        template_sha256: physical.templateSha,
+      },
+      output: {
+        sha256: receipt.output.sha256,
+        bytes: receipt.output.bytes,
+        mime_type: receipt.output.mime_type,
+        duration_ms: receipt.output.duration_ms,
+        frame_count: receipt.output.frame_count,
+      },
+      qa: {
+        status: receipt.qa.status,
+        checks: (receipt.qa.checks || []).map(check => ({ id: check.id, status: check.status, details: check.details || null })),
+      },
     },
-    output: {
-      sha256: receipt.output.sha256,
-      bytes: receipt.output.bytes,
-      mime_type: receipt.output.mime_type,
-      duration_ms: receipt.output.duration_ms,
-      frame_count: receipt.output.frame_count,
+    run: {
+      render_spec_id: row.render.render_spec_id,
+      cache_hit: Boolean(receipt.invocation?.cache_hit),
+      attempts: receipt.invocation?.attempts ?? null,
+      runtime_pool: receipt.metrics?.runtime_pool || null,
     },
-    qa: {
-      status: receipt.qa.status,
-      checks: (receipt.qa.checks || []).map(check => ({ id: check.id, status: check.status, details: check.details || null })),
-    },
-  });
-  runArtifacts.push({ render_spec_id: row.render.render_spec_id, cache_hit: Boolean(receipt.invocation?.cache_hit), attempts: receipt.invocation?.attempts ?? null });
+  };
 }
+
+const renderConcurrency = process.env.WEBCODECS_POOL_URL ? 2 : 1;
+let cursor = 0;
+async function renderWorker() {
+  while (true) {
+    const index = cursor;
+    cursor += 1;
+    if (index >= packageManifest.renders.length) return;
+    const result = await processRender(packageManifest.renders[index]);
+    stableArtifacts.push(result.stable);
+    runArtifacts.push(result.run);
+  }
+}
+await Promise.all(Array.from({ length: Math.min(renderConcurrency, Math.max(1, packageManifest.renders.length)) }, () => renderWorker()));
 
 stableArtifacts.sort((a, b) => a.render_spec_id.localeCompare(b.render_spec_id));
 runArtifacts.sort((a, b) => a.render_spec_id.localeCompare(b.render_spec_id));
@@ -182,6 +217,8 @@ await atomicWrite(path.join(outDir, 'run.json'), `${JSON.stringify({
   campaign_id: packageManifest.campaign_id,
   canonical_manifest_sha256: canonicalSha256,
   cache_hits: runArtifacts.filter(x => x.cache_hit).length,
+  render_concurrency: renderConcurrency,
+  runtime_pool_pids: [...new Set(runArtifacts.map(x => x.runtime_pool?.pid).filter(Number.isInteger))],
   artifacts: runArtifacts,
 }, null, 2)}\n`);
 
@@ -193,4 +230,6 @@ console.log(JSON.stringify({
   render_specs: packageManifest.counts.render_specs,
   reserves: packageManifest.counts.reserves,
   cache_hits: runArtifacts.filter(x => x.cache_hit).length,
+  render_concurrency: renderConcurrency,
+  runtime_pool_pids: [...new Set(runArtifacts.map(x => x.runtime_pool?.pid).filter(Number.isInteger))],
 }, null, 2));
