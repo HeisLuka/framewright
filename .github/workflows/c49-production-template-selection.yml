@@ -1,0 +1,102 @@
+name: C49 Production Template Selection Integration
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/template-campaign-selection-v1.mjs'
+      - 'contracts/check-c49-template-campaign-selection.mjs'
+      - 'contracts/c19-delivery-package-v1.mjs'
+      - 'contracts/check-c19-delivery-package.mjs'
+      - 'contracts/batch-template-diversity-v1.mjs'
+      - 'contracts/batch-template-diversity-v2.mjs'
+      - 'contracts/template-variant-composer-v1.mjs'
+      - '.agents/skills/framewright/scripts/make-c49-production-selection-fixture.mjs'
+      - '.agents/skills/framewright/scripts/audit-c49-production-selection.mjs'
+      - '.agents/skills/framewright/scripts/run-video-factory.mjs'
+      - '.agents/skills/framewright/scripts/render-factory-fast.mjs'
+      - '.agents/skills/framewright/scripts/render-webcodecs.mjs'
+      - 'examples/book-ad-systems/index-c45-template-variant.html'
+      - '.github/workflows/c49-production-template-selection.yml'
+  workflow_dispatch:
+
+jobs:
+  production-selection:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install ffmpeg and pinned fallback fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          ffmpeg -version | head -1
+      - name: Syntax and upstream contract gates
+        run: |
+          node --check contracts/template-campaign-selection-v1.mjs
+          node --check contracts/check-c49-template-campaign-selection.mjs
+          node --check .agents/skills/framewright/scripts/make-c49-production-selection-fixture.mjs
+          node --check .agents/skills/framewright/scripts/audit-c49-production-selection.mjs
+          node --check .agents/skills/framewright/scripts/run-video-factory.mjs
+          node contracts/check-c19-delivery-package.mjs
+          node contracts/check-c44-batch-template-diversity.mjs
+          node contracts/check-c47-macro-aware-batch-diversity.mjs
+          node contracts/check-c49-template-campaign-selection.mjs
+      - name: Generate canonical C27 source pack
+        run: |
+          mkdir -p .bench/c49
+          node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs .bench/c49/c27-fixtures
+      - name: Build canonical 9s AAC artifact
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=220:sample_rate=48000' -t 9 -c:a pcm_s16le .bench/c49/source.wav
+          ffmpeg -hide_banner -loglevel error -y -i .bench/c49/source.wav -t 9 -c:a aac -b:a 192k -movflags +faststart .bench/c49/canonical-audio.m4a
+      - name: Select from semantic pool and materialize selected only
+        run: |
+          node .agents/skills/framewright/scripts/make-c49-production-selection-fixture.mjs \
+            .bench/c49/c27-fixtures \
+            examples/book-ad-systems/index-c45-template-variant.html \
+            .bench/c49/source.wav \
+            .bench/c49/canonical-audio.m4a \
+            .bench/c49/input
+      - name: Canonical factory first run
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/c49/input/campaign.json \
+            --out-dir .bench/c49/run1 \
+            --artifact-dir .bench/c49/canonical-artifacts
+      - name: Exact canonical cache replay
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/c49/input/campaign.json \
+            --out-dir .bench/c49/run2 \
+            --artifact-dir .bench/c49/canonical-artifacts
+      - name: Audit production selection → C19 → factory provenance
+        run: |
+          node .agents/skills/framewright/scripts/audit-c49-production-selection.mjs \
+            .bench/c49/input .bench/c49/run1 .bench/c49/run2
+      - name: Compact evidence
+        if: always()
+        run: |
+          test -f .bench/c49/input/materialization-manifest.json && node -e "const m=require('./.bench/c49/input/materialization-manifest.json'); const c=require('./.bench/c49/run1/canonical-artifacts.json'); const r=require('./.bench/c49/run2/run.json'); console.log(JSON.stringify({candidate_count:m.candidate_count,selected_count:m.selected_count,reserve_count:m.reserve_count,selection_id:m.selection_id,policy_id:m.policy_id,batch_id:m.batch_id,canonical_provenance:c.selection_provenance?.selection_id,replay_cache_hits:r.cache_hits},null,2))" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c49-production-template-selection
+          path: |
+            .bench/c49/input/
+            .bench/c49/run1/delivery-package.json
+            .bench/c49/run1/canonical-artifacts.json
+            .bench/c49/run1/run.json
+            .bench/c49/run1/video/
+            .bench/c49/run2/canonical-artifacts.json
+            .bench/c49/run2/run.json
+          retention-days: 14

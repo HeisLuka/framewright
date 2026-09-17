@@ -209,6 +209,7 @@ const canonicalManifest = {
   reserves: packageManifest.counts.reserves,
   artifacts: stableArtifacts,
 };
+if (packageManifest.selection_provenance != null) canonicalManifest.selection_provenance = structuredClone(packageManifest.selection_provenance);
 const canonicalBytes = `${canonicalJson(canonicalManifest)}\n`;
 const canonicalSha256 = sha256Buffer(canonicalBytes);
 await atomicWrite(path.join(outDir, 'canonical-artifacts.json'), canonicalBytes);

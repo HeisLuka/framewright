@@ -1,4 +1,5 @@
 import { canonicalJson, computeCreativeId, computeRenderSpecId, assertFactoryIds } from './factory-identity-v1.mjs';
+import { validateTemplateCampaignSelectionProvenance } from './template-campaign-selection-v1.mjs';
 
 function assertObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object`);
@@ -55,6 +56,16 @@ function compileRender(creative, selected, profile, runtime) {
   return render;
 }
 
+function orderedSelectedRows(request) {
+  const anyOrder = request.selected.some(row => row.selection_order != null);
+  if (!anyOrder) return [...request.selected].sort((a, b) => String(a.selection_id).localeCompare(String(b.selection_id)));
+  if (request.selected.some(row => !Number.isInteger(row.selection_order) || row.selection_order < 0)) {
+    throw new Error('selection_order must be a non-negative integer on every selected row when ordering is present');
+  }
+  if (new Set(request.selected.map(row => row.selection_order)).size !== request.selected.length) throw new Error('selection_order values must be unique');
+  return [...request.selected].sort((a, b) => a.selection_order - b.selection_order || String(a.selection_id).localeCompare(String(b.selection_id)));
+}
+
 export function compileDeliveryPackage(request) {
   assertObject(request, 'campaign request');
   if (request.schema !== 'framewright-c19-campaign-request-v1') throw new Error(`unexpected request schema: ${request.schema}`);
@@ -62,24 +73,32 @@ export function compileDeliveryPackage(request) {
   if (!Array.isArray(request.reserves)) throw new Error('request.reserves must be an array');
   if (!Array.isArray(request.delivery_profiles) || request.delivery_profiles.length === 0) throw new Error('request.delivery_profiles must be non-empty');
   assertObject(request.runtime, 'runtime');
+  if (request.selection_provenance != null) {
+    const report = validateTemplateCampaignSelectionProvenance(request.selection_provenance);
+    if (!report.valid) throw new Error(`selection_provenance rejected: ${JSON.stringify(report.errors)}`);
+  }
 
   const deliveryById = new Map(request.delivery_profiles.map(p => [p.id, p]));
   if (deliveryById.size !== request.delivery_profiles.length) throw new Error('duplicate delivery profile id');
 
   const creatives = [];
   const renders = [];
-  const selectedRows = [...request.selected].sort((a, b) => String(a.selection_id).localeCompare(String(b.selection_id)));
+  const selectedRows = orderedSelectedRows(request);
   for (const selected of selectedRows) {
     if (!selected.selection_id) throw new Error('selected.selection_id is required');
     assertTimeline(selected.timeline);
     const creative = compileCreative(selected);
-    creatives.push({ selection_id: selected.selection_id, creative, timeline: structuredClone(selected.timeline) });
+    const selectedRow = { selection_id: selected.selection_id, creative, timeline: structuredClone(selected.timeline) };
+    if (selected.selection_order != null) selectedRow.selection_order = selected.selection_order;
+    creatives.push(selectedRow);
     const requested = [...new Set(selected.requested_delivery_profile_ids || [])].sort();
     if (requested.length === 0) throw new Error(`${selected.selection_id}: no requested delivery profiles`);
     for (const profileId of requested) {
       const profile = deliveryById.get(profileId);
       if (!profile) throw new Error(`${selected.selection_id}: unknown delivery profile ${profileId}`);
-      renders.push({ selection_id: selected.selection_id, delivery_profile_id: profileId, render: compileRender(creative, selected, profile, request.runtime) });
+      const renderRow = { selection_id: selected.selection_id, delivery_profile_id: profileId, render: compileRender(creative, selected, profile, request.runtime) };
+      if (selected.selection_order != null) renderRow.selection_order = selected.selection_order;
+      renders.push(renderRow);
     }
   }
 
@@ -105,6 +124,7 @@ export function compileDeliveryPackage(request) {
       reserves: reserves.length,
     },
   };
+  if (request.selection_provenance != null) manifest.selection_provenance = structuredClone(request.selection_provenance);
   return manifest;
 }
 
