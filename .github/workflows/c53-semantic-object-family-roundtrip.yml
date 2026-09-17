@@ -6,6 +6,7 @@ on:
     paths:
       - 'contracts/semantic-scene-object-*'
       - 'examples/book-ad-systems/index-c53-semantic-object.html'
+      - '.agents/skills/framewright/scripts/audit-c52-semantic-scene-objects.mjs'
       - '.agents/skills/framewright/scripts/make-c53-semantic-object-family-fixture.mjs'
       - '.agents/skills/framewright/scripts/observe-c53-semantic-object-family.mjs'
       - '.agents/skills/framewright/scripts/evaluate-c53-semantic-object-family.mjs'
@@ -20,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '20.20.2'
+          node-version: '22'
       - name: Install dependencies
         run: npm install --no-audit --no-fund
       - name: Install ffmpeg
@@ -28,12 +29,13 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y ffmpeg
           ffmpeg -version | head -1
-      - name: Contract and syntax gates
+      - name: Syntax gates
         run: |
           node --check .agents/skills/framewright/scripts/make-c53-semantic-object-family-fixture.mjs
           node --check .agents/skills/framewright/scripts/observe-c53-semantic-object-family.mjs
           node --check .agents/skills/framewright/scripts/evaluate-c53-semantic-object-family.mjs
-          node .agents/skills/framewright/scripts/audit-c52-semantic-scene-objects.mjs
+      - name: C52 contract regression
+        run: node .agents/skills/framewright/scripts/audit-c52-semantic-scene-objects.mjs
       - name: Build canonical 3s AAC
         run: |
           mkdir -p .bench/c53
