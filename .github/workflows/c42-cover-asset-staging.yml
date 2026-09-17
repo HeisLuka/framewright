@@ -1,0 +1,23 @@
+name: C42 Cover Asset Staging
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/cover-asset-staging-families-v2.json'
+      - 'contracts/cover-asset-staging-families-v2.mjs'
+      - 'contracts/check-c42-cover-asset-staging.mjs'
+      - 'docs/c42-cover-asset-staging.md'
+      - '.github/workflows/c42-cover-asset-staging.yml'
+  workflow_dispatch:
+
+jobs:
+  cover-asset-staging:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check trusted-cover staging families
+        run: node contracts/check-c42-cover-asset-staging.mjs
