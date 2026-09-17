@@ -1,0 +1,60 @@
+name: C53 Physical Semantic Object Round-trip
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - 'examples/semantic-scene-objects/c53-physical-fixture.html'
+      - 'contracts/semantic-scene-object-*'
+      - '.agents/skills/framewright/scripts/build-c53-physical-corpus.mjs'
+      - '.agents/skills/framewright/scripts/analyze-c53-physical.py'
+      - '.github/workflows/c53-physical-semantic-object-roundtrip.yml'
+
+jobs:
+  physical-inverse:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Build blind corpus
+        run: node .agents/skills/framewright/scripts/build-c53-physical-corpus.mjs artifacts/c53/corpus
+      - name: Render candidate bank and blind tests through Chromium/WebCodecs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/c53/renders/candidates artifacts/c53/renders/tests
+          render_one() {
+            local payload="$1" out="$2"
+            HTML=examples/semantic-scene-objects/c53-physical-fixture.html \
+            PAYLOAD="$payload" \
+            WEBCODECS_EXPECTED_HEIGHT=640 \
+            REPORT_OUT="${out%.mp4}-report.json" \
+            node .agents/skills/framewright/scripts/render-webcodecs.mjs "$out" 7 640 800000 >/dev/null
+          }
+          for p in artifacts/c53/corpus/candidates/*.json; do
+            b="$(basename "$p" .json)"; render_one "$p" "artifacts/c53/renders/candidates/$b.mp4"
+          done
+          for p in artifacts/c53/corpus/tests/*.json; do
+            b="$(basename "$p" .json)"; render_one "$p" "artifacts/c53/renders/tests/$b.mp4"
+          done
+      - name: Install pixel-analysis dependencies
+        run: python -m pip install --disable-pip-version-check opencv-python-headless==4.10.0.84 numpy==2.1.1
+      - name: Pixel-only inverse fit
+        run: python .agents/skills/framewright/scripts/analyze-c53-physical.py artifacts/c53 | tee artifacts/c53/analysis.log
+      - name: Summary
+        run: |
+          python - <<'PY'
+          import json
+          r=json.load(open('artifacts/c53/analysis.json'))
+          print(json.dumps(r['summary'],indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c53-physical-semantic-object-roundtrip
+          path: artifacts/c53
