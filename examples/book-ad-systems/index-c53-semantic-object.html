@@ -1,0 +1,45 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>C53 Semantic Scene Object Runtime</title>
+<canvas id="c"></canvas>
+<script>
+(()=>{
+'use strict';
+const P=window.FRAMEWRIGHT_PAYLOAD;
+if(!P)throw new Error('FRAMEWRIGHT_PAYLOAD required');
+const O=P.semantic_object_program;
+if(!O||O.schema!=='newboo-semantic-scene-object-program-v1')throw new Error('semantic_object_program required');
+if(!Array.isArray(O.ops)||!O.ops.length)throw new Error('semantic_object_program.ops required');
+const canvas=document.getElementById('c'),g=canvas.getContext('2d');
+const FPS=30,TOTAL=90,W0=1080,H0=1920;
+const SAFE={x:90,y:300,w:900,h:1260};
+const scaleBox=b=>({x:SAFE.x+b.x/1000*SAFE.w,y:SAFE.y+b.y/1000*SAFE.h,w:b.w/1000*SAFE.w,h:b.h/1000*SAFE.h});
+function line(o){
+ const x1=SAFE.x+o.x1/1000*SAFE.w,y1=SAFE.y+o.y1/1000*SAFE.h,x2=SAFE.x+o.x2/1000*SAFE.w,y2=SAFE.y+o.y2/1000*SAFE.h;
+ g.beginPath();g.moveTo(x1,y1);g.lineTo(x2,y2);g.lineWidth=Math.max(1,o.width/1000*SAFE.w);g.stroke();
+}
+function circle(o){
+ const cx=SAFE.x+o.cx/1000*SAFE.w,cy=SAFE.y+o.cy/1000*SAFE.h,r=o.r/1000*Math.min(SAFE.w,SAFE.h);
+ g.beginPath();g.arc(cx,cy,r,0,Math.PI*2);if(o.fill===false)g.stroke();else g.fill();
+}
+function rect(o){const b=scaleBox(o);g.fillRect(b.x,b.y,b.w,b.h);}
+function bar(o){const b=scaleBox(o);g.fillRect(b.x,b.y,b.w,b.h);}
+function drawOp(o){
+ if(o.primitive==='line')return line(o);
+ if(o.primitive==='circle')return circle(o);
+ if(o.primitive==='rect')return rect(o);
+ if(o.primitive==='bar')return bar(o);
+ throw new Error('unsupported primitive '+o.primitive);
+}
+function render(frame,width){
+ const W=Math.max(2,Math.round(width)),H=Math.round(W*H0/W0/2)*2;if(canvas.width!==W||canvas.height!==H){canvas.width=W;canvas.height=H;}
+ const k=W/W0;g.setTransform(k,0,0,k,0,0);g.fillStyle='#f4f1e8';g.fillRect(0,0,W0,H0);
+ g.fillStyle='#111';g.strokeStyle='#111';g.lineCap='round';g.lineJoin='round';
+ for(const o of O.ops)drawOp(o);
+ return true;
+}
+window.RISO={fps:FPS,total:TOTAL,frame:render};
+window.__C53_OBJECT_AUDIT=()=>({schema:'c53-object-runtime-audit-v1',object_program_id:O.object_program_id,op_count:O.ops.length,safe_space:O.safe_space,visible_family_id:false,visible_program_id:false});
+window.__ready=true;
+})();
+</script>
