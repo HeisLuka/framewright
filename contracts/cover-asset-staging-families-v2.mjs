@@ -134,8 +134,14 @@ export function validateCoverAssetStagingState(state,layout,registry=loadCoverAs
   if(!family)add(errors,'FAMILY_UNKNOWN','/family_id',`unknown family ${state.family_id}`);
   const slot=layout?.slots?.cover;
   if(!isObject(slot))add(errors,'COVER_SLOT_MISSING','/layout','cover slot missing');
-  const assetReport=validateTrustedCoverAsset(state.asset);
-  if(!assetReport.valid)errors.push(...assetReport.errors.map(error=>({...error,path:error.path.replace('/asset','/asset')})));
+  if(!isObject(state.asset))add(errors,'TYPE_OBJECT_REQUIRED','/asset','derived asset state must be an object');
+  else{
+    const {shape,...trustedAsset}=state.asset;
+    const assetReport=validateTrustedCoverAsset(trustedAsset);
+    if(!assetReport.valid)errors.push(...assetReport.errors);
+    if(!['portrait','squareish','wide'].includes(shape))add(errors,'COVER_SHAPE_INVALID','/asset/shape',`invalid derived cover shape ${shape}`);
+    else if(assetReport.valid&&shape!==classifyCoverShape(trustedAsset))add(errors,'COVER_SHAPE_MISMATCH','/asset/shape',`expected ${classifyCoverShape(trustedAsset)}`);
+  }
   if(!Array.isArray(state.placements)||!state.placements.length)add(errors,'PLACEMENT_REQUIRED','/placements','at least one placement required');
   else if(family&&slot){
     if(state.placements.length>family.max_instances)add(errors,'INSTANCE_LIMIT_EXCEEDED','/placements',`maximum ${family.max_instances} instances allowed`);
