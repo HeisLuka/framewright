@@ -33,12 +33,12 @@ function roleText(role,book){
 }
 for(const file of [html,audioSource,audioArtifact,path.join(fixtureDir,'manifest.json')])if(!fs.existsSync(file))throw new Error(`missing C45 input ${file}`);
 const manifest=JSON.parse(fs.readFileSync(path.join(fixtureDir,'manifest.json'),'utf8'));
-const item=manifest.items.find(x=>Number(x.expectedDuration||x.durationSeconds||0)===5)||manifest.items.find(x=>String(x.id||'').includes('5'))||manifest.items[0];
+const item=manifest.items.find(x=>Number(x.durationSeconds||0)===9)||manifest.items[0];
 if(!item)throw new Error('no C27 fixture item');
 const input=JSON.parse(fs.readFileSync(path.join(fixtureDir,item.inputFile),'utf8'));
 const plan=JSON.parse(fs.readFileSync(path.join(fixtureDir,item.planFile),'utf8'));
 const book=input.book;
-if(plan.duration_seconds!==5)throw new Error(`C45 main corpus is frozen at 5s, got ${plan.duration_seconds}s`);
+if(plan.duration_seconds!==9)throw new Error(`C45 main corpus is frozen at canonical 9s C27, got ${plan.duration_seconds}s`);
 const sourceCover=path.resolve('examples/book-ad-v0/generated-e08',path.basename(book.cover_url));
 if(!fs.existsSync(sourceCover))throw new Error(`missing cover ${sourceCover}`);
 const runtimeAssetDir=path.join(path.dirname(html),'generated-c45');fs.mkdirSync(runtimeAssetDir,{recursive:true});
