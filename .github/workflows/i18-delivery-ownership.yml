@@ -1,0 +1,22 @@
+name: I18 Delivery Ownership
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/creative-ingress-v2.mjs'
+      - 'contracts/check-creative-ingress-v2.mjs'
+      - 'docs/i18-delivery-ownership.md'
+      - '.github/workflows/i18-delivery-ownership.yml'
+  workflow_dispatch:
+
+jobs:
+  delivery-ownership:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check profile-independent creative ingress
+        run: node contracts/check-creative-ingress-v2.mjs
