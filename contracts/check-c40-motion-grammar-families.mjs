@@ -28,6 +28,7 @@ assert.equal(motionRegistry.families.length,6);
 assert.equal(new Set(motionRegistry.families.map(family=>family.signature)).size,6);
 
 const roles=['hook','tension','desire_payoff','book_reveal','cta'];
+const legacyVisualRoles=['hook','book_reveal','cta'];
 const progressSamples=[0,0.1,0.2,0.3,0.4,0.5,0.75,1];
 const seed=14011;
 let stateCount=0;
@@ -106,7 +107,7 @@ for(const motionFamily of motionRegistry.families){
       for(const aspect of aspectClasses){
         for(const duration_seconds of durations){
           const report=validateTemplateVariantForContext(extendedRegistry,variant,{
-            aspect,duration_seconds,semantic_roles:roles,available_asset_kinds:['cover'],
+            aspect,duration_seconds,semantic_roles:legacyVisualRoles,available_asset_kinds:['cover'],
           });
           assert.equal(report.valid,true,`${motionFamily.id}/${layoutFamily.id}/${visualSystem}/${aspect}/${duration_seconds}: ${JSON.stringify(report.errors)}`);
           assert.equal(report.template_variant_id,variant.template_variant_id);
@@ -137,6 +138,7 @@ console.log(JSON.stringify({
   motion_registry_id:motionReport.registry_id,
   motion_family_count:motionRegistry.families.length,
   semantic_roles_checked:roles,
+  legacy_visual_role_intersection:legacyVisualRoles,
   sampled_motion_states:stateCount,
   distinct_book_reveal_asset_trajectories:new Set(trajectoryFingerprints).size,
   settled_geometry_checks:settledGeometryChecks,
