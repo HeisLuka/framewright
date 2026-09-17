@@ -6,7 +6,7 @@ on:
     paths:
       - '.agents/skills/framewright/scripts/make-i25-layout-motion-holdout.mjs'
       - '.agents/skills/framewright/scripts/i25-layout-motion-benchmark.mjs'
-      - '.agents/skills/framewright/scripts/i25-observe-motion-layout-neutral.mjs'
+      - '.agents/skills/framewright/scripts/i23-observe-motion.mjs'
       - '.agents/skills/framewright/scripts/i22-infer-semantic-observation.mjs'
       - 'contracts/inverse-observation-fusion-v1.mjs'
       - 'examples/book-ad-systems/index-c45-template-variant.html'
@@ -32,7 +32,7 @@ jobs:
         run: |
           node --check .agents/skills/framewright/scripts/make-i25-layout-motion-holdout.mjs
           node --check .agents/skills/framewright/scripts/i25-layout-motion-benchmark.mjs
-          node --check .agents/skills/framewright/scripts/i25-observe-motion-layout-neutral.mjs
+          node --check .agents/skills/framewright/scripts/i23-observe-motion.mjs
           node --check .agents/skills/framewright/scripts/i22-infer-semantic-observation.mjs
           node contracts/check-c51-inverse-observation-fusion.mjs
       - name: Generate canonical C27 source pack
