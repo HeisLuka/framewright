@@ -1,0 +1,145 @@
+name: I19 FAST Multi-Profile
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/render-factory-fast.mjs'
+      - '.agents/skills/framewright/scripts/render-webcodecs.mjs'
+      - '.agents/skills/framewright/scripts/make-i19-multi-profile-fixture.mjs'
+      - '.github/workflows/i19-fast-multi-profile.yml'
+      - 'docs/i19-fast-multi-profile.md'
+  workflow_dispatch:
+
+jobs:
+  physical-multi-profile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install ffmpeg and fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax checks
+        run: |
+          node --check .agents/skills/framewright/scripts/render-factory-fast.mjs
+          node --check .agents/skills/framewright/scripts/render-webcodecs.mjs
+          node --check .agents/skills/framewright/scripts/make-i19-multi-profile-fixture.mjs
+      - name: Generate verified C27 source pack
+        run: |
+          mkdir -p .bench/i19
+          node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs .bench/i19/c27-fixtures
+      - name: Build current responsive C27 runtime template
+        run: |
+          node .agents/skills/framewright/scripts/prepare-e12-motion-template.mjs examples/book-ad-systems/index.html examples/book-ad-systems/index-e12-i19.html
+          node .agents/skills/framewright/scripts/prepare-c22-motion-quality.mjs examples/book-ad-systems/index-e12-i19.html examples/book-ad-systems/index-c22-i19.html
+          node .agents/skills/framewright/scripts/prepare-e17-responsive-template.mjs examples/book-ad-systems/index-c22-i19.html examples/book-ad-systems/index-e17-i19.html
+          node .agents/skills/framewright/scripts/prepare-e14-variant-template.mjs examples/book-ad-systems/index-e17-i19.html examples/book-ad-systems/index-e17-e14-i19.html
+          node .agents/skills/framewright/scripts/prepare-e18-responsive-variants.mjs examples/book-ad-systems/index-e17-e14-i19.html examples/book-ad-systems/index-e18-i19.html
+          node .agents/skills/framewright/scripts/prepare-c20-cover-adaptive.mjs examples/book-ad-systems/index-e18-i19.html examples/book-ad-systems/index-c20-i19.html
+          node .agents/skills/framewright/scripts/prepare-c21-hook-grammar.mjs examples/book-ad-systems/index-c20-i19.html examples/book-ad-systems/index-c21-i19.html
+          node .agents/skills/framewright/scripts/prepare-c23-cover-composition.mjs examples/book-ad-systems/index-c21-i19.html examples/book-ad-systems/index-c23-i19.html
+          node .agents/skills/framewright/scripts/prepare-c24-reading-pacing.mjs examples/book-ad-systems/index-c23-i19.html examples/book-ad-systems/index-c24-i19.html
+          node .agents/skills/framewright/scripts/prepare-c25-typography-axis.mjs examples/book-ad-systems/index-c24-i19.html examples/book-ad-systems/index-c25-i19.html
+          node .agents/skills/framewright/scripts/prepare-c26-platform-safe.mjs examples/book-ad-systems/index-c25-i19.html examples/book-ad-systems/index-c26-i19.html examples/book-ad-systems/platform-ui-profiles.v1.json
+          node .agents/skills/framewright/scripts/prepare-c27-narrative-template.mjs examples/book-ad-systems/index-c26-i19.html examples/book-ad-systems/index-c27-i19.html
+      - name: Build canonical 9s AAC artifact
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=220:sample_rate=48000' -t 9 -c:a pcm_s16le .bench/i19/source.wav
+          ffmpeg -hide_banner -loglevel error -y -i .bench/i19/source.wav -t 9 -c:a aac -b:a 192k -movflags +faststart .bench/i19/canonical-audio.m4a
+      - name: Build one-creative three-profile campaign
+        run: |
+          node .agents/skills/framewright/scripts/make-i03-campaign-fixture.mjs \
+            .bench/i19/c27-fixtures \
+            examples/book-ad-systems/index-c27-i19.html \
+            .bench/i19/source.wav \
+            .bench/i19/canonical-audio.m4a \
+            .bench/i19/i03-input
+          node .agents/skills/framewright/scripts/make-i19-multi-profile-fixture.mjs \
+            .bench/i19/i03-input/campaign.json \
+            .bench/i19/input/campaign.json
+      - name: Execute one-shot + warm c2 + cache replay through canonical factory
+        env:
+          CI: '1'
+          CAMPAIGN: .bench/i19/input/campaign.json
+          EXECUTION_MAP: .bench/i19/i03-input/execution-map.json
+          OUT_DIR: .bench/i19/run
+          REPORT: .bench/i19/run/i19-runtime-report.json
+        run: node .agents/skills/framewright/scripts/i10-canonical-warm-executor.mjs
+      - name: Validate exact profile geometry, identity, audio and cache
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          import path from 'node:path';
+          const root='.bench/i19/run';
+          const manifest=JSON.parse(fs.readFileSync(path.join(root,'warm-a','canonical-artifacts.json'),'utf8'));
+          assert.equal(manifest.artifacts.length,3);
+          assert.equal(new Set(manifest.artifacts.map(x=>x.creative_id)).size,1,'creative identity changed across delivery profiles');
+          assert.equal(new Set(manifest.artifacts.map(x=>x.render_spec_id)).size,3,'RenderSpec identity did not split by profile');
+          const expected={
+            'vertical-instagram-reels-v1':[1080,1920,'vertical'],
+            'square-generic-v1':[1080,1080,'square'],
+            'landscape-generic-v1':[1920,1080,'landscape'],
+          };
+          const sceneHashes=[];
+          for(const artifact of manifest.artifacts){
+            const receipt=JSON.parse(fs.readFileSync(path.join(root,'warm-a','receipts',`${artifact.render_spec_id}.json`),'utf8'));
+            const replay=JSON.parse(fs.readFileSync(path.join(root,'warm-replay','receipts',`${artifact.render_spec_id}.json`),'utf8'));
+            const dims=receipt.qa.checks.find(x=>x.id==='output-dimensions');
+            const binding=receipt.qa.checks.find(x=>x.id==='delivery-scene-binding');
+            const audio=receipt.qa.checks.find(x=>x.id==='audio-stream');
+            assert.ok(dims&&binding&&audio,JSON.stringify(receipt.qa));
+            const [w,h,shape]=expected[artifact.delivery_profile_id];
+            assert.deepEqual(dims.details.expected,{width:w,height:h});
+            assert.deepEqual(dims.details.actual,{width:w,height:h});
+            assert.equal(dims.details.delivery_profile,shape);
+            assert.equal(binding.details.delivery_profile,shape);
+            assert.equal(binding.details.width,w);
+            assert.equal(binding.details.height,h);
+            assert.equal(receipt.output.width,w);
+            assert.equal(receipt.output.height,h);
+            assert.equal(receipt.output.frame_count,270);
+            assert.ok(Math.abs(receipt.output.duration_ms-9000)<=40,`duration ${receipt.output.duration_ms}`);
+            assert.equal(audio.details.present,true);
+            assert.equal(receipt.invocation.cache_hit,false);
+            assert.equal(replay.invocation.cache_hit,true);
+            assert.equal(receipt.output.sha256,replay.output.sha256);
+            sceneHashes.push(receipt.metrics.scene_payload_sha256);
+          }
+          assert.equal(new Set(sceneHashes).size,3,'delivery binding did not produce distinct physical scene payloads');
+          console.log(JSON.stringify({creativeId:manifest.artifacts[0].creative_id,profiles:manifest.artifacts.map(x=>x.delivery_profile_id),renderSpecIds:manifest.artifacts.map(x=>x.render_spec_id),sceneHashes},null,2));
+          NODE
+      - name: Unsupported geometry fails closed
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const src='.bench/i19/run/production-request.json';
+          const request=JSON.parse(fs.readFileSync(src,'utf8'));
+          request.campaign_id='i19-invalid-geometry';
+          request.delivery_profiles=[{id:'unsupported-1000-square',width:1000,height:1000,fps:30}];
+          request.selected[0].requested_delivery_profile_ids=['unsupported-1000-square'];
+          fs.writeFileSync('.bench/i19/invalid-request.json',JSON.stringify(request,null,2)+'\n');
+          NODE
+          set +e
+          CI=1 node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/i19/invalid-request.json \
+            --out-dir .bench/i19/invalid-run \
+            --artifact-dir .bench/i19/invalid-artifacts \
+            >.bench/i19/invalid.log 2>&1
+          code=$?
+          set -e
+          test "$code" -ne 0
+          grep -q 'unsupported canonical FAST delivery geometry 1000x1000' .bench/i19/invalid.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i19-fast-multi-profile
+          path: .bench/i19/
+          retention-days: 14
