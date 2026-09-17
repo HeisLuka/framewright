@@ -13,6 +13,7 @@ const FORBIDDEN_INPUT_KEYS=new Set([
   'structural_layout','motion_grammar','family_id','visual_system','typography','asset_staging','graphic_devices',
 ]);
 const LAYOUT_CHANNELS=['primary_text_anchor','secondary_text_anchor','cover_box','cta_box'];
+const SEEDED_DIRECTION_SIGNATURES=new Set(['restrained_parallax','rhythmic_cards']);
 
 function isObject(value){return Boolean(value)&&typeof value==='object'&&!Array.isArray(value);}
 function clamp(value,min,max){return Math.max(min,Math.min(max,value));}
@@ -158,16 +159,29 @@ function familyProgress(family,progress){
   if(progress>=family.settle_fraction)return 1;
   return smoothstep((progress-family.enter_fraction)/(family.settle_fraction-family.enter_fraction));
 }
-function expectedTransform(family,target,progress){
-  const cfg=family[target],t=familyProgress(family,progress);
-  return{dx:cfg.dx*(1-t),dy:cfg.dy*(1-t),scale:cfg.scale_from+(1-cfg.scale_from)*t,rotation_deg:cfg.rotate_deg*(1-t),opacity:cfg.opacity_from+(1-cfg.opacity_from)*t};
+function allowedDirectionSigns(family){return SEEDED_DIRECTION_SIGNATURES.has(family.signature)?[1,-1]:[1];}
+function expectedTransform(family,target,progress,directionSign=1){
+  const cfg=family[target],t=familyProgress(family,progress),direction=SEEDED_DIRECTION_SIGNATURES.has(family.signature)?directionSign:1;
+  return{dx:cfg.dx*direction*(1-t),dy:cfg.dy*(1-t),scale:cfg.scale_from+(1-cfg.scale_from)*t,rotation_deg:cfg.rotate_deg*direction*(1-t),opacity:cfg.opacity_from+(1-cfg.opacity_from)*t};
 }
 function transformResidual(actual,expected){
   const terms=[(actual.dx-expected.dx)/80,(actual.dy-expected.dy)/80,(actual.scale-expected.scale)/0.2,(actual.rotation_deg-expected.rotation_deg)/5];
   if(actual.opacity!==undefined)terms.push((actual.opacity-expected.opacity));
   return rms(terms);
 }
-function trackResidual(track,family){return rms(track.samples.map(sample=>transformResidual(sample,expectedTransform(family,track.target,sample.progress))));}
+function trackResidual(track,family,directionSign=1){return rms(track.samples.map(sample=>transformResidual(sample,expectedTransform(family,track.target,sample.progress,directionSign))));}
+function familyMotionFit(tracks,family){
+  return allowedDirectionSigns(family).map(directionSign=>{
+    const channels=Object.fromEntries(tracks.map(track=>[track.target,quantize(trackResidual(track,family,directionSign),1e-6)]));
+    return{directionSign,channels,residual:quantize(rms(Object.values(channels)),1e-6)};
+  }).sort((a,b)=>a.residual-b.residual||b.directionSign-a.directionSign)[0];
+}
+function perChannelMotionWinner(track,families){
+  return families.map(family=>{
+    const fit=familyMotionFit([track],family);
+    return{id:family.id,residual:fit.residual,directionSign:fit.directionSign};
+  }).sort((a,b)=>a.residual-b.residual||a.id.localeCompare(b.id)||b.directionSign-a.directionSign)[0];
+}
 
 export function fitMotionGrammarCandidates(observation,{limit=6,max_residual=0.16,min_margin=0.025}={}){
   const report=validateSemanticObservation(observation);if(!report.valid)throw new Error(`semantic observation rejected: ${JSON.stringify(report.errors)}`);
@@ -175,20 +189,21 @@ export function fitMotionGrammarCandidates(observation,{limit=6,max_residual=0.1
   if(observation.coverage.motion===0||!tracks.length)return{axis:'motion_grammar',state:'unsupported',reason:'insufficient_motion_tracks',channels:[],candidates:[],accepted:null};
   const families=loadMotionGrammarFamilyRegistry().families;
   const rows=families.map(family=>{
-    const channelResiduals=Object.fromEntries(tracks.map(track=>[track.target,quantize(trackResidual(track,family),1e-6)]));
-    const residual=quantize(rms(Object.values(channelResiduals)),1e-6);
-    return{schema:INVERSE_FUSION_CANDIDATE_SCHEMA,axis:'motion_grammar',value:family.id,residual,evidence:{channels:channelResiduals,method:'c40_typed_transform_track_fit_v1'}};
+    const fit=familyMotionFit(tracks,family);
+    return{schema:INVERSE_FUSION_CANDIDATE_SCHEMA,axis:'motion_grammar',value:family.id,residual:fit.residual,evidence:{channels:fit.channels,method:'c40_typed_transform_track_fit_v2_seeded_symmetry',latent_direction_sign:fit.directionSign}};
   }).sort((a,b)=>a.residual-b.residual||a.value.localeCompare(b.value));
-  const perChannelWinners=Object.fromEntries(tracks.map(track=>{
-    const ranked=families.map(family=>({id:family.id,residual:trackResidual(track,family)})).sort((a,b)=>a.residual-b.residual||a.id.localeCompare(b.id));
-    return[track.target,ranked[0].id];
-  }));
-  const channelAgreement=new Set(Object.values(perChannelWinners)).size<=1;
+  const perChannelFits=Object.fromEntries(tracks.map(track=>[track.target,perChannelMotionWinner(track,families)]));
+  const perChannelWinners=Object.fromEntries(Object.entries(perChannelFits).map(([target,fit])=>[target,fit.id]));
+  const perChannelDirections=Object.fromEntries(Object.entries(perChannelFits).map(([target,fit])=>[target,fit.directionSign]));
+  const familyAgreement=new Set(Object.values(perChannelWinners)).size<=1;
+  const agreedFamily=familyAgreement?families.find(family=>family.id===Object.values(perChannelWinners)[0]):null;
+  const directionAgreement=!agreedFamily||!SEEDED_DIRECTION_SIGNATURES.has(agreedFamily.signature)||new Set(Object.values(perChannelDirections)).size<=1;
+  const channelAgreement=familyAgreement&&directionAgreement;
   const best=rows[0],runner=rows[1],margin=quantize((runner?.residual??Infinity)-best.residual,1e-6);
   const accepted=best.residual<=max_residual&&margin>=min_margin&&channelAgreement;
   const reason=accepted?null:(!channelAgreement?'channel_disagreement':best.residual>max_residual?'fit_residual_too_high':'runner_up_margin_too_small');
   const candidates=rows.slice(0,Math.max(1,limit)).map(row=>({...row,confidence:confidenceFromResidual(row.residual,Math.max(0,margin),observation.coverage.motion,{residualScale:max_residual*2,marginScale:min_margin*4})}));
-  return{axis:'motion_grammar',state:accepted?'accepted':'ambiguous',reason,channels:tracks.map(track=>track.target),channel_winners:perChannelWinners,fit_residual:best.residual,runner_up_margin:Number.isFinite(margin)?margin:null,candidates,accepted:accepted?candidates[0]:null};
+  return{axis:'motion_grammar',state:accepted?'accepted':'ambiguous',reason,channels:tracks.map(track=>track.target),channel_winners:perChannelWinners,channel_direction_signs:perChannelDirections,fit_residual:best.residual,runner_up_margin:Number.isFinite(margin)?margin:null,candidates,accepted:accepted?candidates[0]:null};
 }
 
 export function fuseInverseObservation(observation,options={}){

@@ -14,16 +14,16 @@ function hash32(...parts){let h=2166136261>>>0;for(const part of parts){for(cons
 function noise(amplitude,...parts){return((hash32(...parts)/0xffffffff)*2-1)*amplitude;}
 function smoothstep(value){const t=Math.max(0,Math.min(1,value));return t*t*(3-2*t);}
 function familyProgress(family,progress){if(family.signature==='editorial_cuts')return progress<family.enter_fraction?0:1;if(progress<=family.enter_fraction)return 0;if(progress>=family.settle_fraction)return 1;return smoothstep((progress-family.enter_fraction)/(family.settle_fraction-family.enter_fraction));}
-function transformFor(family,target,progress){const cfg=family[target],t=familyProgress(family,progress);return{progress,dx:cfg.dx*(1-t),dy:cfg.dy*(1-t),scale:cfg.scale_from+(1-cfg.scale_from)*t,rotation_deg:cfg.rotate_deg*(1-t)};}
+function transformFor(family,target,progress,directionSign=1){const cfg=family[target],t=familyProgress(family,progress),direction=(family.signature==='restrained_parallax'||family.signature==='rhythmic_cards')?directionSign:1;return{progress,dx:cfg.dx*direction*(1-t),dy:cfg.dy*(1-t),scale:cfg.scale_from+(1-cfg.scale_from)*t,rotation_deg:cfg.rotate_deg*direction*(1-t)};}
 function layoutObservation(familyId,aspect,seed,amplitude=16){
   const s=resolveStructuralLayout({family_id:familyId,aspect,copy:{}}).slots;
   const p=(slot,key)=>({x:s[slot].x+noise(amplitude,seed,slot,key,'x'),y:s[slot].y+noise(amplitude,seed,slot,key,'y')});
   const b=(slot,key)=>({x:s[slot].x+noise(amplitude,seed,slot,key,'x'),y:s[slot].y+noise(amplitude,seed,slot,key,'y'),w:s[slot].w+noise(amplitude,seed,slot,key,'w'),h:s[slot].h+noise(amplitude,seed,slot,key,'h')});
   return canonicalizeSemanticObservation({schema:SEMANTIC_OBSERVATION_SCHEMA,version:1,delivery:{aspect},layout_evidence:{primary_text_anchor:p('primary_text','primary'),secondary_text_anchor:p('secondary_text','secondary'),cover_box:b('cover','cover'),cta_box:b('cta','cta')},motion_tracks:[],coverage:{layout:1,motion:0},residuals:[]});
 }
-function motionObservation(family,seed,targets=['asset'],noiseScale=1){
+function motionObservation(family,seed,targets=['asset'],noiseScale=1,directionSign=1){
   const progresses=[0,.08,.16,.26,.38,.52,.72,.92];
-  const tracks=targets.map(target=>({target,samples:progresses.map((progress,index)=>{const state=transformFor(family,target,progress);return{progress,dx:state.dx+noise(2.5*noiseScale,seed,target,index,'dx'),dy:state.dy+noise(2.5*noiseScale,seed,target,index,'dy'),scale:state.scale+noise(.008*noiseScale,seed,target,index,'scale'),rotation_deg:state.rotation_deg+noise(.18*noiseScale,seed,target,index,'rot')};})}));
+  const tracks=targets.map(target=>({target,samples:progresses.map((progress,index)=>{const state=transformFor(family,target,progress,directionSign);return{progress,dx:state.dx+noise(2.5*noiseScale,seed,target,index,'dx'),dy:state.dy+noise(2.5*noiseScale,seed,target,index,'dy'),scale:state.scale+noise(.008*noiseScale,seed,target,index,'scale'),rotation_deg:state.rotation_deg+noise(.18*noiseScale,seed,target,index,'rot')};})}));
   return canonicalizeSemanticObservation({schema:SEMANTIC_OBSERVATION_SCHEMA,version:1,delivery:{aspect:'vertical'},layout_evidence:{},motion_tracks:tracks,coverage:{layout:0,motion:1},residuals:[]});
 }
 
@@ -61,6 +61,28 @@ for(const family of motions)for(let seed=0;seed<20;seed+=1){
 }
 assert.equal(motionAccepted,motionCases);
 
+const seededMotions=motions.filter(family=>family.signature==='restrained_parallax'||family.signature==='rhythmic_cards');
+assert.equal(seededMotions.length,2,'expected exactly two current C40 seeded-direction families');
+let seededSymmetryCases=0;
+for(const family of seededMotions)for(let seed=0;seed<10;seed+=1){
+  const observation=motionObservation(family,seed,['asset','text','cta'],1,-1);
+  const fit=fitMotionGrammarCandidates(observation);
+  assert.equal(fit.state,'accepted',`seeded symmetry ${family.id} seed=${seed}: ${JSON.stringify(fit)}`);
+  assert.equal(fit.accepted.value,family.id);
+  assert.equal(fit.accepted.evidence.latent_direction_sign,-1);
+  assert.ok(Object.values(fit.channel_direction_signs).every(sign=>sign===-1),`channel signs must agree for ${family.id}: ${JSON.stringify(fit.channel_direction_signs)}`);
+  seededSymmetryCases+=1;
+}
+assert.equal(seededSymmetryCases,20);
+
+const seededConflictFamily=seededMotions.find(family=>family.signature==='rhythmic_cards')||seededMotions[0];
+const seededPositiveAsset=motionObservation(seededConflictFamily,301,['asset'],.2,1).motion_tracks[0];
+const seededNegativeText=motionObservation(seededConflictFamily,302,['text'],.2,-1).motion_tracks[0];
+const seededDirectionConflict=canonicalizeSemanticObservation({schema:SEMANTIC_OBSERVATION_SCHEMA,version:1,delivery:{aspect:'vertical'},layout_evidence:{},motion_tracks:[seededPositiveAsset,seededNegativeText],coverage:{layout:0,motion:1},residuals:['seeded_direction_conflict']});
+const seededDirectionConflictFit=fitMotionGrammarCandidates(seededDirectionConflict);
+assert.equal(seededDirectionConflictFit.state,'ambiguous','opposite seeded directions across channels must not be accepted as one runtime family realization');
+assert.equal(seededDirectionConflictFit.reason,'channel_disagreement');
+
 const assetFamily=motions.find(f=>f.id==='motion_directional_slide_v2')||motions[0];
 const textFamily=motions.find(f=>f.id==='motion_staggered_type_v2')||motions[1];
 const assetTrack=motionObservation(assetFamily,77,['asset']).motion_tracks[0];
@@ -92,4 +114,4 @@ assert.equal(JSON.stringify(fused).includes('scene_program_id'),false);
 assert.deepEqual(fuseInverseObservation(combined),fused,'fusion must replay exactly');
 assert.equal(validateSemanticObservation(combined).valid,true);
 
-console.log(JSON.stringify({schema:'newboo-c51-inverse-observation-fusion-acceptance-v1',layout_cases:layoutCases,layout_accepted:layoutAccepted,motion_cases:motionCases,motion_accepted:motionAccepted,layout_single_anchor_abstains:true,layout_blend_abstains:true,motion_channel_disagreement_abstains:true,unsupported_motion_abstains:true,hidden_identity_rejected:leakageRejected,unpromoted_axes:['visual_system','typography','asset_staging','graphic_devices'],example_result_id:fused.result_id,verdict:'PASS'},null,2));
+console.log(JSON.stringify({schema:'newboo-c51-inverse-observation-fusion-acceptance-v1',layout_cases:layoutCases,layout_accepted:layoutAccepted,motion_cases:motionCases,motion_accepted:motionAccepted,seeded_direction_symmetry_cases:seededSymmetryCases,seeded_direction_conflict_abstains:true,layout_single_anchor_abstains:true,layout_blend_abstains:true,motion_channel_disagreement_abstains:true,unsupported_motion_abstains:true,hidden_identity_rejected:leakageRejected,unpromoted_axes:['visual_system','typography','asset_staging','graphic_devices'],example_result_id:fused.result_id,verdict:'PASS'},null,2));
