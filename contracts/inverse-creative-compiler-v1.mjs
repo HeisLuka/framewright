@@ -9,7 +9,11 @@ function isObject(value){return Boolean(value)&&typeof value==='object'&&!Array.
 function clamp01(value){return Math.max(0,Math.min(1,value));}
 function mean(values){return values.length?values.reduce((a,b)=>a+b,0)/values.length:0;}
 function stddev(values){if(values.length<2)return 0;const m=mean(values);return Math.sqrt(mean(values.map(v=>(v-m)**2)));}
-function quantize(value,step=1e-4){return Math.round(value/step)*step;}
+function quantize(value,step=1e-4){
+  if(!Number.isFinite(value)||!Number.isFinite(step)||step<=0)return value;
+  const decimals=Math.max(0,Math.min(12,Math.ceil(-Math.log10(step))));
+  return Number((Math.round(value/step)*step).toFixed(decimals));
+}
 function normalizedSeries(values){if(!values.length)return[];const max=Math.max(...values,1e-9);return values.map(v=>v/max);}
 
 export function validateObservationIR(observation){
