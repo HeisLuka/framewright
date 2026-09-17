@@ -1,0 +1,97 @@
+name: C48 Physical Macro-Aware Batch Acceptance
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/make-c48-macro-aware-fixture.mjs'
+      - '.agents/skills/framewright/scripts/audit-c48-macro-aware-physical.mjs'
+      - 'contracts/batch-template-diversity-v1.mjs'
+      - 'contracts/batch-template-diversity-v2.mjs'
+      - 'contracts/check-c47-macro-aware-batch-diversity.mjs'
+      - 'contracts/template-variant-composer-v1.mjs'
+      - 'examples/book-ad-systems/index-c45-template-variant.html'
+      - '.agents/skills/framewright/scripts/run-video-factory.mjs'
+      - '.agents/skills/framewright/scripts/render-factory-fast.mjs'
+      - '.agents/skills/framewright/scripts/render-webcodecs.mjs'
+      - '.github/workflows/c48-physical-macro-aware-batch.yml'
+  workflow_dispatch:
+
+jobs:
+  physical-macro-aware-batch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install ffmpeg and pinned fallback fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          ffmpeg -version | head -1
+      - name: Syntax and upstream policy gates
+        run: |
+          node --check .agents/skills/framewright/scripts/make-c48-macro-aware-fixture.mjs
+          node --check .agents/skills/framewright/scripts/audit-c48-macro-aware-physical.mjs
+          node --check .agents/skills/framewright/scripts/run-video-factory.mjs
+          node --check .agents/skills/framewright/scripts/render-factory-fast.mjs
+          node contracts/check-c43-template-variant-composer.mjs
+          node contracts/check-c47-macro-aware-batch-diversity.mjs
+      - name: Generate canonical C27 source pack
+        run: |
+          mkdir -p .bench/c48
+          node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs .bench/c48/c27-fixtures
+      - name: Build canonical 9s AAC artifact
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=220:sample_rate=48000' -t 9 -c:a pcm_s16le .bench/c48/source.wav
+          ffmpeg -hide_banner -loglevel error -y -i .bench/c48/source.wav -t 9 -c:a aac -b:a 192k -movflags +faststart .bench/c48/canonical-audio.m4a
+      - name: Compile fixed C47 v2 40-variant campaign
+        run: |
+          node .agents/skills/framewright/scripts/make-c48-macro-aware-fixture.mjs \
+            .bench/c48/c27-fixtures \
+            examples/book-ad-systems/index-c45-template-variant.html \
+            .bench/c48/source.wav \
+            .bench/c48/canonical-audio.m4a \
+            .bench/c48/input
+      - name: First canonical physical render
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/c48/input/campaign.json \
+            --out-dir .bench/c48/run1 \
+            --artifact-dir .bench/c48/canonical-artifacts
+      - name: Exact cache replay
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/c48/input/campaign.json \
+            --out-dir .bench/c48/run2 \
+            --artifact-dir .bench/c48/canonical-artifacts
+      - name: Role-aware macro physical audit and human review pack
+        run: |
+          node .agents/skills/framewright/scripts/audit-c48-macro-aware-physical.mjs \
+            .bench/c48/input .bench/c48/run1 .bench/c48/run2 .bench/c48/review \
+            examples/book-ad-systems/index-c45-template-variant.html
+      - name: Compact acceptance receipt
+        if: always()
+        run: |
+          test -f .bench/c48/review/acceptance.json && node -e "const r=require('./.bench/c48/review/acceptance.json'); console.log(JSON.stringify({count:r.count,batch:r.batch,v1_control:r.v1_control,unique:r.unique,cache:r.cache_replay,reserve:r.reserve_suppressed,visible_debug_variant_id:r.visible_debug_variant_id},null,2))" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c48-physical-macro-aware-review
+          path: |
+            .bench/c48/input/
+            .bench/c48/run1/canonical-artifacts.json
+            .bench/c48/run1/run.json
+            .bench/c48/run1/video/
+            .bench/c48/run2/canonical-artifacts.json
+            .bench/c48/run2/run.json
+            .bench/c48/review/
+          retention-days: 14
