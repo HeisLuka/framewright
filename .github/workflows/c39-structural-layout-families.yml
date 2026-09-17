@@ -1,0 +1,23 @@
+name: C39 Structural Layout Families
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/structural-layout-families-v2.json'
+      - 'contracts/structural-layout-families-v2.mjs'
+      - 'contracts/check-c39-structural-layout-families.mjs'
+      - 'docs/c39-structural-layout-families.md'
+      - '.github/workflows/c39-structural-layout-families.yml'
+  workflow_dispatch:
+
+jobs:
+  structural-layout-families:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check responsive structural layout families
+        run: node contracts/check-c39-structural-layout-families.mjs
