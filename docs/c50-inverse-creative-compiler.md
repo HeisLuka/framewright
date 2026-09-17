@@ -60,17 +60,37 @@ Phase A launches two child processes for each MP4:
 
 Neither process accepts a ground-truth path or SceneProgram argument.
 
-Only after every inference result is persisted does Phase B open the C49 physical payloads and canonical artifact manifest. The scorer can then compare the inferred result to hidden `template_scene_program` ground truth.
+Only after every inference result is persisted does Phase B open the physical payloads and canonical artifact manifest. The scorer can then compare the inferred result to hidden `template_scene_program` ground truth.
 
 This separation prevents accidental receipt/provenance leakage from turning the benchmark into identity lookup.
 
-## Physical benchmark
+## Physical benchmarks
 
-C50 stacks on C49 because C49 is the first production boundary that materializes selected C43 variants into normal C19 requests and sends them through the canonical FAST renderer.
+C50 uses two complementary physical datasets. Both end in the normal `run-video-factory.mjs -> C19 -> FAST` execution path and therefore score real factory MP4s rather than output from a test-only renderer.
 
-The benchmark therefore uses real factory outputs:
+### Ecological production-selection batch
 
-`C43 TemplateVariant -> SceneProgram -> C49/C19 -> FAST MP4 -> C50 observer -> C50 inference -> hidden scorer`
+The ecological batch starts at C49. C49 selects physically renderable C43 variants under the real production diversity policy, materializes their ScenePrograms, and sends the selected rows through C19/FAST:
+
+`C43 variants -> C49 selection -> C19 -> FAST MP4 -> C50 observer -> C50 inference -> hidden scorer`
+
+This answers: how does the inverse baseline behave on a production-shaped batch where several template axes legitimately vary together?
+
+### Controlled motion OFAT batch
+
+The one-factor-at-a-time motion benchmark is intentionally **not** passed through the C49 selector. C49 correctly requires macro-axis distance and share caps, so asking it to select six variants with identical visual system, structural layout and asset staging would violate the production diversity contract.
+
+Instead C50 creates six individually valid C43 ScenePrograms with the same narrative, book, cover, visual system, structural layout, typography, asset staging and graphic-device set. Exactly one axis changes: `motion_grammar`, once per current C40 family.
+
+Those six rows are assembled as an experiment-only C19 campaign request with `selection_provenance` omitted rather than forged:
+
+`fixed C43 base + six C40 motion families -> C19 experiment request -> FAST MP4 -> C50 observer -> C50 inference -> hidden scorer`
+
+C19 explicitly permits campaign requests without selection provenance, so this keeps the physical compiler/renderer canonical without weakening or bypassing C49's production policy.
+
+The controlled benchmark answers the narrower identifiability question: can the current pixel observations distinguish C40 motion when other template axes are held constant?
+
+## Scoring
 
 The scorer records per-video:
 
@@ -86,7 +106,7 @@ Top-1/top-3 motion accuracy are diagnostic in v1, not promotion gates. Low accur
 
 ## Why no second renderer
 
-C50 does not implement a fixture renderer. Its benchmark uses the same `run-video-factory.mjs -> render-factory-fast.mjs` route as C49. This matters because an inverse compiler that only understands a synthetic test renderer would not test the real system.
+C50 does not implement a fixture renderer. Both benchmark paths use the canonical FAST renderer through C19. This matters because an inverse compiler that only understands a synthetic test renderer would not test the real system.
 
 ## Next capability layers
 
