@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://newboo.dev/contracts/trusted-input-bundle-v1.schema.json",
+  "title": "Newboo Video Trusted Input Bundle v1",
+  "type": "object",
+  "required": ["schema", "bundle_id", "asset_layout", "context_pack", "assets"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "newboo-video-trusted-input-bundle-v1" },
+    "bundle_id": { "type": "string", "pattern": "^nbtib1_[a-f0-9]{64}$" },
+    "asset_layout": { "const": "sha256-filename-v1" },
+    "context_pack": { "$ref": "./context-pack-v1.schema.json" },
+    "assets": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/AssetBlob" }
+    }
+  },
+  "$defs": {
+    "AssetBlob": {
+      "type": "object",
+      "required": ["asset_id", "book_id", "role", "sha256", "media_type", "bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": { "type": "string", "minLength": 1 },
+        "book_id": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "media_type": {
+          "enum": ["image/png", "image/jpeg", "image/webp", "audio/mpeg", "audio/mp4", "video/mp4", "application/json"]
+        },
+        "bytes": { "type": "integer", "minimum": 0, "maximum": 536870912 }
+      }
+    }
+  }
+}
