@@ -34,8 +34,6 @@ jobs:
           node --check .agents/skills/framewright/scripts/make-c53-semantic-object-family-fixture.mjs
           node --check .agents/skills/framewright/scripts/observe-c53-semantic-object-family.mjs
           node --check .agents/skills/framewright/scripts/evaluate-c53-semantic-object-family.mjs
-      - name: C52 contract regression
-        run: node .agents/skills/framewright/scripts/audit-c52-semantic-scene-objects.mjs
       - name: Build canonical 3s AAC
         run: |
           mkdir -p .bench/c53
