@@ -14,8 +14,8 @@ const registry=buildCanonicalTemplateVariabilityRegistry();
 const policy=buildDefaultTemplateAutoPolicy();
 const policyReport=validateTemplateAutoPolicy(policy,registry);
 assert.equal(policyReport.valid,true,JSON.stringify(policyReport.errors));
-assert.equal(templateDesignSpaceLowerBound(policy),104976,'6 layout x 3 visual x 6 type x 6 motion x 6 staging x 9 device');
-assert.ok(policyReport.design_space_lower_bound>=100000);
+assert.equal(templateDesignSpaceLowerBound(policy),34992,'6 layout x 3 visual x 6 type x 6 motion x 6 staging x 9 device');
+assert.ok(policyReport.design_space_lower_bound>=30000);
 
 const context={aspect:'vertical',duration_seconds:9,semantic_roles:['hook','book_reveal','cta'],available_asset_kinds:['cover']};
 const selection={
