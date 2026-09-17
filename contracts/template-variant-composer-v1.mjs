@@ -193,6 +193,8 @@ export function deriveTemplateSceneProgram({composition_receipt,narrative,delive
   for(const fit of typography_fits)assert(fit.overflow===false,`typography overflow for ${fit.role}`);
   const cover_staging=resolveCoverAssetStaging({family_id:variant.axes.asset_staging,layout,asset:trusted_cover,seed:narrative.seed});
   const graphic_devices=variant.axes.graphic_devices.map(device_id=>resolveGraphicDevice({device_id,layout}));
+  const motion_family=loadMotionGrammarFamilyRegistry().families.find(item=>item.id===variant.axes.motion_grammar);
+  assert(motion_family,`missing motion family ${variant.axes.motion_grammar}`);
   const semantic_schedule=clone(narrative.roles);
   const semantic_schedule_sha256=sha256Canonical(semantic_schedule);
   const program={
@@ -205,7 +207,18 @@ export function deriveTemplateSceneProgram({composition_receipt,narrative,delive
     delivery:{...delivery},
     resolved_layout:layout,
     typography_fits,
-    motion_recipe:{family_id:variant.axes.motion_grammar,seed:narrative.seed,semantic_schedule_sha256},
+    motion_recipe:{
+      family_id:motion_family.id,
+      family_version:motion_family.version,
+      signature:motion_family.signature,
+      enter_fraction:motion_family.enter_fraction,
+      settle_fraction:motion_family.settle_fraction,
+      text:clone(motion_family.text),
+      asset:clone(motion_family.asset),
+      cta:clone(motion_family.cta),
+      seed:narrative.seed,
+      semantic_schedule_sha256,
+    },
     cover_staging,
     graphic_devices,
     visual_system:variant.axes.visual_system,
