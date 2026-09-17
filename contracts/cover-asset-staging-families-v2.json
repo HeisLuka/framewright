@@ -1,0 +1,12 @@
+{
+  "schema": "newboo-cover-asset-staging-family-registry-v2",
+  "version": 2,
+  "families": [
+    {"id":"stage_hero_cover_v2","version":2,"mode":"hero_cover","max_instances":1,"max_rotation_deg":0,"max_content_scale":1.0,"clip_required":false},
+    {"id":"stage_partial_crop_detail_v2","version":2,"mode":"partial_crop_detail","max_instances":1,"max_rotation_deg":0,"max_content_scale":1.35,"clip_required":true},
+    {"id":"stage_depth_stack_v2","version":2,"mode":"depth_stack","max_instances":3,"max_rotation_deg":4,"max_content_scale":1.0,"clip_required":false},
+    {"id":"stage_edge_peek_v2","version":2,"mode":"edge_peek","max_instances":1,"max_rotation_deg":2,"max_content_scale":1.08,"clip_required":true},
+    {"id":"stage_repeated_card_motif_v2","version":2,"mode":"repeated_card_motif","max_instances":3,"max_rotation_deg":3,"max_content_scale":0.82,"clip_required":false},
+    {"id":"stage_floating_tilt_v2","version":2,"mode":"floating_tilt","max_instances":1,"max_rotation_deg":5,"max_content_scale":0.94,"clip_required":false}
+  ]
+}
