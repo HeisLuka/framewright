@@ -1,0 +1,32 @@
+name: I21 Trusted Input Bundle
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'contracts/i21-trusted-input-bundle-v1.mjs'
+      - 'contracts/trusted-input-bundle-v1.schema.json'
+      - 'contracts/check-i21-trusted-input-bundle.mjs'
+      - '.agents/skills/framewright/scripts/install-trusted-input-bundle.mjs'
+      - 'docs/i21-trusted-input-bundle.md'
+      - '.github/workflows/i21-trusted-input-bundle.yml'
+
+jobs:
+  trusted-input-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse machine-readable schema
+        run: node -e "JSON.parse(require('fs').readFileSync('contracts/trusted-input-bundle-v1.schema.json','utf8'))"
+      - name: Syntax check
+        run: |
+          node --check contracts/i21-trusted-input-bundle-v1.mjs
+          node --check contracts/check-i21-trusted-input-bundle.mjs
+          node --check .agents/skills/framewright/scripts/install-trusted-input-bundle.mjs
+      - name: Run I21 installer contract gate
+        run: node contracts/check-i21-trusted-input-bundle.mjs
+      - name: Re-run bounded ContextPack contract
+        run: node contracts/check-creative-proposal-v1.mjs
