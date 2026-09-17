@@ -12,6 +12,11 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, '../../../..');
 const INNER_RENDERER = path.join(ROOT, '.agents/skills/framewright/scripts/render-webcodecs.mjs');
 const INVOCATION_CWD = process.cwd();
+const SUPPORTED_DELIVERY_GEOMETRIES = new Map([
+  ['1080x1920', 'vertical'],
+  ['1080x1080', 'square'],
+  ['1920x1080', 'landscape'],
+]);
 
 function parseArgs(argv) {
   const out = {};
@@ -32,6 +37,12 @@ function int(v, fallback, label) {
   const n = Number(v);
   if (!Number.isInteger(n) || n < 0) throw new Error(`${label} must be a non-negative integer`);
   return n;
+}
+function deliveryShape(delivery) {
+  const key = `${delivery.width}x${delivery.height}`;
+  const shape = SUPPORTED_DELIVERY_GEOMETRIES.get(key);
+  if (!shape) throw new Error(`unsupported canonical FAST delivery geometry ${key}; supported=${[...SUPPORTED_DELIVERY_GEOMETRIES.keys()].join(',')}`);
+  return shape;
 }
 async function sha256File(filename) {
   const hash = createHash('sha256');
@@ -87,9 +98,7 @@ if (!bundlePath || !fs.existsSync(bundlePath)) throw new Error('--bundle or FACT
 const bundle = JSON.parse(await fsp.readFile(bundlePath, 'utf8'));
 const plan = compileRuntimeExecutionPlan(bundle);
 if (flag(options['plan-only'])) { process.stdout.write(`${JSON.stringify(plan, null, 2)}\n`); process.exit(0); }
-
-const ratio = plan.delivery.width / plan.delivery.height;
-if (Math.abs(ratio - 9 / 16) > 1e-6) throw new Error(`current Chromium FAST executor supports vertical 9:16 only; got ${plan.delivery.width}x${plan.delivery.height}`);
+const deliveryProfile = deliveryShape(plan.delivery);
 
 const out = path.resolve(INVOCATION_CWD, String(options.out || 'factory-fast.mp4'));
 const receiptPath = path.resolve(INVOCATION_CWD, String(options['receipt-out'] || `${out}.factory.json`));
@@ -124,23 +133,33 @@ if (plan.audio) {
 
 let scenePayloadPath = process.env.PAYLOAD ? path.resolve(INVOCATION_CWD, process.env.PAYLOAD) : null;
 let payloadBinding = null;
-if (plan.delivery.platform_ui_profile) {
-  if (!scenePayloadPath || !fs.existsSync(scenePayloadPath)) {
-    throw new Error(`RenderSpec declares platform_ui_profile=${plan.delivery.platform_ui_profile}; PAYLOAD is required so delivery semantics can be materialized into the scene`);
-  }
+if (deliveryProfile !== 'vertical' && (!scenePayloadPath || !fs.existsSync(scenePayloadPath))) {
+  throw new Error(`${deliveryProfile} delivery requires PAYLOAD so factory-owned geometry can be materialized into the scene`);
+}
+if (plan.delivery.platform_ui_profile && (!scenePayloadPath || !fs.existsSync(scenePayloadPath))) {
+  throw new Error(`RenderSpec declares platform_ui_profile=${plan.delivery.platform_ui_profile}; PAYLOAD is required so delivery semantics can be materialized into the scene`);
+}
+if (scenePayloadPath && fs.existsSync(scenePayloadPath)) {
   const sourcePayload = JSON.parse(await fsp.readFile(scenePayloadPath, 'utf8'));
-  const boundPayload = { ...sourcePayload, platform_profile: plan.delivery.platform_ui_profile };
+  const boundPayload = {
+    ...sourcePayload,
+    delivery_profile: deliveryProfile,
+    delivery_width: plan.delivery.width,
+    delivery_height: plan.delivery.height,
+    ...(plan.delivery.platform_ui_profile ? { platform_profile: plan.delivery.platform_ui_profile } : {}),
+  };
   scenePayloadPath = `${out}.scene-payload.json`;
   await atomicJson(scenePayloadPath, boundPayload);
   payloadBinding = {
-    expected: plan.delivery.platform_ui_profile,
-    source_before: sourcePayload.platform_profile || null,
-    bound: boundPayload.platform_profile,
+    delivery_profile: deliveryProfile,
+    width: plan.delivery.width,
+    height: plan.delivery.height,
+    platform_expected: plan.delivery.platform_ui_profile || null,
+    platform_source_before: sourcePayload.platform_profile || null,
+    platform_bound: plan.delivery.platform_ui_profile ? boundPayload.platform_profile : null,
     platform_ui_version: plan.delivery.platform_ui_version || null,
     sha256: await sha256File(scenePayloadPath),
   };
-} else if (scenePayloadPath && fs.existsSync(scenePayloadPath)) {
-  payloadBinding = { expected: null, source_before: null, bound: null, platform_ui_version: null, sha256: await sha256File(scenePayloadPath) };
 }
 
 const rawVideo = plan.audio ? `${out}.video-only.mp4` : out;
@@ -149,6 +168,7 @@ const innerEnv = {
   REPORT_OUT: innerReport,
   WEBCODECS_CODEC: plan.video.codec,
   WEBCODECS_LATENCY_MODE: 'realtime',
+  WEBCODECS_EXPECTED_HEIGHT: String(plan.delivery.height),
 };
 if (process.env.HTML) innerEnv.HTML = path.resolve(INVOCATION_CWD, process.env.HTML);
 if (scenePayloadPath) innerEnv.PAYLOAD = scenePayloadPath;
@@ -189,6 +209,7 @@ if (lastError) throw lastError;
 
 const inner = JSON.parse(await fsp.readFile(innerReport, 'utf8'));
 assertRuntimeObservedTimeline(plan, { frame_count: Number(inner.browser?.total), fps: Number(inner.browser?.fps) });
+if (Number(inner.browser?.width) !== plan.delivery.width) throw new Error(`runtime width mismatch: expected ${plan.delivery.width}, got ${inner.browser?.width}`);
 if (Number(inner.browser?.height) !== plan.delivery.height) throw new Error(`runtime height mismatch: expected ${plan.delivery.height}, got ${inner.browser?.height}`);
 if (String(inner.browser?.codec?.codec || '').toLowerCase() !== String(plan.video.codec).toLowerCase()) {
   throw new Error(`runtime codec mismatch: expected ${plan.video.codec}, got ${inner.browser?.codec?.codec}`);
@@ -204,6 +225,9 @@ const probe = await runCapture(process.env.FFPROBE || 'ffprobe', ['-v','error','
 const media = JSON.parse(probe.stdout);
 const video = (media.streams || []).find(s => s.codec_type === 'video');
 const audio = (media.streams || []).find(s => s.codec_type === 'audio') || null;
+if (Number(video?.width) !== plan.delivery.width || Number(video?.height) !== plan.delivery.height) {
+  throw new Error(`final MP4 dimensions mismatch: expected ${plan.delivery.width}x${plan.delivery.height}, got ${video?.width}x${video?.height}`);
+}
 if (Number(video?.nb_read_frames) !== plan.delivery.frame_count) throw new Error(`final MP4 frame count mismatch: expected ${plan.delivery.frame_count}, got ${video?.nb_read_frames}`);
 if (plan.audio && !audio) throw new Error('RenderSpec declares audio but final MP4 has no audio stream');
 if (!plan.audio && audio) throw new Error('silent RenderSpec unexpectedly produced an audio stream');
@@ -211,16 +235,18 @@ if (!plan.audio && audio) throw new Error('silent RenderSpec unexpectedly produc
 const checks = [
   { id: 'factory-identity', status: 'pass', details: { render_spec_id: plan.render_spec_id } },
   { id: 'runtime-codec', status: 'pass', details: { expected: plan.video.codec, actual: inner.browser.codec.codec } },
+  { id: 'output-dimensions', status: 'pass', details: { expected: { width: plan.delivery.width, height: plan.delivery.height }, actual: { width: Number(video.width), height: Number(video.height) }, delivery_profile: deliveryProfile } },
   { id: 'frame-count', status: 'pass', details: { expected: plan.delivery.frame_count, actual: Number(video.nb_read_frames) } },
   { id: 'audio-stream', status: 'pass', details: { expected: Boolean(plan.audio), present: Boolean(audio), audio_spec_id: plan.audio?.audio_spec_id || null } },
 ];
+if (payloadBinding) checks.push({ id: 'delivery-scene-binding', status: 'pass', details: payloadBinding });
 if (plan.delivery.platform_ui_profile) {
-  checks.push({ id: 'delivery-platform-profile', status: 'pass', details: payloadBinding });
+  checks.push({ id: 'delivery-platform-profile', status: 'pass', details: { expected: plan.delivery.platform_ui_profile, source_before: payloadBinding?.platform_source_before || null, bound: payloadBinding?.platform_bound || null, platform_ui_version: plan.delivery.platform_ui_version || null, sha256: payloadBinding?.sha256 || null } });
 }
 const receipt = {
   schema: 'newboo-render-artifact-v1',
   render_spec_id: plan.render_spec_id,
-  output: { sha256: await sha256File(out), bytes: (await fsp.stat(out)).size, mime_type: 'video/mp4', duration_ms: Number(media.format?.duration || 0) * 1000, frame_count: Number(video.nb_read_frames), storage_uri: artifactMp4 || out },
+  output: { sha256: await sha256File(out), bytes: (await fsp.stat(out)).size, mime_type: 'video/mp4', duration_ms: Number(media.format?.duration || 0) * 1000, frame_count: Number(video.nb_read_frames), width: Number(video.width), height: Number(video.height), storage_uri: artifactMp4 || out },
   qa: { status: 'pass', checks },
   metrics: {
     inner_total_run_ms: inner.totalRunMs || null,
