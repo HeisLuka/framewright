@@ -1,0 +1,100 @@
+name: C46 Axis Fidelity Controlled Perceptual Audit
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'examples/book-ad-systems/index-c45-template-variant.html'
+      - '.agents/skills/framewright/scripts/make-c46-axis-fidelity-fixture.mjs'
+      - '.agents/skills/framewright/scripts/audit-c46-axis-fidelity.mjs'
+      - 'contracts/template-variant-composer-v1.mjs'
+      - 'contracts/motion-grammar-families-v2.*'
+      - 'contracts/typography-graphic-device-library-v2.*'
+      - 'contracts/structural-layout-families-v2.*'
+      - 'contracts/cover-asset-staging-families-v2.*'
+      - '.agents/skills/framewright/scripts/run-video-factory.mjs'
+      - '.agents/skills/framewright/scripts/render-factory-fast.mjs'
+      - '.agents/skills/framewright/scripts/render-webcodecs.mjs'
+      - '.github/workflows/c46-axis-fidelity-perceptual.yml'
+  workflow_dispatch:
+
+jobs:
+  controlled-axis-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install ffmpeg and pinned fallback fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+          ffmpeg -version | head -1
+      - name: Syntax and upstream contract gates
+        run: |
+          node --check .agents/skills/framewright/scripts/make-c46-axis-fidelity-fixture.mjs
+          node --check .agents/skills/framewright/scripts/audit-c46-axis-fidelity.mjs
+          node --check .agents/skills/framewright/scripts/run-video-factory.mjs
+          node --check .agents/skills/framewright/scripts/render-factory-fast.mjs
+          node contracts/check-c40-motion-grammar-families.mjs
+          node contracts/check-c41-typography-graphic-devices.mjs
+          node contracts/check-c43-template-variant-composer.mjs
+          node contracts/check-c44-batch-template-diversity.mjs
+      - name: Generate canonical C27 source pack
+        run: |
+          mkdir -p .bench/c46
+          node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs .bench/c46/c27-fixtures
+      - name: Build canonical 9s AAC artifact
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=220:sample_rate=48000' -t 9 -c:a pcm_s16le .bench/c46/source.wav
+          ffmpeg -hide_banner -loglevel error -y -i .bench/c46/source.wav -t 9 -c:a aac -b:a 192k -movflags +faststart .bench/c46/canonical-audio.m4a
+      - name: Compile controlled OFAT campaign
+        run: |
+          node .agents/skills/framewright/scripts/make-c46-axis-fidelity-fixture.mjs \
+            .bench/c46/c27-fixtures \
+            examples/book-ad-systems/index-c45-template-variant.html \
+            .bench/c46/source.wav \
+            .bench/c46/canonical-audio.m4a \
+            .bench/c46/input
+      - name: First canonical physical render
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/c46/input/campaign.json \
+            --out-dir .bench/c46/run1 \
+            --artifact-dir .bench/c46/canonical-artifacts
+      - name: Exact cache replay
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/c46/input/campaign.json \
+            --out-dir .bench/c46/run2 \
+            --artifact-dir .bench/c46/canonical-artifacts
+      - name: Controlled role-aware axis audit
+        run: |
+          node .agents/skills/framewright/scripts/audit-c46-axis-fidelity.mjs \
+            .bench/c46/input .bench/c46/run1 .bench/c46/run2 .bench/c46/review \
+            examples/book-ad-systems/index-c45-template-variant.html
+      - name: Compact acceptance receipt
+        if: always()
+        run: |
+          test -f .bench/c46/review/acceptance.json && node -e "const r=require('./.bench/c46/review/acceptance.json'); console.log(JSON.stringify({count:r.count,identity:r.identity,fidelity:r.fidelity,axes:Object.fromEntries(Object.entries(r.axis_summary).map(([k,v])=>[k,{changed:v.changed_option_count,collapsed:v.exact_collapsed_options}])),cache:r.cache_replay,reserve:r.reserve_suppressed},null,2))" || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c46-axis-fidelity-controlled-review
+          path: |
+            .bench/c46/input/
+            .bench/c46/run1/canonical-artifacts.json
+            .bench/c46/run1/run.json
+            .bench/c46/run1/video/
+            .bench/c46/run2/canonical-artifacts.json
+            .bench/c46/run2/run.json
+            .bench/c46/review/
+          retention-days: 14
