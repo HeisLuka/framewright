@@ -1,0 +1,100 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Template Variant Runtime v1</title>
+<canvas id="c"></canvas>
+<script>
+(()=>{
+'use strict';
+const P=window.FRAMEWRIGHT_PAYLOAD;
+if(!P)throw new Error('FRAMEWRIGHT_PAYLOAD required');
+const S=P.template_scene_program;
+if(!S||S.schema!=='newboo-template-scene-program-v1')throw new Error('template_scene_program required');
+if(!P.narrative_plan||P.narrative_plan.narrative_plan_id!==S.narrative_plan_id)throw new Error('narrative plan / scene program mismatch');
+const canvas=document.getElementById('c'),g=canvas.getContext('2d');
+const FPS=S.delivery.fps||30,TOTAL=Math.round(S.delivery.duration_seconds*FPS);
+const PROFILE=S.delivery.aspect;
+const DIMS=PROFILE==='square'?{w:1080,h:1080}:PROFILE==='landscape'?{w:1920,h:1080}:{w:1080,h:1920};
+const SAFE=PROFILE==='vertical'?{x:76,y:288,w:928,h:1248}:PROFILE==='square'?{x:64,y:62,w:952,h:956}:{x:110,y:70,w:1700,h:940};
+const motion=S.motion_recipe;
+if(!motion||!motion.family_id||!motion.text||!motion.asset||!motion.cta)throw new Error('resolved motion_recipe required');
+const clamp=v=>Math.max(0,Math.min(1,v));
+const ease=t=>1-Math.pow(1-clamp(t),3);
+function mapBox(b){return{x:SAFE.x+b.x/1000*SAFE.w,y:SAFE.y+b.y/1000*SAFE.h,w:b.w/1000*SAFE.w,h:b.h/1000*SAFE.h};}
+function withMotion(kind,t,fn){
+ const a=kind==='asset'?motion.asset:kind==='cta'?motion.cta:motion.text;
+ const settle=Math.max(.0001,Number(motion.settle_fraction)||.5),q=ease(t/settle);
+ const dx=(Number(a.dx)||0)*(1-q),dy=(Number(a.dy)||0)*(1-q);
+ const fromScale=Number.isFinite(Number(a.scale_from))?Number(a.scale_from):1;
+ const sc=fromScale+(1-fromScale)*q,rot=(Number(a.rotate_deg)||0)*(1-q)*Math.PI/180;
+ const fromOpacity=Number.isFinite(Number(a.opacity_from))?Number(a.opacity_from):1;
+ const alpha=fromOpacity+(1-fromOpacity)*q;
+ g.save();g.globalAlpha*=alpha;g.translate(dx,dy);g.translate(DIMS.w/2,DIMS.h/2);g.rotate(rot);g.scale(sc,sc);g.translate(-DIMS.w/2,-DIMS.h/2);fn();g.restore();
+}
+const palettes={
+ swiss:{bg:'#f1efe8',surface:'#ffffff',ink:'#111111',accent:'#e2372f',soft:'#d8d5cc'},
+ newspaper:{bg:'#e8e1d3',surface:'#f6f0e4',ink:'#171411',accent:'#8d1f18',soft:'#b9ad9c'},
+ paper:{bg:'#e9e2d5',surface:'#fbf6ea',ink:'#252019',accent:'#315a7d',soft:'#c9bdab'}
+};
+const C=palettes[S.visual_system]||palettes.swiss;
+function background(seed){
+ g.fillStyle=C.bg;g.fillRect(0,0,DIMS.w,DIMS.h);
+ if(S.visual_system==='swiss'){
+  g.fillStyle=C.ink;g.fillRect(SAFE.x,SAFE.y-18,SAFE.w,4);g.fillStyle=C.accent;g.fillRect(SAFE.x,SAFE.y-18,SAFE.w*.18,8);
+ }else if(S.visual_system==='newspaper'){
+  g.strokeStyle=C.soft;g.lineWidth=1;for(let y=SAFE.y;y<SAFE.y+SAFE.h;y+=56){g.beginPath();g.moveTo(SAFE.x,y);g.lineTo(SAFE.x+SAFE.w,y);g.stroke();}
+  g.fillStyle=C.ink;g.fillRect(SAFE.x,SAFE.y-26,SAFE.w,3);
+ }else{
+  g.save();g.globalAlpha=.18;g.fillStyle=C.accent;for(let i=0;i<9;i++){const x=SAFE.x+((seed*37+i*173)%Math.max(1,SAFE.w-40));const y=SAFE.y+((seed*71+i*239)%Math.max(1,SAFE.h-40));g.translate(x,y);g.rotate(((i%3)-1)*.03);g.fillRect(-34,-7,68,14);g.setTransform(1,0,0,1,0,0);}g.restore();
+ }
+}
+function roundRect(x,y,w,h,r){r=Math.min(r,w/2,h/2);g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath();}
+function drawLines(fit,box,color=C.ink,align='left'){
+ const tokens=fit?.tokens||{font_size:48,weight:700,line_height:1};
+ const mono=fit?.font_stack_id==='dejavu_mono_pinned_v1';
+ const scale=Math.min(SAFE.w/1000,SAFE.h/1000),fs=Math.max(12,tokens.font_size*scale);
+ g.font=`${tokens.weight||700} ${fs}px ${mono?'"DejaVu Sans Mono"':'"DejaVu Sans"'}, sans-serif`;
+ g.fillStyle=color;g.textBaseline='top';g.textAlign=align;
+ const lines=fit?.lines||[fit?.text||''],lh=fs*(tokens.line_height||1.05);let y=box.y;
+ for(const line of lines){g.fillText(line,align==='center'?box.x+box.w/2:box.x,y,box.w);y+=lh;}
+}
+function fitFor(role){return S.typography_fits.find(x=>x.role===role)||null;}
+function drawDeviceSegment(device,segment){
+ const b=mapBox(segment);g.save();g.strokeStyle=C.accent;g.fillStyle=C.accent;g.lineWidth=Math.max(2,SAFE.w*.004);g.globalAlpha=.9;
+ if(device.kind==='counter_badge'){g.beginPath();g.ellipse(b.x+b.w/2,b.y+b.h/2,b.w/2,b.h/2,0,0,Math.PI*2);g.stroke();}
+ else if(device.kind==='stamp_ring'){g.beginPath();g.ellipse(b.x+b.w/2,b.y+b.h/2,b.w/2,b.h/2,0,0,Math.PI*2);g.stroke();}
+ else if(device.kind==='quote_marks'){
+  g.font=`800 ${Math.max(22,b.h*.95)}px sans-serif`;g.textBaseline='top';g.fillText(segment===device.segments[0]?'“':'”',b.x,b.y,b.w);
+ }else{g.fillRect(b.x,b.y,b.w,b.h);}
+ g.restore();
+}
+function drawDevices(){for(const device of S.graphic_devices||[]){if(!Array.isArray(device.segments))throw new Error('resolved graphic-device segments required');for(const segment of device.segments)drawDeviceSegment(device,segment);}}
+let cover=null;
+function coverPlacement(p){
+ const b=mapBox(p.frame),rot=(p.rotation_deg||0)*Math.PI/180;
+ g.save();g.globalAlpha*=p.opacity==null?1:p.opacity;
+ if(S.cover_staging.clip_to_cover_slot){const clip=mapBox(S.resolved_layout.slots.cover);g.beginPath();g.rect(clip.x,clip.y,clip.w,clip.h);g.clip();}
+ g.translate(b.x+b.w/2,b.y+b.h/2);g.rotate(rot);const sc=p.content_scale||1;g.scale(sc,sc);g.translate(-b.w/2,-b.h/2);
+ g.fillStyle=C.surface;roundRect(0,0,b.w,b.h,Math.min(18,b.w*.04));g.fill();
+ if(cover){const ir=cover.width/cover.height,br=b.w/b.h;let sx=0,sy=0,sw=cover.width,sh=cover.height;if(ir>br){sw=cover.height*br;sx=(cover.width-sw)*(p.crop?.focus_x??.5);}else{sh=cover.width/br;sy=(cover.height-sh)*(p.crop?.focus_y??.5);}sx=Math.max(0,Math.min(cover.width-sw,sx));sy=Math.max(0,Math.min(cover.height-sh,sy));g.drawImage(cover,sx,sy,sw,sh,0,0,b.w,b.h);}
+ g.restore();
+}
+function drawCover(t){withMotion('asset',t,()=>{for(const p of [...S.cover_staging.placements].sort((a,b)=>(a.z||0)-(b.z||0)))coverPlacement(p);});}
+function roleAt(frame){return S.semantic_schedule.find(r=>frame>=r.start_frame&&frame<r.end_frame)||S.semantic_schedule.at(-1);}
+function render(frame,width,seed){
+ const W=Math.max(2,Math.round(width)),H=Math.round(W*DIMS.h/DIMS.w/2)*2;if(canvas.width!==W||canvas.height!==H){canvas.width=W;canvas.height=H;}
+ const k=W/DIMS.w;g.setTransform(k,0,0,k,0,0);background(seed);drawDevices();
+ const role=roleAt(frame),local=(frame-role.start_frame)/Math.max(1,role.end_frame-role.start_frame-1),primary=mapBox(S.resolved_layout.slots.primary_text),secondary=mapBox(S.resolved_layout.slots.secondary_text),cta=mapBox(S.resolved_layout.slots.cta),meta=mapBox(S.resolved_layout.slots.meta);
+ if(role.role==='hook'||role.role==='tension'||role.role==='desire_payoff')withMotion('text',local,()=>drawLines(fitFor(role.role),primary));
+ if(role.role==='book_reveal'){
+  drawCover(local);withMotion('text',local,()=>{drawLines(fitFor('book_reveal'),secondary);g.font=`600 ${Math.max(16,SAFE.w*.022)}px sans-serif`;g.fillStyle=C.accent;g.fillText(P.title||'',meta.x,meta.y,meta.w);g.fillStyle=C.ink;g.fillText(P.author||'',meta.x,meta.y+30,meta.w);});
+ }
+ if(role.role==='cta'){
+  drawCover(local);withMotion('cta',local,()=>{g.fillStyle=C.accent;roundRect(cta.x,cta.y,cta.w,cta.h,Math.min(36,cta.h*.35));g.fill();drawLines(fitFor('cta'),{x:cta.x+18,y:cta.y+cta.h*.22,w:cta.w-36,h:cta.h*.7},'#fff','center');});
+ }
+ return true;
+}
+window.RISO={fps:FPS,total:TOTAL,frame:render};
+window.__C46_SCENE_AUDIT=()=>({schema:'c46-template-scene-audit-v1',scene_program_id:S.scene_program_id,template_variant_id:S.template_variant_id,narrative_plan_id:S.narrative_plan_id,delivery:S.delivery,visual_system:S.visual_system,layout_family:S.resolved_layout.family_id,motion_recipe:S.motion_recipe,typography_system:S.typography_fits[0]?.system_id||null,staging_family:S.cover_staging.family_id,graphic_devices:(S.graphic_devices||[]).map(d=>({device_id:d.device_id,kind:d.kind,segments:d.segments})),semantic_schedule_sha256:S.semantic_schedule_sha256,slots:S.resolved_layout.slots,visible_debug_id:false,motion_source:'scene_program.motion_recipe',graphic_geometry_source:'scene_program.graphic_devices[].segments'});
+const img=new Image();img.onload=()=>{cover=img;window.__ready=true;};img.onerror=()=>{window.__bootError='cover load failed '+P.cover_url;window.__ready=true;};img.src=P.cover_url;
+})();
+</script>
