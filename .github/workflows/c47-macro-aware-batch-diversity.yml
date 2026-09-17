@@ -1,0 +1,38 @@
+name: C47 Macro-Aware Batch Diversity
+
+on:
+  pull_request:
+    branches: [lab/framewright-research]
+    paths:
+      - 'contracts/batch-template-diversity-v1.mjs'
+      - 'contracts/batch-template-diversity-v2.mjs'
+      - 'contracts/check-c44-batch-template-diversity.mjs'
+      - 'contracts/check-c47-macro-aware-batch-diversity.mjs'
+      - 'contracts/template-variant-composer-v1.mjs'
+      - 'contracts/template-variability-v1.mjs'
+      - 'contracts/template-variability-registry.v1.json'
+      - 'contracts/structural-layout-families-v2.*'
+      - 'contracts/motion-grammar-families-v2.*'
+      - 'contracts/typography-graphic-device-library-v2.*'
+      - 'contracts/cover-asset-staging-families-v2.*'
+      - '.github/workflows/c47-macro-aware-batch-diversity.yml'
+  workflow_dispatch:
+
+jobs:
+  macro-aware-diversity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Syntax
+        run: |
+          node --check contracts/batch-template-diversity-v1.mjs
+          node --check contracts/batch-template-diversity-v2.mjs
+          node --check contracts/check-c47-macro-aware-batch-diversity.mjs
+      - name: Historical C44 v1 replay gate
+        run: node contracts/check-c44-batch-template-diversity.mjs
+      - name: C47 macro-aware v2 acceptance
+        run: node contracts/check-c47-macro-aware-batch-diversity.mjs
