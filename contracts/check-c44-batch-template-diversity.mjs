@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from 'node:assert/strict';
+import { sha256Canonical } from './factory-identity-v1.mjs';
 import {
   buildCanonicalTemplateVariabilityRegistry,
   buildDefaultTemplateAutoPolicy,
@@ -16,7 +17,7 @@ import {
 const context={
   aspect:'vertical',
   duration_seconds:9,
-  semantic_roles:['hook','tension','desire_payoff','book_reveal','cta'],
+  semantic_roles:['hook','book_reveal','cta'],
   available_asset_kinds:['cover'],
 };
 const registry=buildCanonicalTemplateVariabilityRegistry();
@@ -95,7 +96,6 @@ assert.throws(()=>selectDiverseTemplateBatch({
 const impossible={...diversityPolicy,min_categorical_distance:6};
 const {policy_id,...projection}=impossible;
 void policy_id;
-import { sha256Canonical } from './factory-identity-v1.mjs';
 impossible.policy_id=`nbdivpol1_${sha256Canonical(projection)}`;
 assert.throws(()=>selectDiverseTemplateBatch({candidates:candidates.slice(0,80),batch_size:40,seed:1,policy:impossible}),/constraints unsatisfied/);
 
