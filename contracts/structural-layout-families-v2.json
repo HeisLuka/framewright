@@ -1,0 +1,48 @@
+{
+  "schema": "newboo-structural-layout-family-registry-v2",
+  "version": 2,
+  "families": [
+    {
+      "id": "layout_type_led_poster_v2",
+      "version": 2,
+      "composition": "type_led_poster",
+      "book_reveal_mode": "poster_lockup",
+      "reading_order": ["primary_text", "secondary_text", "cover", "cta", "meta"]
+    },
+    {
+      "id": "layout_split_editorial_v2",
+      "version": 2,
+      "composition": "split_editorial",
+      "book_reveal_mode": "split_cover_copy",
+      "reading_order": ["primary_text", "cover", "secondary_text", "cta", "meta"]
+    },
+    {
+      "id": "layout_cover_dominant_stage_v2",
+      "version": 2,
+      "composition": "cover_dominant_stage",
+      "book_reveal_mode": "center_cover_stage",
+      "reading_order": ["primary_text", "cover", "secondary_text", "cta", "meta"]
+    },
+    {
+      "id": "layout_modular_card_stack_v2",
+      "version": 2,
+      "composition": "modular_card_stack",
+      "book_reveal_mode": "modular_cover_card",
+      "reading_order": ["primary_text", "cover", "secondary_text", "cta", "meta"]
+    },
+    {
+      "id": "layout_quote_wall_v2",
+      "version": 2,
+      "composition": "quote_wall",
+      "book_reveal_mode": "quote_to_corner_cover",
+      "reading_order": ["primary_text", "secondary_text", "cover", "cta", "meta"]
+    },
+    {
+      "id": "layout_centered_cinematic_v2",
+      "version": 2,
+      "composition": "centered_cinematic",
+      "book_reveal_mode": "center_cover_then_lockup",
+      "reading_order": ["cover", "primary_text", "secondary_text", "cta", "meta"]
+    }
+  ]
+}
