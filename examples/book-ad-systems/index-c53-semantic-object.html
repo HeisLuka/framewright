@@ -7,9 +7,14 @@
 'use strict';
 const P=window.FRAMEWRIGHT_PAYLOAD;
 if(!P)throw new Error('FRAMEWRIGHT_PAYLOAD required');
-const O=P.semantic_object_program;
-if(!O||O.schema!=='newboo-semantic-scene-object-program-v1')throw new Error('semantic_object_program required');
-if(!Array.isArray(O.ops)||!O.ops.length)throw new Error('semantic_object_program.ops required');
+let O=P.semantic_object_program;
+function assertProgram(program){
+ if(!program||program.schema!=='newboo-semantic-scene-object-program-v1')throw new Error('semantic_object_program required');
+ if(!Array.isArray(program.ops)||!program.ops.length)throw new Error('semantic_object_program.ops required');
+ for(const op of program.ops)if(!['line','circle','rect','bar'].includes(op.primitive))throw new Error('unsupported primitive '+op.primitive);
+ return program;
+}
+assertProgram(O);
 const canvas=document.getElementById('c'),g=canvas.getContext('2d');
 const FPS=30,TOTAL=90,W0=1080,H0=1920;
 const SAFE={x:90,y:300,w:900,h:1260};
@@ -39,6 +44,7 @@ function render(frame,width){
  return true;
 }
 window.RISO={fps:FPS,total:TOTAL,frame:render};
+window.__C53_SET_PROGRAM=program=>{O=assertProgram(program);return O.object_program_id;};
 window.__C53_OBJECT_AUDIT=()=>({schema:'c53-object-runtime-audit-v1',object_program_id:O.object_program_id,op_count:O.ops.length,safe_space:O.safe_space,visible_family_id:false,visible_program_id:false});
 window.__ready=true;
 })();
