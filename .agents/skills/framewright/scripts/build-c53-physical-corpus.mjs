@@ -2,7 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import {loadSemanticSceneObjectFamilyRegistry,resolveSemanticSceneObject} from '../../../contracts/semantic-scene-object-families-v1.mjs';
+import {loadSemanticSceneObjectFamilyRegistry,resolveSemanticSceneObject} from '../../../../contracts/semantic-scene-object-families-v1.mjs';
 
 const out=path.resolve(process.argv[2]||'artifacts/c53/corpus');
 fs.mkdirSync(path.join(out,'candidates'),{recursive:true});
