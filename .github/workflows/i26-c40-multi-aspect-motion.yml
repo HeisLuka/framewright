@@ -1,0 +1,80 @@
+name: I26 C40 Multi-Aspect Motion
+
+on:
+  pull_request:
+    branches: [lab/i25-c39-c40-joint-holdout, lab/framewright-research]
+    paths:
+      - '.agents/skills/framewright/scripts/make-i26-aspect-motion-holdout.mjs'
+      - '.agents/skills/framewright/scripts/i23-observe-motion.mjs'
+      - '.agents/skills/framewright/scripts/i26-aspect-motion-benchmark.mjs'
+      - '.agents/skills/framewright/scripts/i22-infer-semantic-observation.mjs'
+      - 'contracts/inverse-observation-fusion-v1.mjs'
+      - 'examples/book-ad-systems/index-c45-template-variant.html'
+      - '.github/workflows/i26-c40-multi-aspect-motion.yml'
+  workflow_dispatch:
+
+jobs:
+  aspect-motion-holdout:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.20.2'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Install ffmpeg and pinned fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - name: Syntax and inherited inverse gates
+        run: |
+          node --check .agents/skills/framewright/scripts/make-i26-aspect-motion-holdout.mjs
+          node --check .agents/skills/framewright/scripts/i23-observe-motion.mjs
+          node --check .agents/skills/framewright/scripts/i26-aspect-motion-benchmark.mjs
+          node --check .agents/skills/framewright/scripts/i22-infer-semantic-observation.mjs
+          node contracts/check-c51-inverse-observation-fusion.mjs
+      - name: Generate canonical C27 source pack
+        run: |
+          mkdir -p .bench/i26
+          node .agents/skills/framewright/scripts/make-c27-narrative-fixtures.mjs .bench/i26/c27-fixtures
+      - name: Build canonical 9s AAC
+        run: |
+          ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=220:sample_rate=48000' -t 9 -c:a pcm_s16le .bench/i26/source.wav
+          ffmpeg -hide_banner -loglevel error -y -i .bench/i26/source.wav -t 9 -c:a aac -b:a 192k -movflags +faststart .bench/i26/canonical-audio.m4a
+      - name: Build 18-video aspect x motion holdout corpus
+        run: |
+          node .agents/skills/framewright/scripts/make-i26-aspect-motion-holdout.mjs \
+            .bench/i26/c27-fixtures \
+            examples/book-ad-systems/index-c45-template-variant.html \
+            .bench/i26/source.wav \
+            .bench/i26/canonical-audio.m4a \
+            .bench/i26/source-input
+      - name: Render corpus through canonical FAST factory
+        env:
+          CI: '1'
+        run: |
+          node .agents/skills/framewright/scripts/run-video-factory.mjs \
+            --request .bench/i26/source-input/campaign.json \
+            --out-dir .bench/i26/source-run \
+            --artifact-dir .bench/i26/source-artifacts
+      - name: Sealed 18-video MP4-only aspect x motion inversion
+        run: |
+          node .agents/skills/framewright/scripts/i26-aspect-motion-benchmark.mjs \
+            --video-dir .bench/i26/source-run/video \
+            --input-dir .bench/i26/source-input \
+            --canonical-artifacts .bench/i26/source-run/canonical-artifacts.json \
+            --work-dir .bench/i26/inverse \
+            --out .bench/i26/aspect-motion-benchmark.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: i26-c40-multi-aspect-motion
+          path: |
+            .bench/i26/source-input/materialization-manifest.json
+            .bench/i26/source-run/canonical-artifacts.json
+            .bench/i26/source-run/run.json
+            .bench/i26/inverse/
+            .bench/i26/aspect-motion-benchmark.json
+          retention-days: 14
