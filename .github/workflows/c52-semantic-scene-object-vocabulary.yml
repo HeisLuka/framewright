@@ -1,0 +1,29 @@
+name: C52 Semantic Scene Object Vocabulary
+
+on:
+  pull_request:
+    branches:
+      - lab/framewright-research
+    paths:
+      - 'contracts/semantic-scene-object-*'
+      - '.agents/skills/framewright/scripts/audit-c52-semantic-scene-objects.mjs'
+      - '.github/workflows/c52-semantic-scene-object-vocabulary.yml'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Audit semantic scene object vocabulary
+        run: |
+          mkdir -p artifacts/c52
+          node .agents/skills/framewright/scripts/audit-c52-semantic-scene-objects.mjs | tee artifacts/c52/audit.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c52-semantic-scene-object-audit
+          path: artifacts/c52/audit.json
